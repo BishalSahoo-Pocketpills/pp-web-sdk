@@ -1,6 +1,6 @@
 {
   "name": "pp-web-sdk",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Modular web SDK for analytics, attribution, login detection, event tracking, and more",
   "main": "src/common.js",
   "scripts": {
