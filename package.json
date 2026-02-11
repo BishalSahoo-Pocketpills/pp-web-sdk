@@ -1,0 +1,22 @@
+{
+  "name": "pp-analytics-lib",
+  "version": "1.0.0",
+  "description": "Modular analytics library for attribution tracking, Mixpanel, login detection, and event source tracking",
+  "main": "src/common.js",
+  "scripts": {
+    "build": "node build.js",
+    "build:watch": "node build.js --watch"
+  },
+  "keywords": [
+    "analytics",
+    "mixpanel",
+    "ga4",
+    "attribution",
+    "tracking"
+  ],
+  "license": "UNLICENSED",
+  "private": true,
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}
