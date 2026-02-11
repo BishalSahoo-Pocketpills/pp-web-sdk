@@ -10,6 +10,11 @@ const files = fs.readdirSync(srcDir).filter(f => f.endsWith('.js'));
 const isWatch = process.argv.includes('--watch');
 
 async function build() {
+  // Ensure dist/ exists
+  if (!fs.existsSync(distDir)) {
+    fs.mkdirSync(distDir, { recursive: true });
+  }
+
   for (const file of files) {
     const name = path.basename(file, '.js');
 
@@ -23,6 +28,13 @@ async function build() {
     });
 
     console.log('Built: dist/' + name + '.min.js');
+  }
+
+  // Copy _headers file for Cloudflare Pages (if exists)
+  const headersFile = path.join(__dirname, '_headers');
+  if (fs.existsSync(headersFile)) {
+    fs.copyFileSync(headersFile, path.join(distDir, '_headers'));
+    console.log('Copied: _headers');
   }
 
   console.log('\nAll modules built successfully.');
