@@ -10,10 +10,15 @@ permissions:
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    # Skip CI-triggered commits (version bumps) to prevent infinite loop
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -24,12 +29,52 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Determine version bump type
+        id: bump
+        run: |
+          # Get the last tag, or use initial commit if no tags exist
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+          if [ -z "$LAST_TAG" ]; then
+            MESSAGES=$(git log --format="%s" HEAD)
+          else
+            MESSAGES=$(git log --format="%s" ${LAST_TAG}..HEAD)
+          fi
+
+          # Determine bump type from conventional commits
+          # BREAKING CHANGE or feat!: / fix!: → major
+          # feat: → minor
+          # everything else → patch
+          if echo "$MESSAGES" | grep -qiE "BREAKING CHANGE|^[a-z]+(\(.*\))?!:"; then
+            echo "TYPE=major" >> $GITHUB_OUTPUT
+            echo "Detected: major (breaking change)"
+          elif echo "$MESSAGES" | grep -qiE "^feat(\(.*\))?:"; then
+            echo "TYPE=minor" >> $GITHUB_OUTPUT
+            echo "Detected: minor (new feature)"
+          else
+            echo "TYPE=patch" >> $GITHUB_OUTPUT
+            echo "Detected: patch (fix/chore)"
+          fi
+
+      - name: Bump version
+        id: version
+        run: |
+          npm version ${{ steps.bump.outputs.TYPE }} --no-git-tag-version
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "New version: v$VERSION"
+
       - name: Build minified files
         run: npm run build
 
-      - name: Read version from package.json
-        id: version
-        run: echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+      - name: Commit version bump, tag, and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore: bump version to v${{ steps.version.outputs.VERSION }} [skip ci]"
+          git tag -a "v${{ steps.version.outputs.VERSION }}" -m "v${{ steps.version.outputs.VERSION }}"
+          git push && git push --tags
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
