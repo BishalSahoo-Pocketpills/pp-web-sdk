@@ -1,7 +1,7 @@
 {
-  "name": "pp-analytics-lib",
+  "name": "pp-web-sdk",
   "version": "1.0.0",
-  "description": "Modular analytics library for attribution tracking, Mixpanel, login detection, and event source tracking",
+  "description": "Modular web SDK for analytics, attribution, login detection, event tracking, and more",
   "main": "src/common.js",
   "scripts": {
     "build": "node build.js",

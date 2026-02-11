@@ -1,6 +1,6 @@
-# pp-analytics-lib
+# pp-web-sdk
 
-Modular analytics library for attribution tracking, Mixpanel integration, login detection, and event source tracking.
+Modular web SDK for analytics, attribution, login detection, event tracking, and more.
 
 ## Modules
 
