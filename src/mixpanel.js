@@ -8,11 +8,7 @@
 (function(window, document, undefined) {
   'use strict';
 
-  var ppLib = window.ppLib;
-  if (!ppLib) {
-    console.error('[ppMixpanel] common.js must be loaded first');
-    return;
-  }
+  function initModule(ppLib) {
 
   // =====================================================
   // CONFIGURATION (overridable via ppLib.mixpanel.configure)
@@ -328,5 +324,15 @@
   };
 
   ppLib.log('info', '[ppMixpanel] Module loaded');
+
+  } // end initModule
+
+  // Safe load: wait for ppLib if not yet available
+  if (window.ppLib && window.ppLib._isReady) {
+    initModule(window.ppLib);
+  } else {
+    window.ppLibReady = window.ppLibReady || [];
+    window.ppLibReady.push(initModule);
+  }
 
 })(window, document);

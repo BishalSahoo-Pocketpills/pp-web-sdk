@@ -8,11 +8,7 @@
 (function(window, document, undefined) {
   'use strict';
 
-  var ppLib = window.ppLib;
-  if (!ppLib) {
-    console.error('[ppAnalytics] common.js must be loaded first');
-    return;
-  }
+  function initModule(ppLib) {
 
   var SafeUtils = ppLib.SafeUtils;
   var Security = ppLib.Security;
@@ -915,6 +911,16 @@
       platforms: Platforms,
       queue: EventQueue
     };
+  }
+
+  } // end initModule
+
+  // Safe load: wait for ppLib if not yet available
+  if (window.ppLib && window.ppLib._isReady) {
+    initModule(window.ppLib);
+  } else {
+    window.ppLibReady = window.ppLibReady || [];
+    window.ppLibReady.push(initModule);
   }
 
 })(window, document);

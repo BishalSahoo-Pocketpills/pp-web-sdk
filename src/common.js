@@ -411,6 +411,35 @@
     return target;
   };
 
+  // =====================================================
+  // MODULE READY SYSTEM
+  // Ensures modules can safely wait for common.js
+  // =====================================================
+
+  var readyCallbacks = [];
+  ppLib._isReady = true;
+
+  ppLib.ready = function(callback) {
+    if (typeof callback !== 'function') return;
+
+    if (ppLib._isReady) {
+      callback(ppLib);
+    } else {
+      readyCallbacks.push(callback);
+    }
+  };
+
+  // Process any callbacks registered before common.js loaded
+  // (modules that loaded first and queued via window.ppLibReady)
+  if (window.ppLibReady && Array.isArray(window.ppLibReady)) {
+    for (var i = 0; i < window.ppLibReady.length; i++) {
+      if (typeof window.ppLibReady[i] === 'function') {
+        window.ppLibReady[i](ppLib);
+      }
+    }
+    window.ppLibReady = null;
+  }
+
   ppLib.log('info', 'Common module loaded');
 
 })(window, document);
