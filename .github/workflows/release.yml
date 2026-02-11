@@ -32,14 +32,22 @@ jobs:
       - name: Determine version bump type
         id: bump
         run: |
-          # Get the last tag, or use initial commit if no tags exist
+          # Get the last tag, or fall back to scanning recent commits only
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 
           if [ -z "$LAST_TAG" ]; then
-            MESSAGES=$(git log --format="%s" HEAD)
+            # No previous tag — this is the first CI release
+            # Only look at the latest commit to determine bump type
+            MESSAGES=$(git log --format="%s" -1 HEAD)
+            echo "First release — scanning latest commit only"
           else
             MESSAGES=$(git log --format="%s" ${LAST_TAG}..HEAD)
+            echo "Last tag: $LAST_TAG"
           fi
+
+          echo "Commits to analyze:"
+          echo "$MESSAGES"
+          echo ""
 
           # Determine bump type from conventional commits
           # BREAKING CHANGE or feat!: / fix!: → major
