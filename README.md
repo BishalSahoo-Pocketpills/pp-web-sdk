@@ -6,13 +6,13 @@ Modular web SDK for analytics, attribution, login detection, event tracking, and
 
 | Module | File | Description |
 |--------|------|-------------|
-| **Common** | `common.js` | Shared utilities, security, storage — **load first** |
-| **Analytics** | `analytics.js` | UTM/ad attribution, consent, GTM/GA4/Mixpanel event queue |
-| **Mixpanel** | `mixpanel.js` | Mixpanel SDK loader, session management, campaign params |
-| **Login** | `login.js` | Cookie-based auth detection, body class management, identity DOM injection |
-| **Event Source** | `event-source.js` | Auto-track clicks/taps on `data-event-source` elements |
-| **Ecommerce** | `ecommerce.js` | Data-attribute-driven GA4 ecommerce events (`view_item`, `add_to_cart`) |
-| **Styles** | `styles.css` | Login visibility CSS for `data-visibility` elements |
+| **Common** | `common/index.js` | Shared utilities, security, storage — **load first** |
+| **Analytics** | `analytics/index.js` | UTM/ad attribution, consent, GTM/GA4/Mixpanel event queue |
+| **Mixpanel** | `mixpanel/index.js` | Mixpanel SDK loader, session management, campaign params |
+| **Login** | `login/index.js` | Cookie-based auth detection, body class management, identity DOM injection |
+| **Event Source** | `event-source/index.js` | Auto-track clicks/taps on `data-event-source` elements |
+| **Ecommerce** | `ecommerce/index.js` | Data-attribute-driven GA4 ecommerce events (`view_item`, `add_to_cart`) |
+| **Login CSS** | `login/index.css` | Login visibility CSS for `data-visibility` elements |
 
 ## Installation
 
@@ -20,7 +20,7 @@ Modular web SDK for analytics, attribution, login detection, event tracking, and
 
 ```html
 <!-- Styles — load early to prevent FOUC -->
-<link rel="stylesheet" href="https://pp-web-sdk-v1.pages.dev/styles.min.css">
+<link rel="stylesheet" href="https://pp-web-sdk-v1.pages.dev/login.min.css">
 
 <!-- Load all modules with defer to preserve execution order -->
 <script defer src="https://pp-web-sdk-v1.pages.dev/common.min.js"></script>
@@ -124,7 +124,7 @@ Optional attributes for richer event data:
 
 ### Login Visibility (`data-visibility`)
 
-Control element visibility based on auth state. The `login.js` module adds classes to `<body>` automatically, and `styles.min.css` provides the CSS rules to show/hide `[data-visibility]` elements.
+Control element visibility based on auth state. The `login.js` module adds classes to `<body>` automatically, and `login.min.css` provides the CSS rules to show/hide `[data-visibility]` elements.
 
 **Body classes applied:**
 
@@ -136,7 +136,7 @@ Control element visibility based on auth state. The `login.js` module adds class
 | Returning user | `has-previous-user` |
 | DOM ready | `dom-ready` |
 
-**CSS rules** (included in `styles.min.css`):
+**CSS rules** (included in `login.min.css`):
 
 ```css
 body:not(.dom-ready) [data-visibility] { opacity: 0; }

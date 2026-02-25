@@ -5,8 +5,21 @@ const path = require('path');
 const srcDir = path.join(__dirname, 'src');
 const distDir = path.join(__dirname, 'dist');
 
-const jsFiles = fs.readdirSync(srcDir).filter(f => f.endsWith('.js'));
-const cssFiles = fs.readdirSync(srcDir).filter(f => f.endsWith('.css'));
+function findFiles(dir, ext) {
+  const results = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...findFiles(full, ext));
+    } else if (entry.name.endsWith(ext)) {
+      results.push(full);
+    }
+  }
+  return results;
+}
+
+const jsFiles = findFiles(srcDir, '.js');
+const cssFiles = findFiles(srcDir, '.css');
 
 const isWatch = process.argv.includes('--watch');
 
@@ -17,10 +30,10 @@ async function build() {
   }
 
   for (const file of jsFiles) {
-    const name = path.basename(file, '.js');
+    const name = path.basename(path.dirname(file));
 
     await esbuild.build({
-      entryPoints: [path.join(srcDir, file)],
+      entryPoints: [file],
       outfile: path.join(distDir, name + '.min.js'),
       bundle: false,
       minify: true,
@@ -32,10 +45,10 @@ async function build() {
   }
 
   for (const file of cssFiles) {
-    const name = path.basename(file, '.css');
+    const name = path.basename(path.dirname(file));
 
     await esbuild.build({
-      entryPoints: [path.join(srcDir, file)],
+      entryPoints: [file],
       outfile: path.join(distDir, name + '.min.css'),
       bundle: false,
       minify: true,
