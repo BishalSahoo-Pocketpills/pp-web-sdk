@@ -1,0 +1,19 @@
+/* pp-web-sdk: Login Visibility Styles
+ * Controls element visibility based on auth state managed by login.js.
+ * Body classes (is-logged-in, is-logged-out, etc.) are applied automatically.
+ */
+
+/* Prevent flash of unstyled content until auth state is resolved */
+body:not(.dom-ready) [data-visibility] { opacity: 0; }
+
+/* Logged-in only elements */
+body.is-logged-out [data-visibility="logged-in"] { display: none !important; }
+
+/* Logged-out only elements */
+body.is-logged-in [data-visibility="logged-out"] { display: none !important; }
+
+/* Returning user only */
+body:not(.has-previous-user) [data-visibility="has-previous-user"] { display: none !important; }
+
+/* Signup completed only */
+body:not(.signup-completed) [data-visibility="signup-completed"] { display: none !important; }

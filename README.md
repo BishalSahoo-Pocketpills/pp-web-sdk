@@ -11,17 +11,23 @@ Modular web SDK for analytics, attribution, login detection, event tracking, and
 | **Mixpanel** | `mixpanel.js` | Mixpanel SDK loader, session management, campaign params |
 | **Login** | `login.js` | Cookie-based auth detection, body class management, identity DOM injection |
 | **Event Source** | `event-source.js` | Auto-track clicks/taps on `data-event-source` elements |
+| **Ecommerce** | `ecommerce.js` | Data-attribute-driven GA4 ecommerce events (`view_item`, `add_to_cart`) |
+| **Styles** | `styles.css` | Login visibility CSS for `data-visibility` elements |
 
 ## Installation
 
 ### Script Tags (via Cloudflare Pages CDN)
 
 ```html
+<!-- Styles — load early to prevent FOUC -->
+<link rel="stylesheet" href="https://pp-web-sdk-v1.pages.dev/styles.min.css">
+
 <!-- Load all modules with defer to preserve execution order -->
 <script defer src="https://pp-web-sdk-v1.pages.dev/common.min.js"></script>
 <script defer src="https://pp-web-sdk-v1.pages.dev/analytics.min.js"></script>
 <script defer src="https://pp-web-sdk-v1.pages.dev/mixpanel.min.js"></script>
 <script defer src="https://pp-web-sdk-v1.pages.dev/event-source.min.js"></script>
+<script defer src="https://pp-web-sdk-v1.pages.dev/ecommerce.min.js"></script>
 <script defer src="https://pp-web-sdk-v1.pages.dev/login.min.js"></script>
 
 <!-- Configure Mixpanel after modules load -->
@@ -118,7 +124,7 @@ Optional attributes for richer event data:
 
 ### Login Visibility (`data-visibility`)
 
-Control element visibility based on auth state. The `login.js` module adds classes to `<body>` automatically — pair with CSS to show/hide elements.
+Control element visibility based on auth state. The `login.js` module adds classes to `<body>` automatically, and `styles.min.css` provides the CSS rules to show/hide `[data-visibility]` elements.
 
 **Body classes applied:**
 
@@ -130,22 +136,13 @@ Control element visibility based on auth state. The `login.js` module adds class
 | Returning user | `has-previous-user` |
 | DOM ready | `dom-ready` |
 
-**Required CSS** (add to your site's global styles):
+**CSS rules** (included in `styles.min.css`):
 
 ```css
-/* Prevent flash of unstyled content */
 body:not(.dom-ready) [data-visibility] { opacity: 0; }
-
-/* Logged-in only elements */
 body.is-logged-out [data-visibility="logged-in"] { display: none !important; }
-
-/* Logged-out only elements */
 body.is-logged-in [data-visibility="logged-out"] { display: none !important; }
-
-/* Returning user only */
 body:not(.has-previous-user) [data-visibility="has-previous-user"] { display: none !important; }
-
-/* Signup completed only */
 body:not(.signup-completed) [data-visibility="signup-completed"] { display: none !important; }
 ```
 
@@ -195,253 +192,152 @@ Inject user data into text elements. The module reads from cookies and populates
 
 ## Ecommerce Events
 
-For landing pages that need GA4 standard ecommerce events (`view_item`, `add_to_cart`), add an inline script per page with the treatment/product data.
+GA4 standard ecommerce events (`view_item`, `add_to_cart`) are handled automatically by the `ecommerce.js` module. No inline scripts needed — just add data attributes to your HTML.
 
-### Schema
+### Data Attributes
 
-Events follow the GA4 ecommerce standard with PocketPills-specific fields:
+| Attribute | Required | Description |
+|---|---|---|
+| `data-ecommerce-item` | Yes | Item ID / treatment slug (e.g., `weight-loss`) |
+| `data-ecommerce-name` | Yes | Display name (e.g., `Weight Loss`) |
+| `data-ecommerce-price` | Yes | Price as string (e.g., `60`) |
+| `data-ecommerce-category` | No | Defaults to `Telehealth` |
+| `data-ecommerce-brand` | No | Defaults to `PocketPills` |
+| `data-ecommerce-variant` | No | Optional variant |
+| `data-ecommerce-discount` | No | Optional discount amount |
+| `data-ecommerce-coupon` | No | Optional coupon code |
 
-```js
-// Item schema
-{
-  item_id: 'weight-loss',          // treatment slug
-  item_name: 'Weight Loss',        // display name
-  item_brand: 'PocketPills',       // always "PocketPills"
-  item_category: 'Telehealth',    // treatment category
-  price: '60',                     // assessment price (string)
-  quantity: 1,
-  discount: '',                    // optional — promo discount amount
-  coupon: ''                       // optional — promo code
-}
-```
+### How It Works
 
-### Implementation Template
+- **Page load**: The module scans all `[data-ecommerce-item]` elements and fires a single `view_item` event with all items
+- **CTA click**: When a `[data-event-source="add_to_cart"]` element is clicked, the module resolves item data (from the CTA itself or nearest ancestor) and fires `add_to_cart`
+- Both events are sent to GTM (`dataLayer`) and Mixpanel
+- Previous ecommerce data is cleared before each push (GA4 best practice)
 
-Add this inline script to each treatment landing page. Change the four config values per page.
+### Container Pattern
+
+Attributes on a parent element, CTA button nested inside:
 
 ```html
-<!-- Start Assessment CTA -->
+<section data-ecommerce-item="weight-loss"
+         data-ecommerce-name="Weight Loss"
+         data-ecommerce-price="60">
+  <h2>Weight Loss Program</h2>
+  <p>$60/month assessment</p>
+  <button data-event-source="add_to_cart">Start Assessment</button>
+</section>
+```
+
+### Flat Pattern
+
+All attributes directly on the CTA:
+
+```html
+<button data-event-source="add_to_cart"
+        data-ecommerce-item="weight-loss"
+        data-ecommerce-name="Weight Loss"
+        data-ecommerce-price="60">
+  Start Assessment
+</button>
+```
+
+### Per-Treatment Examples
+
+**Weight Loss** (`/telehealth/weight-loss-medication`):
+
+```html
+<section data-ecommerce-item="weight-loss"
+         data-ecommerce-name="Weight Loss"
+         data-ecommerce-price="60">
+  <button data-event-source="add_to_cart">Start your transformation</button>
+</section>
+```
+
+**Hair Loss** (`/treatment/hair-loss-treatment`):
+
+```html
+<section data-ecommerce-item="hair-loss"
+         data-ecommerce-name="Hair Loss"
+         data-ecommerce-price="30">
+  <button data-event-source="add_to_cart">Start hair loss treatment</button>
+</section>
+```
+
+**Erectile Dysfunction** (`/treatment/erectile-dysfunction-treatment`):
+
+```html
+<section data-ecommerce-item="erectile-dysfunction"
+         data-ecommerce-name="Erectile Dysfunction"
+         data-ecommerce-price="25">
+  <button data-event-source="add_to_cart">Start ED treatment</button>
+</section>
+```
+
+### Multiple Items on One Page
+
+If a page has multiple `[data-ecommerce-item]` elements, the `view_item` event includes all of them:
+
+```html
+<div data-ecommerce-item="weight-loss"
+     data-ecommerce-name="Weight Loss"
+     data-ecommerce-price="60">
+  <button data-event-source="add_to_cart">Start Weight Loss</button>
+</div>
+
+<div data-ecommerce-item="hair-loss"
+     data-ecommerce-name="Hair Loss"
+     data-ecommerce-price="30">
+  <button data-event-source="add_to_cart">Start Hair Loss</button>
+</div>
+```
+
+On load, one `view_item` fires with both items. Clicking a CTA fires `add_to_cart` with only that item.
+
+### Optional Configuration
+
+Override defaults if needed (not required for standard usage):
+
+```html
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    if (window.ppLib && window.ppLib.ecommerce) {
+      ppLib.ecommerce.configure({
+        defaults: {
+          brand: 'CustomBrand',
+          category: 'CustomCategory',
+          currency: 'USD'
+        }
+      });
+    }
+  });
+</script>
+```
+
+### Migration from Inline Scripts
+
+Replace per-page inline `<script>` blocks with data attributes:
+
+**Before** (inline script per page):
+```html
 <button data-event-source="add_to_cart">Start Assessment</button>
-
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    // ---- Configure per page (change these) ----
-    var treatmentId = 'weight-loss';
-    var treatmentName = 'Weight Loss';
-    var treatmentCategory = 'Telehealth';
-    var treatmentPrice = '60';
-
-    var ecommerceItem = {
-      item_id: treatmentId,
-      item_name: treatmentName,
-      item_brand: 'PocketPills',
-      item_category: treatmentCategory,
-      price: treatmentPrice,
-      quantity: 1,
-      discount: '',
-      coupon: ''
-    };
-
-    var ecommerceData = {
-      value: treatmentPrice,
-      currency: 'CAD',
-      items: [ecommerceItem]
-    };
-
-    // ---- view_item: fires on page load ----
-    window.dataLayer = window.dataLayer || [];
-    window.dataLayer.push({ ecommerce: null }); // clear previous ecommerce
-    window.dataLayer.push({
-      event: 'view_item',
-      ecommerce: ecommerceData
-    });
-
-    if (window.mixpanel && window.mixpanel.track) {
-      window.mixpanel.track('view_item', ecommerceData);
-    }
-
-    // ---- add_to_cart: fires on Start Assessment click ----
-    var cartButtons = document.querySelectorAll('[data-event-source="add_to_cart"]');
-    cartButtons.forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        window.dataLayer.push({ ecommerce: null });
-        window.dataLayer.push({
-          event: 'add_to_cart',
-          ecommerce: ecommerceData
-        });
-
-        if (window.mixpanel && window.mixpanel.track) {
-          window.mixpanel.track('add_to_cart', ecommerceData);
-        }
-      });
-    });
-  });
-</script>
-```
-
-### Per-Page Configuration
-
-Change these four values per treatment page:
-
-| Treatment | `treatmentId` | `treatmentName` | `treatmentCategory` | `treatmentPrice` | Page URL |
-|---|---|---|---|---|---|
-| Weight Loss | `weight-loss` | `Weight Loss` | `Telehealth` | `60` | `/telehealth/weight-loss-medication` |
-| Hair Loss | `hair-loss` | `Hair Loss` | `Telehealth` | `30` | `/treatment/hair-loss-treatment` |
-| Erectile Dysfunction | `erectile-dysfunction` | `Erectile Dysfunction` | `Telehealth` | `25` | `/treatment/erectile-dysfunction-treatment` |
-| *Add rows as needed* | | | | | |
-
-### Integration: Weight Loss (`/telehealth/weight-loss-medication`)
-
-```html
-<button data-event-source="add_to_cart">Start your transformation</button>
-
 <script>
   document.addEventListener('DOMContentLoaded', function() {
     var treatmentId = 'weight-loss';
-    var treatmentName = 'Weight Loss';
-    var treatmentCategory = 'Telehealth';
-    var treatmentPrice = '60';
-
-    var ecommerceItem = {
-      item_id: treatmentId,
-      item_name: treatmentName,
-      item_brand: 'PocketPills',
-      item_category: treatmentCategory,
-      price: treatmentPrice,
-      quantity: 1,
-      discount: '',
-      coupon: ''
-    };
-
-    var ecommerceData = {
-      value: treatmentPrice,
-      currency: 'CAD',
-      items: [ecommerceItem]
-    };
-
-    window.dataLayer = window.dataLayer || [];
-    window.dataLayer.push({ ecommerce: null });
-    window.dataLayer.push({ event: 'view_item', ecommerce: ecommerceData });
-
-    if (window.mixpanel && window.mixpanel.track) {
-      window.mixpanel.track('view_item', ecommerceData);
-    }
-
-    var cartButtons = document.querySelectorAll('[data-event-source="add_to_cart"]');
-    cartButtons.forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        window.dataLayer.push({ ecommerce: null });
-        window.dataLayer.push({ event: 'add_to_cart', ecommerce: ecommerceData });
-        if (window.mixpanel && window.mixpanel.track) {
-          window.mixpanel.track('add_to_cart', ecommerceData);
-        }
-      });
-    });
+    // ... 30+ lines of JS per page
   });
 </script>
 ```
 
-### Integration: Hair Loss (`/treatment/hair-loss-treatment`)
-
+**After** (data attributes only):
 ```html
-<button data-event-source="add_to_cart">Start hair loss treatment</button>
-
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    var treatmentId = 'hair-loss';
-    var treatmentName = 'Hair Loss';
-    var treatmentCategory = 'Telehealth';
-    var treatmentPrice = '30';
-
-    var ecommerceItem = {
-      item_id: treatmentId,
-      item_name: treatmentName,
-      item_brand: 'PocketPills',
-      item_category: treatmentCategory,
-      price: treatmentPrice,
-      quantity: 1,
-      discount: '',
-      coupon: ''
-    };
-
-    var ecommerceData = {
-      value: treatmentPrice,
-      currency: 'CAD',
-      items: [ecommerceItem]
-    };
-
-    window.dataLayer = window.dataLayer || [];
-    window.dataLayer.push({ ecommerce: null });
-    window.dataLayer.push({ event: 'view_item', ecommerce: ecommerceData });
-
-    if (window.mixpanel && window.mixpanel.track) {
-      window.mixpanel.track('view_item', ecommerceData);
-    }
-
-    var cartButtons = document.querySelectorAll('[data-event-source="add_to_cart"]');
-    cartButtons.forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        window.dataLayer.push({ ecommerce: null });
-        window.dataLayer.push({ event: 'add_to_cart', ecommerce: ecommerceData });
-        if (window.mixpanel && window.mixpanel.track) {
-          window.mixpanel.track('add_to_cart', ecommerceData);
-        }
-      });
-    });
-  });
-</script>
+<section data-ecommerce-item="weight-loss"
+         data-ecommerce-name="Weight Loss"
+         data-ecommerce-price="60">
+  <button data-event-source="add_to_cart">Start Assessment</button>
+</section>
 ```
 
-### Integration: Erectile Dysfunction (`/treatment/erectile-dysfunction-treatment`)
-
-```html
-<button data-event-source="add_to_cart">Start ED treatment</button>
-
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    var treatmentId = 'erectile-dysfunction';
-    var treatmentName = 'Erectile Dysfunction';
-    var treatmentCategory = 'Telehealth';
-    var treatmentPrice = '25';
-
-    var ecommerceItem = {
-      item_id: treatmentId,
-      item_name: treatmentName,
-      item_brand: 'PocketPills',
-      item_category: treatmentCategory,
-      price: treatmentPrice,
-      quantity: 1,
-      discount: '',
-      coupon: ''
-    };
-
-    var ecommerceData = {
-      value: treatmentPrice,
-      currency: 'CAD',
-      items: [ecommerceItem]
-    };
-
-    window.dataLayer = window.dataLayer || [];
-    window.dataLayer.push({ ecommerce: null });
-    window.dataLayer.push({ event: 'view_item', ecommerce: ecommerceData });
-
-    if (window.mixpanel && window.mixpanel.track) {
-      window.mixpanel.track('view_item', ecommerceData);
-    }
-
-    var cartButtons = document.querySelectorAll('[data-event-source="add_to_cart"]');
-    cartButtons.forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        window.dataLayer.push({ ecommerce: null });
-        window.dataLayer.push({ event: 'add_to_cart', ecommerce: ecommerceData });
-        if (window.mixpanel && window.mixpanel.track) {
-          window.mixpanel.track('add_to_cart', ecommerceData);
-        }
-      });
-    });
-  });
-</script>
-```
+Zero JavaScript per page. The `ecommerce.js` module handles everything.
 
 ## API Reference
 
@@ -474,6 +370,14 @@ Change these four values per treatment page:
 - `ppLib.login.isLoggedIn()` — Check login status
 - `ppLib.login.logout(hard)` — Trigger logout
 - `window.logoutUser(hardLogout)` — Global logout function
+
+### `window.ppLib.ecommerce`
+
+- `ppLib.ecommerce.configure(options)` — Override defaults (brand, category, currency, attribute names)
+- `ppLib.ecommerce.trackViewItem()` — Re-fire `view_item` by re-scanning the DOM (useful after dynamic content)
+- `ppLib.ecommerce.trackItem(itemData)` — Programmatically fire `add_to_cart` for a given item
+- `ppLib.ecommerce.getItems()` — Return parsed items currently in the DOM
+- `ppLib.ecommerce.getConfig()` — Return current config
 
 ### `window.ppLib.mixpanel`
 

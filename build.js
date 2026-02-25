@@ -5,7 +5,8 @@ const path = require('path');
 const srcDir = path.join(__dirname, 'src');
 const distDir = path.join(__dirname, 'dist');
 
-const files = fs.readdirSync(srcDir).filter(f => f.endsWith('.js'));
+const jsFiles = fs.readdirSync(srcDir).filter(f => f.endsWith('.js'));
+const cssFiles = fs.readdirSync(srcDir).filter(f => f.endsWith('.css'));
 
 const isWatch = process.argv.includes('--watch');
 
@@ -15,7 +16,7 @@ async function build() {
     fs.mkdirSync(distDir, { recursive: true });
   }
 
-  for (const file of files) {
+  for (const file of jsFiles) {
     const name = path.basename(file, '.js');
 
     await esbuild.build({
@@ -28,6 +29,19 @@ async function build() {
     });
 
     console.log('Built: dist/' + name + '.min.js');
+  }
+
+  for (const file of cssFiles) {
+    const name = path.basename(file, '.css');
+
+    await esbuild.build({
+      entryPoints: [path.join(srcDir, file)],
+      outfile: path.join(distDir, name + '.min.css'),
+      bundle: false,
+      minify: true,
+    });
+
+    console.log('Built: dist/' + name + '.min.css');
   }
 
   // Copy _headers file for Cloudflare Pages (if exists)
