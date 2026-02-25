@@ -290,8 +290,14 @@
       document.addEventListener('click', handleInteraction, { capture: false, passive: true });
       document.addEventListener('touchend', handleInteraction, { capture: false, passive: true });
 
-      // Fire view_item on load
-      trackViewItem();
+      // Defer view_item to window load so all analytics deps (Mixpanel, GTM)
+      // are fully initialized. During defer execution, Mixpanel isn't ready yet
+      // because its init runs in a DOMContentLoaded handler.
+      if (document.readyState === 'complete') {
+        trackViewItem();
+      } else {
+        window.addEventListener('load', trackViewItem);
+      }
 
       ppLib.log('info', '[ppEcommerce] Initialized');
     } catch (e) {
