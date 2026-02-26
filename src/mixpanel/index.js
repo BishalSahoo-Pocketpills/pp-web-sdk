@@ -236,6 +236,7 @@
     mixpanel.init(CONFIG.token, {
       cross_subdomain_cookie: CONFIG.crossSubdomainCookie,
       opt_out_tracking_by_default: CONFIG.optOutByDefault,
+      api_transport: 'sendBeacon',
       loaded: function(mixpanel) {
         mixpanel.opt_in_tracking();
 
