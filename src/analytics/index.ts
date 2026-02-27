@@ -1066,7 +1066,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
 
   /*! v8 ignore start */
   if (CONFIG.debug) {
-    console.log('[ppAnalytics] API ready at window.ppAnalytics');
+    Utils.log('info', 'API ready at window.ppAnalytics');
 
     win.ppAnalyticsDebug = {
       config: CONFIG,

@@ -58,7 +58,7 @@ export function createInitAuthState(
         // Inject name into elements with data-login-identifier-key="user-first-name"
         const nameElements = doc.querySelectorAll('[' + CONFIG.identifierAttribute + '="user-first-name"]');
         nameElements.forEach(function(el: any) {
-          el.innerText = previousUserName;
+          el.innerText = ppLib.Security.sanitize(previousUserName);
         });
       }
 

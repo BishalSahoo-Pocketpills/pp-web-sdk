@@ -18,7 +18,7 @@ import { createExtend } from './utils';
   'use strict';
 
   var ppLib: PPLib = win.ppLib = win.ppLib || {} as PPLib;
-  ppLib.version = '2.0.0';
+  ppLib.version = '2.0.1';
 
   // =====================================================
   // CONFIGURATION (BASE)

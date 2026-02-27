@@ -405,6 +405,17 @@ describe('initAuthState()', () => {
       expect(span.innerText).toBe('Charlie');
     });
 
+    it('sanitizes name before DOM injection to prevent XSS', () => {
+      setCookie('previousUser', JSON.stringify({ firstName: '<script>alert(1)</script>' }));
+      const span = document.createElement('span');
+      span.setAttribute('data-login-identifier-key', 'user-first-name');
+      document.body.appendChild(span);
+      loadFresh();
+
+      // Security.sanitize strips < > ' " characters
+      expect(span.innerText).toBe('scriptalert(1)/script');
+    });
+
     it('handles invalid JSON in previousUser gracefully', () => {
       setCookie('previousUser', '{not-valid-json');
       loadFresh();
