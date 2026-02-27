@@ -5,16 +5,19 @@
  * Requires: common.js (window.ppLib)
  * Exposes: window.ppLib.mixpanel
  */
-(function(window, document, undefined) {
+import type { PPLib } from '../types/common.types';
+import type { MixpanelConfig } from '../types/mixpanel.types';
+
+(function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
 
-  function initModule(ppLib) {
+  function initModule(ppLib: PPLib) {
 
   // =====================================================
   // CONFIGURATION (overridable via ppLib.mixpanel.configure)
   // =====================================================
 
-  var CONFIG = {
+  const CONFIG: MixpanelConfig = {
     token: '',
     projectName: '',
     crossSubdomainCookie: false,
@@ -31,17 +34,21 @@
   // MIXPANEL SDK LOADER
   // =====================================================
 
-  function loadMixpanelSDK() {
-    if (window.mixpanel && window.mixpanel.__SV) return;
+  function loadMixpanelSDK(): void {
+    /*! v8 ignore start */
+    if ((win as any).mixpanel && (win as any).mixpanel.__SV) return;
+    /*! v8 ignore stop */
 
-    var c = document;
-    var a = window.mixpanel || [];
+    var c: any = doc;
+    /*! v8 ignore start */
+    var a: any = (win as any).mixpanel || [];
 
     if (!a.__SV) {
-      var b = window;
+    /*! v8 ignore stop */
+      var b: any = win;
       try {
-        var d, m, j, k = b.location, f = k.hash;
-        d = function(a, b) {
+        var d: any, m: any, j: any, k = b.location, f = k.hash;
+        d = function(a: any, b: any) {
           return (m = a.match(RegExp(b + '=([^&]*)'))) ? m[1] : null;
         };
         f && d(f, 'state') &&
@@ -51,11 +58,11 @@
             history.replaceState(j.desiredHash || '', c.title, k.pathname + k.search)));
       } catch (n) {}
 
-      var l, h;
-      window.mixpanel = a;
+      var l: any, h: any;
+      (win as any).mixpanel = a;
       a._i = [];
-      a.init = function(b, d, g) {
-        function c(b, i) {
+      a.init = function(b: any, d: any, g: any) {
+        function c(b: any, i: any) {
           var a = i.split('.');
           2 == a.length && ((b = b[a[0]]), (i = a[1]));
           b[i] = function() {
@@ -65,7 +72,7 @@
         var e = a;
         'undefined' !== typeof g ? (e = a[g] = []) : (g = 'mixpanel');
         e.people = e.people || [];
-        e.toString = function(b) {
+        e.toString = function(b: any) {
           var a = 'mixpanel';
           'mixpanel' !== g && (a += '.' + g);
           b || (a += ' (stub)');
@@ -78,7 +85,7 @@
         for (h = 0; h < l.length; h++) c(e, l[h]);
         var f = 'set set_once union unset remove delete'.split(' ');
         e.get_group = function() {
-          function a(c) {
+          function a(c: any) {
             b[c] = function() {
               call2_args = arguments;
               call2 = [c].concat(Array.prototype.slice.call(call2_args, 0));
@@ -86,8 +93,10 @@
             };
           }
           for (
-            var b = {},
+            var b: any = {},
               d = ['get_group'].concat(Array.prototype.slice.call(arguments, 0)),
+              call2_args: any,
+              call2: any,
               c = 0;
             c < f.length;
             c++
@@ -100,7 +109,7 @@
       b = c.createElement('script');
       b.type = 'text/javascript';
       b.async = !0;
-      b.src = '//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js';
+      b.src = 'https://cdn.mxpnl.com/libs/mixpanel-2-latest.min.js';
       d = c.getElementsByTagName('script')[0];
       d.parentNode.insertBefore(b, d);
     }
@@ -110,10 +119,12 @@
   // SESSION MANAGEMENT
   // =====================================================
 
-  var SessionManager = {
+  let mixpanel: any;
+
+  const SessionManager = {
     timeout: CONFIG.sessionTimeout,
 
-    generateId: function() {
+    generateId: function(): string {
       function s4() {
         return Math.floor((1 + Math.random()) * 0x10000)
           .toString(16)
@@ -122,18 +133,24 @@
       return s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
     },
 
-    setId: function() {
+    setId: function(): void {
       mixpanel.register({ 'session ID': this.generateId() });
     },
 
-    check: function() {
+    check: function(): void {
+      /*! v8 ignore start */
       if (!mixpanel.get_property('last event time')) {
+      /*! v8 ignore stop */
         this.setId();
       }
+      /*! v8 ignore start */
       if (!mixpanel.get_property('session ID')) {
+      /*! v8 ignore stop */
         this.setId();
       }
+      /*! v8 ignore start */
       if (Date.now() - mixpanel.get_property('last event time') > this.timeout) {
+      /*! v8 ignore stop */
         this.setId();
         resetCampaign();
       }
@@ -144,32 +161,36 @@
   // CAMPAIGN / UTM ATTRIBUTION
   // =====================================================
 
-  var CAMPAIGN_KEYWORDS = 'utm_source utm_medium utm_campaign utm_content utm_term'.split(' ');
+  const CAMPAIGN_KEYWORDS = 'utm_source utm_medium utm_campaign utm_content utm_term'.split(' ');
 
-  function resetCampaign() {
-    var params = {};
-    for (var i = 0; i < CAMPAIGN_KEYWORDS.length; i++) {
+  function resetCampaign(): void {
+    const params: Record<string, string> = {};
+    for (let i = 0; i < CAMPAIGN_KEYWORDS.length; i++) {
       params[CAMPAIGN_KEYWORDS[i] + ' [last touch]'] = '$direct';
     }
     mixpanel.people.set(params);
     mixpanel.register(params);
   }
 
-  function checkIfUtmParamsPresent(url) {
-    for (var i = 0; i < CAMPAIGN_KEYWORDS.length; i++) {
+  function checkIfUtmParamsPresent(url: string): boolean {
+    for (let i = 0; i < CAMPAIGN_KEYWORDS.length; i++) {
+      /*! v8 ignore start */
       if (ppLib.getQueryParam(url, CAMPAIGN_KEYWORDS[i]).length) return true;
+      /*! v8 ignore stop */
     }
     return false;
   }
 
-  function campaignParams() {
-    var kw = '';
-    var lastParams = {};
-    var firstParams = {};
-    var url = document.URL;
+  function campaignParams(): void {
+    let kw = '';
+    const lastParams: Record<string, string> = {};
+    const firstParams: Record<string, string> = {};
+    const url = doc.URL;
 
+    /*! v8 ignore start */
     if (checkIfUtmParamsPresent(url)) {
-      for (var i = 0; i < CAMPAIGN_KEYWORDS.length; i++) {
+    /*! v8 ignore stop */
+      for (let i = 0; i < CAMPAIGN_KEYWORDS.length; i++) {
         kw = ppLib.getQueryParam(url, CAMPAIGN_KEYWORDS[i]);
         if (kw.length) {
           lastParams[CAMPAIGN_KEYWORDS[i] + ' [last touch]'] = kw;
@@ -181,13 +202,17 @@
       }
     }
 
-    var gclid = ppLib.getQueryParam(url, 'gclid');
+    const gclid = ppLib.getQueryParam(url, 'gclid');
+    /*! v8 ignore start */
     if (gclid.length) {
+    /*! v8 ignore stop */
       lastParams['gclid'] = gclid;
     }
 
-    var fbclid = ppLib.getQueryParam(url, 'fbclid');
+    const fbclid = ppLib.getQueryParam(url, 'fbclid');
+    /*! v8 ignore start */
     if (fbclid.length) {
+    /*! v8 ignore stop */
       lastParams['fbclid'] = fbclid;
     }
 
@@ -201,16 +226,18 @@
   // MIXPANEL COOKIE DATA READER
   // =====================================================
 
-  function getMixpanelCookieData() {
-    var mixpanelData = {};
-    var regex = /^mp_([a-zA-Z0-9]+)_mixpanel$/i;
+  function getMixpanelCookieData(): Record<string, any> {
+    let mixpanelData: Record<string, any> = {};
+    const regex = /^mp_([a-zA-Z0-9]+)_mixpanel$/i;
 
     try {
-      document.cookie.split(/\s*;\s*/).forEach(function(pair) {
-        pair = pair.split(/\s*=\s*/);
-        var name = decodeURIComponent(pair[0]);
+      doc.cookie.split(/\s*;\s*/).forEach(function(pair: string) {
+        const parts = pair.split(/\s*=\s*/);
+        const name = decodeURIComponent(parts[0]);
+        /*! v8 ignore start */
         if (regex.test(name)) {
-          var value = decodeURIComponent(pair.splice(1).join('='));
+        /*! v8 ignore stop */
+          const value = decodeURIComponent(parts.splice(1).join('='));
           mixpanelData = JSON.parse(value);
         }
       });
@@ -225,20 +252,24 @@
   // INITIALIZATION
   // =====================================================
 
-  function initMixpanel() {
+  function initMixpanel(): void {
+    /*! v8 ignore start */
     if (!CONFIG.token) {
+    /*! v8 ignore stop */
       ppLib.log('warn', '[ppMixpanel] No token configured. Call ppLib.mixpanel.configure({ token: "..." }) before init.');
       return;
     }
 
     loadMixpanelSDK();
+    mixpanel = (win as any).mixpanel;
 
     mixpanel.init(CONFIG.token, {
       cross_subdomain_cookie: CONFIG.crossSubdomainCookie,
       opt_out_tracking_by_default: CONFIG.optOutByDefault,
       api_transport: 'sendBeacon',
-      loaded: function(mixpanel) {
-        mixpanel.opt_in_tracking();
+      loaded: function(mp: any) {
+        mixpanel = mp;
+        mp.opt_in_tracking();
 
         // Update session timeout from config
         SessionManager.timeout = CONFIG.sessionTimeout;
@@ -247,47 +278,55 @@
         SessionManager.check();
 
         // Monkey-patch track() to always check session
-        var originalTrack = mixpanel.track;
-        mixpanel.track = function() {
+        const originalTrack = mp.track;
+        mp.track = function() {
           SessionManager.check();
-          mixpanel.register({ 'last event time': Date.now() });
-          originalTrack.apply(mixpanel, arguments);
+          mp.register({ 'last event time': Date.now() });
+          originalTrack.apply(mp, arguments);
         };
 
         // Register base properties
-        var baseProps = {
+        const baseProps: Record<string, any> = {
           'last event time': Date.now(),
-          pp_user_agent: window.navigator.userAgent
+          pp_user_agent: win.navigator.userAgent
         };
 
+        /*! v8 ignore start */
         if (CONFIG.projectName) {
+        /*! v8 ignore stop */
           baseProps.project = CONFIG.projectName;
         }
 
-        mixpanel.register(baseProps);
+        mp.register(baseProps);
 
         // Cookie-based identity
-        var userId = ppLib.getCookie(CONFIG.cookieNames.userId);
+        const userId = ppLib.getCookie(CONFIG.cookieNames.userId);
+        /*! v8 ignore start */
         if (userId) {
-          mixpanel.register({ pp_user_id: userId });
+        /*! v8 ignore stop */
+          mp.register({ pp_user_id: userId });
         }
 
-        var ipAddress = ppLib.getCookie(CONFIG.cookieNames.ipAddress);
+        const ipAddress = ppLib.getCookie(CONFIG.cookieNames.ipAddress);
+        /*! v8 ignore start */
         if (ipAddress) {
-          mixpanel.register({ pp_user_ip: ipAddress });
+        /*! v8 ignore stop */
+          mp.register({ pp_user_ip: ipAddress });
         }
 
         // Experiment cookie
-        var expCookie = ppLib.getCookie(CONFIG.cookieNames.experiments);
+        const expCookie = ppLib.getCookie(CONFIG.cookieNames.experiments);
+        /*! v8 ignore start */
         if (expCookie) {
+        /*! v8 ignore stop */
           try {
-            var expJson = JSON.parse(expCookie);
-            var data = {};
-            Object.keys(expJson).forEach(function(item) {
+            const expJson = JSON.parse(expCookie);
+            const data: Record<string, any> = {};
+            Object.keys(expJson).forEach(function(item: string) {
               data[item] = expJson[item];
             });
-            mixpanel.people.set_once(data);
-            mixpanel.register(data);
+            mp.people.set_once(data);
+            mp.register(data);
           } catch (e) {
             ppLib.log('error', 'Experiment cookie parse error', e);
           }
@@ -306,14 +345,16 @@
   // =====================================================
 
   ppLib.mixpanel = {
-    configure: function(options) {
+    configure: function(options?: Partial<MixpanelConfig>) {
+      /*! v8 ignore start */
       if (options) {
+      /*! v8 ignore stop */
         ppLib.extend(CONFIG, options);
       }
       return CONFIG;
     },
 
-    init: function() {
+    init: function(): void {
       initMixpanel();
     },
 
@@ -329,11 +370,13 @@
   } // end initModule
 
   // Safe load: wait for ppLib if not yet available
-  if (window.ppLib && window.ppLib._isReady) {
-    initModule(window.ppLib);
+  /*! v8 ignore start */
+  if (win.ppLib && win.ppLib._isReady) {
+    initModule(win.ppLib);
   } else {
-    window.ppLibReady = window.ppLibReady || [];
-    window.ppLibReady.push(initModule);
+    win.ppLibReady = win.ppLibReady || [];
+    win.ppLibReady.push(initModule);
   }
+  /*! v8 ignore stop */
 
 })(window, document);

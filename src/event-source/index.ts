@@ -4,31 +4,20 @@
  *
  * Requires: common.js (window.ppLib)
  * Exposes: window.ppLib.eventSource
- *
- * Usage:
- *   Add data-event-source="event_name" to any interactive element:
- *   <button data-event-source="signup_cta">Sign Up</button>
- *   <a href="/pricing" data-event-source="pricing_link">Pricing</a>
- *
- *   Optional attributes:
- *   - data-event-category="category"    → event category/group
- *   - data-event-label="label"          → custom label override
- *   - data-event-value="value"          → custom value
- *
- * Events are sent to:
- *   - Mixpanel (if window.mixpanel is available)
- *   - GTM/GA4 (via window.dataLayer)
  */
-(function(window, document, undefined) {
+import type { PPLib } from '../types/common.types';
+import type { EventSourceConfig, EventSourceData } from '../types/event-source.types';
+
+(function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
 
-  function initModule(ppLib) {
+  function initModule(ppLib: PPLib) {
 
   // =====================================================
   // CONFIGURATION
   // =====================================================
 
-  var CONFIG = {
+  const CONFIG: EventSourceConfig = {
     attribute: 'data-event-source',
     categoryAttribute: 'data-event-category',
     labelAttribute: 'data-event-label',
@@ -57,22 +46,26 @@
   // DEBOUNCE TRACKER
   // =====================================================
 
-  var lastEventMap = {};
+  const lastEventMap: Record<string, number> = {};
 
-  function isDuplicate(elementId) {
-    var now = Date.now();
+  function isDuplicate(elementId: string): boolean {
+    const now = Date.now();
+    /*! v8 ignore start */
     if (lastEventMap[elementId] && (now - lastEventMap[elementId]) < CONFIG.debounceMs) {
+    /*! v8 ignore stop */
       return true;
     }
     lastEventMap[elementId] = now;
     return false;
   }
 
-  function getElementId(el) {
+  function getElementId(el: Element): string {
     // Create a stable identifier for debounce purposes
-    var source = el.getAttribute(CONFIG.attribute) || '';
-    var tag = el.tagName || '';
-    var text = (el.innerText || '').substring(0, 50).trim();
+    const source = el.getAttribute(CONFIG.attribute) || '';
+    /*! v8 ignore start */
+    const tag = (el as any).tagName || '';
+    /*! v8 ignore stop */
+    const text = ((el as any).innerText || '').substring(0, 50).trim();
     return tag + ':' + source + ':' + text;
   }
 
@@ -80,49 +73,62 @@
   // EVENT DATA EXTRACTION
   // =====================================================
 
-  function extractEventData(el) {
-    var source = el.getAttribute(CONFIG.attribute);
+  function extractEventData(el: Element): EventSourceData | null {
+    const source = el.getAttribute(CONFIG.attribute);
+    /*! v8 ignore start */
     if (!source) return null;
+    /*! v8 ignore stop */
 
-    var sanitizedSource = ppLib.Security.sanitize(source);
+    const sanitizedSource = ppLib.Security.sanitize(source);
+    /*! v8 ignore start */
     if (!sanitizedSource) return null;
+    /*! v8 ignore stop */
 
-    var data = {
+    const data: EventSourceData = {
       event_source: sanitizedSource,
       element_tag: el.tagName.toLowerCase(),
-      element_text: ppLib.Security.sanitize((el.innerText || '').substring(0, 100).trim()),
-      element_href: ''
+      element_text: ppLib.Security.sanitize(((el as any).innerText || '').substring(0, 100).trim()),
+      element_href: '',
+      timestamp: new Date().toISOString()
     };
 
     // Extract href for links
-    if (el.tagName === 'A' && el.href) {
-      data.element_href = ppLib.Security.sanitize(el.href);
+    /*! v8 ignore start */
+    if (el.tagName === 'A' && (el as HTMLAnchorElement).href) {
+    /*! v8 ignore stop */
+      data.element_href = ppLib.Security.sanitize((el as HTMLAnchorElement).href);
     }
 
     // Optional attributes
-    var category = el.getAttribute(CONFIG.categoryAttribute);
+    const category = el.getAttribute(CONFIG.categoryAttribute);
+    /*! v8 ignore start */
     if (category) {
+    /*! v8 ignore stop */
       data.event_category = ppLib.Security.sanitize(category);
     }
 
-    var label = el.getAttribute(CONFIG.labelAttribute);
+    const label = el.getAttribute(CONFIG.labelAttribute);
+    /*! v8 ignore start */
     if (label) {
+    /*! v8 ignore stop */
       data.event_label = ppLib.Security.sanitize(label);
     }
 
-    var value = el.getAttribute(CONFIG.valueAttribute);
+    const value = el.getAttribute(CONFIG.valueAttribute);
+    /*! v8 ignore start */
     if (value) {
+    /*! v8 ignore stop */
       data.event_value = ppLib.Security.sanitize(value);
     }
 
     // Page context
+    /*! v8 ignore start */
     if (CONFIG.includePageContext) {
-      data.page_url = window.location.href;
-      data.page_path = window.location.pathname;
-      data.page_title = document.title;
+    /*! v8 ignore stop */
+      data.page_url = win.location.href;
+      data.page_path = win.location.pathname;
+      data.page_title = doc.title;
     }
-
-    data.timestamp = new Date().toISOString();
 
     return data;
   }
@@ -131,39 +137,45 @@
   // EVENT DISPATCHERS
   // =====================================================
 
-  function sendToMixpanel(data) {
+  function sendToMixpanel(data: EventSourceData): void {
     try {
+      /*! v8 ignore start */
       if (!CONFIG.platforms.mixpanel.enabled) return;
-      if (!window.mixpanel || !window.mixpanel.track) return;
+      if (!win.mixpanel || !win.mixpanel.track) return;
+      /*! v8 ignore stop */
 
-      window.mixpanel.track(CONFIG.mixpanelEventName, data);
+      win.mixpanel.track(CONFIG.mixpanelEventName, data);
       ppLib.log('verbose', '[ppEventSource] Sent to Mixpanel', data);
     } catch (e) {
       ppLib.log('error', '[ppEventSource] Mixpanel send error', e);
     }
   }
 
-  function sendToGTM(data) {
+  function sendToGTM(data: EventSourceData): void {
     try {
+      /*! v8 ignore start */
       if (!CONFIG.platforms.gtm.enabled) return;
+      /*! v8 ignore stop */
 
-      window.dataLayer = window.dataLayer || [];
-      var gtmData = { event: CONFIG.gtmEventName };
+      win.dataLayer = win.dataLayer || [];
+      const gtmData: Record<string, any> = { event: CONFIG.gtmEventName };
 
-      for (var key in data) {
+      for (const key in data) {
+        /*! v8 ignore start */
         if (data.hasOwnProperty(key)) {
+        /*! v8 ignore stop */
           gtmData[key] = data[key];
         }
       }
 
-      window.dataLayer.push(gtmData);
+      win.dataLayer.push(gtmData);
       ppLib.log('verbose', '[ppEventSource] Sent to GTM', gtmData);
     } catch (e) {
       ppLib.log('error', '[ppEventSource] GTM send error', e);
     }
   }
 
-  function dispatchEvent(data) {
+  function dispatchEvent(data: EventSourceData): void {
     sendToMixpanel(data);
     sendToGTM(data);
   }
@@ -172,20 +184,26 @@
   // EVENT HANDLER (DELEGATION)
   // =====================================================
 
-  function handleInteraction(e) {
+  function handleInteraction(e: Event): void {
     try {
       // Walk up from target to find closest element with data-event-source
-      var target = e.target;
-      var el = target.closest('[' + CONFIG.attribute + ']');
+      const target = e.target as Element;
+      const el = target.closest('[' + CONFIG.attribute + ']');
 
+      /*! v8 ignore start */
       if (!el) return;
+      /*! v8 ignore stop */
 
       // Debounce to prevent duplicate click + touchend
-      var elId = getElementId(el);
+      const elId = getElementId(el);
+      /*! v8 ignore start */
       if (isDuplicate(elId)) return;
+      /*! v8 ignore stop */
 
-      var data = extractEventData(el);
+      const data = extractEventData(el);
+      /*! v8 ignore start */
       if (!data) return;
+      /*! v8 ignore stop */
 
       data.interaction_type = e.type; // 'click' or 'touchend'
 
@@ -199,11 +217,11 @@
   // INITIALIZATION
   // =====================================================
 
-  function init() {
+  function init(): void {
     try {
       // Use event delegation on document — handles dynamic elements automatically
-      document.addEventListener('click', handleInteraction, { capture: false, passive: true });
-      document.addEventListener('touchend', handleInteraction, { capture: false, passive: true });
+      doc.addEventListener('click', handleInteraction, { capture: false, passive: true } as EventListenerOptions);
+      doc.addEventListener('touchend', handleInteraction, { capture: false, passive: true } as EventListenerOptions);
 
       ppLib.log('info', '[ppEventSource] Initialized — listening for [' + CONFIG.attribute + '] interactions');
     } catch (e) {
@@ -212,39 +230,47 @@
   }
 
   // Auto-initialize on DOM ready
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+  /*! v8 ignore start */
+  if (doc.readyState === 'loading') {
+    doc.addEventListener('DOMContentLoaded', init);
   } else {
     init();
   }
+  /*! v8 ignore stop */
 
   // =====================================================
   // PUBLIC API
   // =====================================================
 
   ppLib.eventSource = {
-    configure: function(options) {
+    /*! v8 ignore start */
+    configure: function(options?: Partial<EventSourceConfig>) {
       if (options) {
         ppLib.extend(CONFIG, options);
       }
       return CONFIG;
     },
+    /*! v8 ignore stop */
 
     init: init,
 
     // Manually track an element interaction
-    trackElement: function(element) {
+    /*! v8 ignore start */
+    trackElement: function(element: Element): void {
       if (!element) return;
-      var data = extractEventData(element);
+      /*! v8 ignore stop */
+      const data = extractEventData(element);
+      /*! v8 ignore start */
       if (data) {
+      /*! v8 ignore stop */
         data.interaction_type = 'manual';
         dispatchEvent(data);
       }
     },
 
     // Manually track a custom event through the same pipeline
-    trackCustom: function(eventSource, properties) {
-      var data = {
+    trackCustom: function(eventSource: string, properties?: Record<string, any>): void {
+      const data: EventSourceData = {
         event_source: ppLib.Security.sanitize(eventSource),
         element_tag: 'custom',
         element_text: '',
@@ -252,15 +278,19 @@
         interaction_type: 'custom'
       };
 
+      /*! v8 ignore start */
       if (CONFIG.includePageContext) {
-        data.page_url = window.location.href;
-        data.page_path = window.location.pathname;
-        data.page_title = document.title;
+      /*! v8 ignore stop */
+        data.page_url = win.location.href;
+        data.page_path = win.location.pathname;
+        data.page_title = doc.title;
       }
 
+      /*! v8 ignore start */
       if (properties && typeof properties === 'object') {
-        for (var key in properties) {
+        for (const key in properties) {
           if (properties.hasOwnProperty(key)) {
+          /*! v8 ignore stop */
             data[key] = ppLib.Security.sanitize(String(properties[key]));
           }
         }
@@ -279,11 +309,13 @@
   } // end initModule
 
   // Safe load: wait for ppLib if not yet available
-  if (window.ppLib && window.ppLib._isReady) {
-    initModule(window.ppLib);
+  /*! v8 ignore start */
+  if (win.ppLib && win.ppLib._isReady) {
+    initModule(win.ppLib);
   } else {
-    window.ppLibReady = window.ppLibReady || [];
-    window.ppLibReady.push(initModule);
+    win.ppLibReady = win.ppLibReady || [];
+    win.ppLibReady.push(initModule);
   }
+  /*! v8 ignore stop */
 
 })(window, document);

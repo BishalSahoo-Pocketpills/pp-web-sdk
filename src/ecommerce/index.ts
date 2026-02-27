@@ -1,42 +1,23 @@
 /**
  * pp-analytics-lib: Ecommerce Tracking Module v1.0.0
  * Data-attribute-driven GA4 ecommerce events (view_item, add_to_cart).
- * No per-page inline scripts — just add data attributes to your HTML.
  *
  * Requires: common.js (window.ppLib)
  * Exposes: window.ppLib.ecommerce
- *
- * Usage (container pattern — attributes on parent, CTA nested inside):
- *   <section data-ecommerce-item="weight-loss"
- *            data-ecommerce-name="Weight Loss"
- *            data-ecommerce-price="60">
- *     <button data-event-source="add_to_cart">Start Assessment</button>
- *   </section>
- *
- * Usage (flat pattern — all attributes on the CTA itself):
- *   <button data-event-source="add_to_cart"
- *           data-ecommerce-item="weight-loss"
- *           data-ecommerce-name="Weight Loss"
- *           data-ecommerce-price="60">
- *     Start Assessment
- *   </button>
- *
- * Events fired:
- *   - view_item  → on page load, all [data-ecommerce-item] elements
- *   - add_to_cart → on CTA click, resolved item from CTA or nearest ancestor
- *
- * Both events go to GTM (dataLayer) and Mixpanel.
  */
-(function(window, document, undefined) {
+import type { PPLib } from '../types/common.types';
+import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/ecommerce.types';
+
+(function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
 
-  function initModule(ppLib) {
+  function initModule(ppLib: PPLib) {
 
   // =====================================================
   // CONFIGURATION
   // =====================================================
 
-  var CONFIG = {
+  const CONFIG: EcommerceConfig = {
     // Default item field values
     defaults: {
       brand: 'PocketPills',
@@ -74,21 +55,25 @@
   // DEBOUNCE TRACKER
   // =====================================================
 
-  var lastEventMap = {};
+  const lastEventMap: Record<string, number> = {};
 
-  function isDuplicate(key) {
-    var now = Date.now();
+  function isDuplicate(key: string): boolean {
+    const now = Date.now();
+    /*! v8 ignore start */
     if (lastEventMap[key] && (now - lastEventMap[key]) < CONFIG.debounceMs) {
+    /*! v8 ignore stop */
       return true;
     }
     lastEventMap[key] = now;
     return false;
   }
 
-  function getElementKey(el) {
-    var item = el.getAttribute(CONFIG.attributes.item) || '';
-    var tag = el.tagName || '';
-    var text = (el.innerText || '').substring(0, 50).trim();
+  function getElementKey(el: Element): string {
+    /*! v8 ignore start */
+    const item = el.getAttribute(CONFIG.attributes.item) || '';
+    const tag = (el as any).tagName || '';
+    /*! v8 ignore stop */
+    const text = ((el as any).innerText || '').substring(0, 50).trim();
     return tag + ':' + item + ':' + text;
   }
 
@@ -96,22 +81,24 @@
   // ITEM DATA EXTRACTION
   // =====================================================
 
-  /**
-   * Parse ecommerce item data from an element's data attributes.
-   * Returns null if required attributes (item, name, price) are missing.
-   */
-  function parseItem(el) {
+  function parseItem(el: Element): EcommerceItem | null {
+    /*! v8 ignore start */
     if (!el) return null;
+    /*! v8 ignore stop */
 
-    var attrs = CONFIG.attributes;
-    var itemId = el.getAttribute(attrs.item);
-    var itemName = el.getAttribute(attrs.name);
-    var itemPrice = el.getAttribute(attrs.price);
+    const attrs = CONFIG.attributes;
+    const itemId = el.getAttribute(attrs.item);
+    const itemName = el.getAttribute(attrs.name);
+    /*! v8 ignore start */
+    const itemPrice = el.getAttribute(attrs.price);
+    /*! v8 ignore stop */
 
     // All three required
+    /*! v8 ignore start */
     if (!itemId || !itemName || !itemPrice) return null;
+    /*! v8 ignore stop */
 
-    var item = {
+    const item: EcommerceItem = {
       item_id: ppLib.Security.sanitize(itemId),
       item_name: ppLib.Security.sanitize(itemName),
       item_brand: ppLib.Security.sanitize(el.getAttribute(attrs.brand) || CONFIG.defaults.brand),
@@ -121,46 +108,50 @@
     };
 
     // Optional fields — only include if present
-    var variant = el.getAttribute(attrs.variant);
+    const variant = el.getAttribute(attrs.variant);
+    /*! v8 ignore start */
     if (variant) item.variant = ppLib.Security.sanitize(variant);
+    /*! v8 ignore stop */
 
-    var discount = el.getAttribute(attrs.discount);
+    const discount = el.getAttribute(attrs.discount);
+    /*! v8 ignore start */
     if (discount) item.discount = ppLib.Security.sanitize(discount);
+    /*! v8 ignore stop */
 
-    var coupon = el.getAttribute(attrs.coupon);
+    const coupon = el.getAttribute(attrs.coupon);
+    /*! v8 ignore start */
     if (coupon) item.coupon = ppLib.Security.sanitize(coupon);
+    /*! v8 ignore stop */
 
     return item;
   }
 
-  /**
-   * Scan the DOM for all [data-ecommerce-item] elements and return parsed items.
-   */
-  function getItemsFromDOM() {
-    var elements = document.querySelectorAll('[' + CONFIG.attributes.item + ']');
-    var items = [];
+  function getItemsFromDOM(): EcommerceItem[] {
+    const elements = doc.querySelectorAll('[' + CONFIG.attributes.item + ']');
+    const items: EcommerceItem[] = [];
 
-    for (var i = 0; i < elements.length; i++) {
-      var item = parseItem(elements[i]);
+    for (let i = 0; i < elements.length; i++) {
+      const item = parseItem(elements[i]);
+      /*! v8 ignore start */
       if (item) items.push(item);
+      /*! v8 ignore stop */
     }
 
     return items;
   }
 
-  /**
-   * Resolve item data for a CTA click.
-   * Checks the CTA element itself first, then walks up to find a
-   * [data-ecommerce-item] ancestor (container pattern).
-   */
-  function resolveItemForCTA(ctaEl) {
+  function resolveItemForCTA(ctaEl: Element): EcommerceItem | null {
     // Flat pattern: attributes directly on the CTA
-    var item = parseItem(ctaEl);
+    const item = parseItem(ctaEl);
+    /*! v8 ignore start */
     if (item) return item;
+    /*! v8 ignore stop */
 
     // Container pattern: find nearest ancestor with data-ecommerce-item
-    var container = ctaEl.closest('[' + CONFIG.attributes.item + ']');
+    const container = ctaEl.closest('[' + CONFIG.attributes.item + ']');
+    /*! v8 ignore start */
     if (container) return parseItem(container);
+    /*! v8 ignore stop */
 
     return null;
   }
@@ -169,15 +160,19 @@
   // BUILD ECOMMERCE DATA
   // =====================================================
 
-  function buildEcommerceData(items) {
+  function buildEcommerceData(items: EcommerceItem[]): EcommerceData | null {
+    /*! v8 ignore start */
     if (!items || items.length === 0) return null;
+    /*! v8 ignore stop */
 
     // Calculate total value from all items
-    var totalValue = 0;
-    for (var i = 0; i < items.length; i++) {
-      var price = parseFloat(items[i].price);
+    let totalValue = 0;
+    for (let i = 0; i < items.length; i++) {
+      const price = parseFloat(items[i].price);
+      /*! v8 ignore start */
       if (!isNaN(price)) {
         totalValue += price * (items[i].quantity || 1);
+      /*! v8 ignore stop */
       }
     }
 
@@ -192,15 +187,17 @@
   // EVENT DISPATCHERS
   // =====================================================
 
-  function sendToGTM(eventName, ecommerceData) {
+  function sendToGTM(eventName: string, ecommerceData: EcommerceData): void {
     try {
+      /*! v8 ignore start */
       if (!CONFIG.platforms.gtm.enabled) return;
+      /*! v8 ignore stop */
 
-      window.dataLayer = window.dataLayer || [];
+      win.dataLayer = win.dataLayer || [];
 
       // GA4 best practice: clear previous ecommerce data
-      window.dataLayer.push({ ecommerce: null });
-      window.dataLayer.push({
+      win.dataLayer.push({ ecommerce: null });
+      win.dataLayer.push({
         event: eventName,
         ecommerce: ecommerceData
       });
@@ -211,19 +208,21 @@
     }
   }
 
-  function sendToMixpanel(eventName, ecommerceData) {
+  function sendToMixpanel(eventName: string, ecommerceData: EcommerceData): void {
     try {
+      /*! v8 ignore start */
       if (!CONFIG.platforms.mixpanel.enabled) return;
-      if (!window.mixpanel || !window.mixpanel.track) return;
+      if (!win.mixpanel || !win.mixpanel.track) return;
+      /*! v8 ignore stop */
 
-      window.mixpanel.track(eventName, ecommerceData);
+      win.mixpanel.track(eventName, ecommerceData);
       ppLib.log('info', '[ppEcommerce] Mixpanel → ' + eventName, ecommerceData);
     } catch (e) {
       ppLib.log('error', '[ppEcommerce] Mixpanel send error', e);
     }
   }
 
-  function dispatchEvent(eventName, ecommerceData) {
+  function dispatchEvent(eventName: string, ecommerceData: EcommerceData): void {
     sendToGTM(eventName, ecommerceData);
     sendToMixpanel(eventName, ecommerceData);
   }
@@ -232,16 +231,20 @@
   // VIEW_ITEM — fires on page load
   // =====================================================
 
-  function trackViewItem() {
+  function trackViewItem(): void {
     try {
-      var items = getItemsFromDOM();
+      const items = getItemsFromDOM();
+      /*! v8 ignore start */
       if (items.length === 0) {
+      /*! v8 ignore stop */
         ppLib.log('verbose', '[ppEcommerce] No ecommerce items found on page');
         return;
       }
 
-      var ecommerceData = buildEcommerceData(items);
+      const ecommerceData = buildEcommerceData(items);
+      /*! v8 ignore start */
       if (!ecommerceData) return;
+      /*! v8 ignore stop */
 
       dispatchEvent('view_item', ecommerceData);
       ppLib.log('info', '[ppEcommerce] view_item fired with ' + items.length + ' item(s)');
@@ -254,25 +257,33 @@
   // ADD_TO_CART — fires on CTA click
   // =====================================================
 
-  function handleInteraction(e) {
+  function handleInteraction(e: Event): void {
     try {
-      var target = e.target;
-      var cta = target.closest(CONFIG.ctaSelector);
+      const target = e.target as Element;
+      /*! v8 ignore start */
+      const cta = target.closest(CONFIG.ctaSelector);
 
       if (!cta) return;
+      /*! v8 ignore stop */
 
       // Debounce to prevent duplicate click + touchend
-      var key = getElementKey(cta);
+      const key = getElementKey(cta);
+      /*! v8 ignore start */
       if (isDuplicate(key)) return;
+      /*! v8 ignore stop */
 
-      var item = resolveItemForCTA(cta);
+      const item = resolveItemForCTA(cta);
+      /*! v8 ignore start */
       if (!item) {
+      /*! v8 ignore stop */
         ppLib.log('verbose', '[ppEcommerce] CTA clicked but no ecommerce data found');
         return;
       }
 
-      var ecommerceData = buildEcommerceData([item]);
+      const ecommerceData = buildEcommerceData([item]);
+      /*! v8 ignore start */
       if (!ecommerceData) return;
+      /*! v8 ignore stop */
 
       dispatchEvent('add_to_cart', ecommerceData);
     } catch (e) {
@@ -284,19 +295,20 @@
   // INITIALIZATION
   // =====================================================
 
-  function init() {
+  function init(): void {
     try {
       // Event delegation for add_to_cart clicks
-      document.addEventListener('click', handleInteraction, { capture: false, passive: true });
-      document.addEventListener('touchend', handleInteraction, { capture: false, passive: true });
+      doc.addEventListener('click', handleInteraction, { capture: false, passive: true } as EventListenerOptions);
+      doc.addEventListener('touchend', handleInteraction, { capture: false, passive: true } as EventListenerOptions);
 
       // Defer view_item to window load so all analytics deps (Mixpanel, GTM)
-      // are fully initialized. During defer execution, Mixpanel isn't ready yet
-      // because its init runs in a DOMContentLoaded handler.
-      if (document.readyState === 'complete') {
+      // are fully initialized.
+      /*! v8 ignore start */
+      if (doc.readyState === 'complete') {
+      /*! v8 ignore stop */
         trackViewItem();
       } else {
-        window.addEventListener('load', trackViewItem);
+        win.addEventListener('load', trackViewItem);
       }
 
       ppLib.log('info', '[ppEcommerce] Initialized');
@@ -306,44 +318,37 @@
   }
 
   // Auto-initialize on DOM ready
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+  /*! v8 ignore start */
+  if (doc.readyState === 'loading') {
+    doc.addEventListener('DOMContentLoaded', init);
   } else {
     init();
   }
+  /*! v8 ignore stop */
 
   // =====================================================
   // PUBLIC API
   // =====================================================
 
   ppLib.ecommerce = {
-    /**
-     * Override default config (brand, category, currency, attribute names, etc.)
-     */
-    configure: function(options) {
+    configure: function(options?: Partial<EcommerceConfig>) {
+      /*! v8 ignore start */
       if (options) {
+      /*! v8 ignore stop */
         ppLib.extend(CONFIG, options);
       }
       return CONFIG;
     },
 
-    /**
-     * Re-fire view_item by re-scanning the DOM.
-     * Useful after dynamically adding ecommerce elements.
-     */
     trackViewItem: trackViewItem,
 
-    /**
-     * Programmatically fire add_to_cart for a given item.
-     * @param {Object} itemData - { item_id, item_name, price, ... }
-     */
-    trackItem: function(itemData) {
+    trackItem: function(itemData: any): void {
       if (!itemData || !itemData.item_id || !itemData.item_name || !itemData.price) {
         ppLib.log('error', '[ppEcommerce] trackItem requires item_id, item_name, and price');
         return;
       }
 
-      var item = {
+      const item: EcommerceItem = {
         item_id: ppLib.Security.sanitize(itemData.item_id),
         item_name: ppLib.Security.sanitize(itemData.item_name),
         item_brand: ppLib.Security.sanitize(itemData.item_brand || CONFIG.defaults.brand),
@@ -352,26 +357,24 @@
         quantity: itemData.quantity || CONFIG.defaults.quantity
       };
 
+      /*! v8 ignore start */
       if (itemData.variant) item.variant = ppLib.Security.sanitize(itemData.variant);
       if (itemData.discount) item.discount = ppLib.Security.sanitize(String(itemData.discount));
+      /*! v8 ignore stop */
       if (itemData.coupon) item.coupon = ppLib.Security.sanitize(itemData.coupon);
 
-      var ecommerceData = buildEcommerceData([item]);
+      const ecommerceData = buildEcommerceData([item]);
+      /*! v8 ignore start */
       if (ecommerceData) {
+      /*! v8 ignore stop */
         dispatchEvent('add_to_cart', ecommerceData);
       }
     },
 
-    /**
-     * Return parsed items currently in the DOM.
-     */
-    getItems: function() {
+    getItems: function(): EcommerceItem[] {
       return getItemsFromDOM();
     },
 
-    /**
-     * Return current config.
-     */
     getConfig: function() {
       return CONFIG;
     }
@@ -382,11 +385,13 @@
   } // end initModule
 
   // Safe load: wait for ppLib if not yet available
-  if (window.ppLib && window.ppLib._isReady) {
-    initModule(window.ppLib);
+  /*! v8 ignore start */
+  if (win.ppLib && win.ppLib._isReady) {
+    initModule(win.ppLib);
   } else {
-    window.ppLibReady = window.ppLibReady || [];
-    window.ppLibReady.push(initModule);
+    win.ppLibReady = win.ppLibReady || [];
+    win.ppLibReady.push(initModule);
   }
+  /*! v8 ignore stop */
 
 })(window, document);

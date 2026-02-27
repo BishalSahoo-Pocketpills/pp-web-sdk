@@ -5,6 +5,8 @@ const path = require('path');
 const srcDir = path.join(__dirname, 'src');
 const distDir = path.join(__dirname, 'dist');
 
+const MODULES = require('./modules');
+
 function findFiles(dir, ext) {
   const results = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -18,30 +20,27 @@ function findFiles(dir, ext) {
   return results;
 }
 
-const jsFiles = findFiles(srcDir, '.js');
 const cssFiles = findFiles(srcDir, '.css');
 
-const isWatch = process.argv.includes('--watch');
-
 async function build() {
-  // Ensure dist/ exists
   if (!fs.existsSync(distDir)) {
     fs.mkdirSync(distDir, { recursive: true });
   }
 
-  for (const file of jsFiles) {
-    const name = path.basename(path.dirname(file));
+  for (const moduleName of MODULES) {
+    const entryPoint = path.join(srcDir, moduleName, 'index.ts');
 
     await esbuild.build({
-      entryPoints: [file],
-      outfile: path.join(distDir, name + '.min.js'),
-      bundle: false,
+      entryPoints: [entryPoint],
+      outfile: path.join(distDir, moduleName + '.min.js'),
+      bundle: true,
+      format: 'iife',
       minify: true,
       target: ['es2018'],
       charset: 'utf8',
     });
 
-    console.log('Built: dist/' + name + '.min.js');
+    console.log('Built: dist/' + moduleName + '.min.js');
   }
 
   for (const file of cssFiles) {
