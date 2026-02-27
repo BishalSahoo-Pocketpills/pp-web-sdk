@@ -4,7 +4,7 @@
   "description": "Modular web SDK for analytics, attribution, login detection, event tracking, and more",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.build.json",
-    "build": "npm run typecheck && node build.js",
+    "build": "tsc --noEmit -p tsconfig.build.json && node build.js",
     "build:watch": "node build.js --watch",
     "test": "vitest run",
     "test:watch": "vitest",
