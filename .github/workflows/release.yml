@@ -20,14 +20,19 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Determine version bump type
         id: bump
@@ -68,13 +73,13 @@ jobs:
         id: version
         run: |
           CURRENT=$(node -p "require('./package.json').version")
-          npm version ${{ steps.bump.outputs.TYPE }} --no-git-tag-version
+          pnpm version ${{ steps.bump.outputs.TYPE }} --no-git-tag-version
           VERSION=$(node -p "require('./package.json').version")
 
           # If the tag already exists, keep bumping until we find a free version
           while git ls-remote --tags origin "refs/tags/v${VERSION}" | grep -q .; do
             echo "Tag v${VERSION} already exists, bumping again..."
-            npm version patch --no-git-tag-version
+            pnpm version patch --no-git-tag-version
             VERSION=$(node -p "require('./package.json').version")
           done
 
@@ -82,13 +87,13 @@ jobs:
           echo "New version: v$VERSION (was v$CURRENT)"
 
       - name: Build minified files
-        run: npm run build
+        run: pnpm run build
 
       - name: Commit version bump, tag, and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json
+          git add package.json
 
           # Only commit if there are changes (avoids error on re-runs)
           if git diff --cached --quiet; then
