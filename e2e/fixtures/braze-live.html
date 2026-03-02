@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head><title>Braze Live Integration Test</title></head>
+<body>
+  <!-- Scripts loaded from dist/ served by 'serve' -->
+  <script src="/common.min.js"></script>
+  <script src="/braze.min.js"></script>
+
+  <!-- ================================================================
+       FORM 1: Lead Capture — standard + custom attributes
+       ================================================================ -->
+  <form id="test-form" data-braze-form="lead_capture">
+    <input data-braze-attr="email" name="email" type="email" />
+    <input data-braze-attr="first_name" name="first_name" />
+    <input data-braze-attr="last_name" name="last_name" />
+    <input data-braze-attr="phone" name="phone" />
+    <input data-braze-attr="country" name="country" />
+    <input data-braze-attr="city" name="city" />
+    <input data-braze-attr="language" name="language" />
+    <input data-braze-attr="custom:preferred_pharmacy" name="pharmacy" />
+    <input data-braze-attr="custom:referral_source" name="referral" />
+    <button type="submit">Subscribe</button>
+  </form>
+
+  <!-- ================================================================
+       FORM 2: Custom event name override
+       ================================================================ -->
+  <form id="test-form-override" data-braze-form="contact_us"
+        data-braze-form-event="custom_contact_event">
+    <input data-braze-attr="email" name="email" type="email" />
+    <button type="submit">Contact</button>
+  </form>
+
+  <!-- ================================================================
+       EVENT: Click tracking with properties
+       ================================================================ -->
+  <button id="test-event-btn" data-braze-event="started_signup"
+          data-braze-prop-source="hero_banner"
+          data-braze-prop-plan="premium">
+    Get Started
+  </button>
+
+  <!-- ================================================================
+       PURCHASE: Click-driven purchase
+       ================================================================ -->
+  <button id="test-purchase-btn" data-braze-purchase="assessment-pkg"
+          data-braze-price="60"
+          data-braze-currency="CAD"
+          data-braze-quantity="2">
+    Buy Package
+  </button>
+
+  <!--
+    Credentials injected by Playwright via page.evaluate() calling
+    window.__initBrazeLive(apiKey, baseUrl, testUserId).
+  -->
+  <script>
+    window.__initBrazeLive = function(apiKey, baseUrl, testUserId) {
+      console.log('[braze-live] Initializing with apiKey:', apiKey ? apiKey.substring(0, 8) + '...' : 'MISSING');
+      console.log('[braze-live] baseUrl:', baseUrl);
+      console.log('[braze-live] testUserId:', testUserId);
+
+      ppLib.braze.configure({
+        sdk: {
+          apiKey: apiKey,
+          baseUrl: baseUrl
+        },
+        form: {
+          preventDefault: true
+        }
+      });
+      ppLib.braze.init();
+
+      // Identify the test user once SDK is ready
+      var attempts = 0;
+      var waitForReady = setInterval(function() {
+        attempts++;
+        if (ppLib.braze.isReady()) {
+          clearInterval(waitForReady);
+          console.log('[braze-live] SDK ready after ' + attempts + ' attempts');
+          ppLib.braze.identify(testUserId);
+          window.__brazeTestReady = true;
+        } else if (attempts % 20 === 0) {
+          console.log('[braze-live] Still waiting for SDK... attempt ' + attempts);
+        }
+      }, 100);
+    };
+  </script>
+</body>
+</html>

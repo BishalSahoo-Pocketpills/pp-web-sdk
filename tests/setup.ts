@@ -28,6 +28,7 @@ beforeEach(() => {
   delete window.logoutUser;
   delete window.dataLayer;
   delete window.mixpanel;
+  delete window.braze;
   delete window.OnetrustActiveGroups;
 
   // Clear all storage
