@@ -144,14 +144,20 @@ test.describe('Form Handling', () => {
     expect(userAttrs.phone).toBe('555-1234');
   });
 
-  test('form submit sets custom user attributes (custom: prefix)', async ({ page }) => {
+  test('form submit sets multiple custom attributes in one go (custom: prefix)', async ({ page }) => {
     await page.fill('#test-form [name="email"]', 'test@example.com');
     await page.fill('#test-form [name="pharmacy"]', 'Downtown Pharmacy');
+    await page.fill('#test-form [name="insurance"]', 'Sun Life');
+    await page.fill('#test-form [name="province"]', 'ON');
+    await page.fill('#test-form [name="referral"]', 'google_ads');
     await page.click('#test-form button[type="submit"]');
     await page.waitForTimeout(100);
 
     const customAttrs = await getBrazeCustomAttrs(page);
     expect(customAttrs.preferred_pharmacy).toBe('Downtown Pharmacy');
+    expect(customAttrs.insurance_provider).toBe('Sun Life');
+    expect(customAttrs.province).toBe('ON');
+    expect(customAttrs.referral_source).toBe('google_ads');
   });
 
   test('form with data-braze-form-event uses custom event name', async ({ page }) => {
@@ -356,6 +362,32 @@ test.describe('Identity', () => {
     );
 
     expect(changeUserCall).toBeDefined();
+  });
+
+  test('setUserAttributes() sets standard + multiple custom attributes in one call', async ({ page }) => {
+    await page.evaluate(() => {
+      (window as any).ppLib.braze.setUserAttributes({
+        email: 'bulk@example.com',
+        first_name: 'Jane',
+        phone: '+1-555-0199',
+        loyalty_tier: 'gold',
+        preferred_pharmacy: 'Queen St Pharmacy',
+        signup_channel: 'webflow',
+        province: 'ON'
+      });
+    });
+    await page.waitForTimeout(100);
+
+    const userAttrs = await getBrazeUserAttrs(page);
+    expect(userAttrs.email).toBe('bulk@example.com');
+    expect(userAttrs.first_name).toBe('Jane');
+    expect(userAttrs.phone).toBe('+1-555-0199');
+
+    const customAttrs = await getBrazeCustomAttrs(page);
+    expect(customAttrs.loyalty_tier).toBe('gold');
+    expect(customAttrs.preferred_pharmacy).toBe('Queen St Pharmacy');
+    expect(customAttrs.signup_channel).toBe('webflow');
+    expect(customAttrs.province).toBe('ON');
   });
 
   test('setEmail() calls braze.getUser().setEmail()', async ({ page }) => {

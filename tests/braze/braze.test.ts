@@ -433,6 +433,52 @@ describe('setUserAttributes()', () => {
     expect(mockBraze._mockUser.setCustomUserAttribute).toHaveBeenCalledWith('preferred_pharmacy', 'downtown');
   });
 
+  it('sets multiple custom attributes in a single call', () => {
+    loadWithCommon('braze');
+    const mockBraze = createMockBraze();
+    window.braze = mockBraze as any;
+
+    window.ppLib.braze!.setUserAttributes({
+      preferred_pharmacy: 'Downtown Pharmacy',
+      insurance_provider: 'Sun Life',
+      province: 'ON',
+      referral_source: 'google_ads',
+      medication_interest: 'weight-loss'
+    });
+
+    expect(mockBraze._mockUser.setCustomUserAttribute).toHaveBeenCalledTimes(5);
+    expect(mockBraze._mockUser.setCustomUserAttribute).toHaveBeenCalledWith('preferred_pharmacy', 'Downtown Pharmacy');
+    expect(mockBraze._mockUser.setCustomUserAttribute).toHaveBeenCalledWith('insurance_provider', 'Sun Life');
+    expect(mockBraze._mockUser.setCustomUserAttribute).toHaveBeenCalledWith('province', 'ON');
+    expect(mockBraze._mockUser.setCustomUserAttribute).toHaveBeenCalledWith('referral_source', 'google_ads');
+    expect(mockBraze._mockUser.setCustomUserAttribute).toHaveBeenCalledWith('medication_interest', 'weight-loss');
+  });
+
+  it('sets standard and custom attributes together in a single call', () => {
+    loadWithCommon('braze');
+    const mockBraze = createMockBraze();
+    window.braze = mockBraze as any;
+
+    window.ppLib.braze!.setUserAttributes({
+      email: 'jane@example.com',
+      first_name: 'Jane',
+      phone: '+1-555-0199',
+      loyalty_tier: 'gold',
+      preferred_pharmacy: 'Queen St',
+      signup_channel: 'webflow'
+    });
+
+    // Standard attributes → dedicated setters
+    expect(mockBraze._mockUser.setEmail).toHaveBeenCalledWith('jane@example.com');
+    expect(mockBraze._mockUser.setFirstName).toHaveBeenCalledWith('Jane');
+    expect(mockBraze._mockUser.setPhoneNumber).toHaveBeenCalledWith('+1-555-0199');
+    // Custom attributes → setCustomUserAttribute
+    expect(mockBraze._mockUser.setCustomUserAttribute).toHaveBeenCalledWith('loyalty_tier', 'gold');
+    expect(mockBraze._mockUser.setCustomUserAttribute).toHaveBeenCalledWith('preferred_pharmacy', 'Queen St');
+    expect(mockBraze._mockUser.setCustomUserAttribute).toHaveBeenCalledWith('signup_channel', 'webflow');
+    expect(mockBraze._mockUser.setCustomUserAttribute).toHaveBeenCalledTimes(3);
+  });
+
   it('uses attributeMap for remapping', () => {
     loadWithCommon('braze');
     window.ppLib.braze!.configure({
@@ -654,6 +700,39 @@ describe('Form Handling', () => {
     form.dispatchEvent(new Event('submit', { bubbles: true }));
 
     expect(mockBraze._mockUser.setCustomUserAttribute).toHaveBeenCalledWith('preferred_pharmacy', 'downtown');
+  });
+
+  it('sets multiple custom: prefix fields from a single form submit', () => {
+    const mockBraze = initWithMock();
+
+    document.body.innerHTML = `
+      <form data-braze-form="patient_profile">
+        <input data-braze-attr="email" value="test@example.com">
+        <input data-braze-attr="first_name" value="Jane">
+        <input data-braze-attr="custom:preferred_pharmacy" value="Downtown Pharmacy">
+        <input data-braze-attr="custom:insurance_provider" value="Sun Life">
+        <input data-braze-attr="custom:province" value="ON">
+        <input data-braze-attr="custom:referral_source" value="google_ads">
+        <input data-braze-attr="custom:medication_interest" value="weight-loss">
+        <button type="submit">Submit</button>
+      </form>
+    `;
+
+    const form = document.querySelector('form')!;
+    form.dispatchEvent(new Event('submit', { bubbles: true }));
+
+    // Standard attributes → dedicated setters
+    expect(mockBraze._mockUser.setEmail).toHaveBeenCalledWith('test@example.com');
+    expect(mockBraze._mockUser.setFirstName).toHaveBeenCalledWith('Jane');
+    // All 5 custom attributes → setCustomUserAttribute
+    expect(mockBraze._mockUser.setCustomUserAttribute).toHaveBeenCalledTimes(5);
+    expect(mockBraze._mockUser.setCustomUserAttribute).toHaveBeenCalledWith('preferred_pharmacy', 'Downtown Pharmacy');
+    expect(mockBraze._mockUser.setCustomUserAttribute).toHaveBeenCalledWith('insurance_provider', 'Sun Life');
+    expect(mockBraze._mockUser.setCustomUserAttribute).toHaveBeenCalledWith('province', 'ON');
+    expect(mockBraze._mockUser.setCustomUserAttribute).toHaveBeenCalledWith('referral_source', 'google_ads');
+    expect(mockBraze._mockUser.setCustomUserAttribute).toHaveBeenCalledWith('medication_interest', 'weight-loss');
+    // Event still fires
+    expect(mockBraze.logCustomEvent).toHaveBeenCalledWith('form_submitted_patient_profile', expect.any(Object));
   });
 
   it('uses data-braze-form-event override for event name', () => {
