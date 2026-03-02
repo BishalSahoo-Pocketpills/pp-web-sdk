@@ -1,389 +1,356 @@
 # pp-web-sdk
 
-Modular web SDK for analytics, attribution, login detection, event tracking, and more.
+Modular web SDK for PocketPills web properties. Provides analytics, attribution, login detection, ecommerce tracking, Mixpanel integration, and Braze engagement — all driven by HTML data attributes.
 
-## Modules
+**Version:** 2.0.1 | **Language:** TypeScript | **Build:** esbuild (IIFE) | **Tests:** Vitest + Playwright
 
-| Module | File | Description |
-|--------|------|-------------|
-| **Common** | `common/index.js` | Shared utilities, security, storage — **load first** |
-| **Analytics** | `analytics/index.js` | UTM/ad attribution, consent, GTM/GA4/Mixpanel event queue |
-| **Mixpanel** | `mixpanel/index.js` | Mixpanel SDK loader, session management, campaign params |
-| **Login** | `login/index.js` | Cookie-based auth detection, body class management, identity DOM injection |
-| **Event Source** | `event-source/index.js` | Auto-track clicks/taps on `data-event-source` elements |
-| **Ecommerce** | `ecommerce/index.js` | Data-attribute-driven GA4 ecommerce events (`view_item`, `add_to_cart`) |
-| **Login CSS** | `login/index.css` | Login visibility CSS for `data-visibility` elements |
+---
 
-## Installation
+## Architecture
 
-### Script Tags (via Cloudflare Pages CDN)
+The SDK is a collection of **independent IIFE modules** that share a common foundation via `window.ppLib`. Each module is a self-contained JavaScript bundle that can be loaded individually based on page requirements.
+
+```
+window.ppLib                     (common.min.js — MUST load first)
+  ├── .version                   → SDK version
+  ├── .config                    → Global configuration
+  ├── .log(level, msg, data?)    → Debug/verbose logger
+  ├── .SafeUtils                 → Null-safe get/set/forEach/exists
+  ├── .Security                  → Input sanitization & XSS prevention
+  ├── .Storage                   → sessionStorage/localStorage abstraction
+  ├── .getCookie(name)           → Cookie reader
+  ├── .deleteCookie(name)        → Cookie remover
+  ├── .getQueryParam(url, param) → URL parameter extractor
+  ├── .extend(target, source)    → Deep object merge (prototype-safe)
+  ├── .login                     → Auth state & body class management
+  ├── .ecommerce                 → GA4 ecommerce events
+  ├── .eventSource               → Click/tap event tracking
+  ├── .mixpanel                  → Mixpanel SDK wrapper & sessions
+  └── .braze                     → Braze engagement platform
+
+window.ppAnalytics               (analytics.min.js)
+  ├── .config(options?)          → Attribution & multi-platform analytics
+  ├── .consent                   → Grant/revoke/status consent management
+  ├── .track(event, props?)      → Multi-platform event dispatch
+  ├── .getAttribution()          → First/last touch data
+  └── .registerPlatform(name, h) → Custom platform registration
+```
+
+### Module Loading Order
+
+`common.min.js` **must** load first. It initializes `window.ppLib` and processes the `ppLibReady` callback queue. All other modules register themselves via this queue, so they can load in any order after common.
 
 ```html
-<!-- Styles — load early to prevent FOUC -->
-<link rel="stylesheet" href="https://pp-web-sdk-v1.pages.dev/login.min.css">
+<!-- Required: loads first -->
+<script src="https://cdn.example.com/common.min.js"></script>
 
-<!-- Load all modules with defer to preserve execution order -->
-<script defer src="https://pp-web-sdk-v1.pages.dev/common.min.js"></script>
-<script defer src="https://pp-web-sdk-v1.pages.dev/analytics.min.js"></script>
-<script defer src="https://pp-web-sdk-v1.pages.dev/mixpanel.min.js"></script>
-<script defer src="https://pp-web-sdk-v1.pages.dev/event-source.min.js"></script>
-<script defer src="https://pp-web-sdk-v1.pages.dev/ecommerce.min.js"></script>
-<script defer src="https://pp-web-sdk-v1.pages.dev/login.min.js"></script>
+<!-- Optional: load only what the page needs, in any order -->
+<script src="https://cdn.example.com/analytics.min.js"></script>
+<script src="https://cdn.example.com/login.min.js"></script>
+<script src="https://cdn.example.com/braze.min.js"></script>
+```
 
-<!-- Configure Mixpanel after modules load -->
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    if (window.ppLib && window.ppLib.mixpanel) {
-      ppLib.mixpanel.configure({
-        token: 'YOUR_MIXPANEL_TOKEN',
-        projectName: 'your-project'
+### Module Registry
+
+| Module | Output File | Global API | Purpose | README |
+|---|---|---|---|---|
+| common | `common.min.js` | `window.ppLib` | Shared utilities, security, storage | [src/common/](src/common/README.md) |
+| analytics | `analytics.min.js` | `window.ppAnalytics` | Attribution, consent, multi-platform events | [src/analytics/](src/analytics/README.md) |
+| ecommerce | `ecommerce.min.js` | `ppLib.ecommerce` | GA4 ecommerce events from data attributes | [src/ecommerce/](src/ecommerce/README.md) |
+| event-source | `event-source.min.js` | `ppLib.eventSource` | Click/tap tracking via `data-event-source` | [src/event-source/](src/event-source/README.md) |
+| login | `login.min.js` | `ppLib.login` | Auth state detection, body classes, identity | [src/login/](src/login/README.md) |
+| mixpanel | `mixpanel.min.js` | `ppLib.mixpanel` | Mixpanel SDK loader, sessions, UTM | [src/mixpanel/](src/mixpanel/README.md) |
+| braze | `braze.min.js` | `ppLib.braze` | Braze forms, events, purchases, identity | [src/braze/](src/braze/README.md) |
+
+---
+
+## Quick Start
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <!-- Styles — load early to prevent FOUC -->
+  <link rel="stylesheet" href="https://cdn.example.com/login.min.css">
+
+  <!-- Load modules with defer to preserve execution order -->
+  <script defer src="https://cdn.example.com/common.min.js"></script>
+  <script defer src="https://cdn.example.com/analytics.min.js"></script>
+  <script defer src="https://cdn.example.com/login.min.js"></script>
+  <script defer src="https://cdn.example.com/ecommerce.min.js"></script>
+  <script defer src="https://cdn.example.com/event-source.min.js"></script>
+  <script defer src="https://cdn.example.com/braze.min.js"></script>
+</head>
+<body>
+  <!-- Event tracking via data attributes — no JavaScript needed -->
+  <button data-event-source="signup_cta"
+          data-braze-event="started_signup"
+          data-braze-prop-source="hero_banner">
+    Get Started
+  </button>
+
+  <!-- Ecommerce tracking -->
+  <section data-ecommerce-item="weight-loss"
+           data-ecommerce-name="Weight Loss"
+           data-ecommerce-price="60">
+    <button data-event-source="add_to_cart">Start Assessment</button>
+  </section>
+
+  <!-- Login-aware visibility -->
+  <div data-visibility="logged-out">
+    <button data-event-source="login_cta">Log In</button>
+  </div>
+  <div data-visibility="logged-in">
+    Welcome, <span data-login-identifier-key="user-first-name"></span>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Configure Braze
+      ppLib.braze.configure({
+        sdk: { apiKey: 'YOUR_KEY', baseUrl: 'sdk.iad-07.braze.com' }
       });
+      ppLib.braze.init();
+
+      // Configure Mixpanel
+      ppLib.mixpanel.configure({ token: 'YOUR_TOKEN' });
       ppLib.mixpanel.init();
-    }
-  });
-</script>
+    });
+  </script>
+</body>
+</html>
 ```
 
-> **Important:** Always use `defer` (not `async`) to guarantee execution order. The configure/init call must be inside `DOMContentLoaded` since `defer` scripts execute before that event fires.
+> **Important:** Use `defer` (not `async`) to guarantee execution order. Configure/init calls should be inside `DOMContentLoaded` since `defer` scripts execute before that event fires.
 
-For version-pinned URLs (recommended for production), use the deploy hash:
-```
-https://<deploy-hash>.pp-web-sdk-v1.pages.dev/common.min.js
-```
+---
 
-### Local Development
+## Development
+
+### Prerequisites
+
+- Node.js >= 18
+- pnpm
+
+### Setup
 
 ```bash
-npm install
-npm run build
+pnpm install
+npx playwright install   # for e2e tests
 ```
 
-## Configuration
+### Build
 
-### Mixpanel
-
-```html
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    if (window.ppLib && window.ppLib.mixpanel) {
-      ppLib.mixpanel.configure({
-        token: 'YOUR_MIXPANEL_TOKEN',
-        projectName: 'your-project',
-        cookieNames: {
-          userId: 'userId',
-          ipAddress: 'ipAddress',
-          experiments: 'exp'
-        }
-      });
-      ppLib.mixpanel.init();
-    }
-  });
-</script>
+```bash
+pnpm run build           # typecheck + esbuild → dist/
+pnpm run build:watch     # rebuild on file changes
 ```
 
-### Login Detection
+The build reads the module list from `modules.js` and compiles each `src/<module>/index.ts` into `dist/<module>.min.js`.
 
-```html
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    if (window.ppLib && window.ppLib.login) {
-      ppLib.login.configure({
-        cookieNames: {
-          userId: 'userId',
-          auth: 'Authorization'
-        }
-      });
-    }
-  });
-</script>
+| Setting | Value |
+|---|---|
+| Format | IIFE (immediately invoked function expression) |
+| Target | ES2018 |
+| Bundling | Enabled (all imports inlined) |
+| Minification | Enabled |
+| Charset | UTF-8 |
+
+### Test
+
+```bash
+pnpm test                # unit tests (Vitest + jsdom)
+pnpm run test:coverage   # unit tests with 100% coverage enforcement
+pnpm run test:e2e        # end-to-end tests (Playwright)
+pnpm run test:e2e:headed # e2e with visible browser
+pnpm run test:e2e:live   # live Braze round-trip tests (requires credentials)
 ```
+
+**Unit tests** use Vitest with jsdom. Each module's IIFE is compiled via a prebuild step and loaded with `vm.runInThisContext()` for V8 coverage attribution. Tests run in `pool: 'forks'` to isolate IIFE globals between files.
+
+**E2e tests** use Playwright with a local `serve` static server on port 3456. Mock tests intercept CDN requests; live tests hit real Braze staging endpoints.
+
+### Coverage
+
+**100% coverage** is enforced on all metrics (lines, branches, functions, statements) for `src/*/index.ts` files.
+
+---
+
+## Project Structure
+
+```
+pp-web-sdk/
+├── src/
+│   ├── common/          → Shared foundation (ppLib, Security, Storage)
+│   ├── analytics/       → Attribution & multi-platform analytics
+│   ├── ecommerce/       → GA4 ecommerce event tracking
+│   ├── event-source/    → Element click/tap tracking
+│   ├── login/           → Auth state detection & body classes
+│   ├── mixpanel/        → Mixpanel SDK wrapper & sessions
+│   ├── braze/           → Braze engagement platform
+│   └── types/           → Shared TypeScript type definitions
+├── tests/               → Unit tests (mirrors src/ structure)
+├── e2e/                 → Playwright end-to-end tests
+│   ├── fixtures/        → HTML test pages
+│   └── helpers/         → Test utilities (mocks, API helpers)
+├── dist/                → Build output (gitignored)
+├── build.js             → esbuild build orchestrator
+├── modules.js           → Canonical module list
+├── vitest.config.ts     → Unit test configuration
+├── playwright.config.ts → E2e test configuration
+└── tsconfig.json        → TypeScript configuration
+```
+
+---
 
 ## Data Attributes Reference
 
-### Event Source Tracking (`data-event-source`)
+All modules use `data-*` attributes for declarative, no-code configuration.
 
-Add `data-event-source` to any interactive element. Clicks and taps are auto-tracked to Mixpanel and GTM/GA4.
+### Event Source (`data-event-source`)
 
 ```html
-<button data-event-source="signup_cta">Sign Up</button>
-<a href="/pricing" data-event-source="pricing_link">View Pricing</a>
+<button data-event-source="signup_cta"
+        data-event-category="conversion"
+        data-event-label="Hero CTA"
+        data-event-value="49.99">
+  Sign Up
+</button>
 ```
 
-Optional attributes for richer event data:
+### Ecommerce (`data-ecommerce-*`)
 
 ```html
-<button
-  data-event-source="add_to_cart"
-  data-event-category="ecommerce"
-  data-event-label="Product Page CTA"
-  data-event-value="49.99"
->
-  Add to Cart
-</button>
+<section data-ecommerce-item="weight-loss"
+         data-ecommerce-name="Weight Loss"
+         data-ecommerce-price="60">
+  <button data-event-source="add_to_cart">Start Assessment</button>
+</section>
+```
+
+### Braze Events (`data-braze-event`, `data-braze-purchase`)
+
+```html
+<button data-braze-event="started_signup"
+        data-braze-prop-source="hero_banner">Get Started</button>
+
+<button data-braze-purchase="assessment-pkg"
+        data-braze-price="60"
+        data-braze-currency="CAD"
+        data-braze-quantity="1">Buy Package</button>
+```
+
+### Braze Forms (`data-braze-form`, `data-braze-attr`)
+
+```html
+<form data-braze-form="lead_capture">
+  <input data-braze-attr="email" name="email" type="email" />
+  <input data-braze-attr="first_name" name="first_name" />
+  <input data-braze-attr="custom:preferred_pharmacy" name="pharmacy" />
+  <button type="submit">Subscribe</button>
+</form>
 ```
 
 ### Login Visibility (`data-visibility`)
 
-Control element visibility based on auth state. The `login.js` module adds classes to `<body>` automatically, and `login.min.css` provides the CSS rules to show/hide `[data-visibility]` elements.
-
-**Body classes applied:**
-
-| State | Class |
-|---|---|
-| Logged in | `is-logged-in` |
-| Logged out | `is-logged-out` |
-| Signup completed | `signup-completed` |
-| Returning user | `has-previous-user` |
-| DOM ready | `dom-ready` |
-
-**CSS rules** (included in `login.min.css`):
-
-```css
-body:not(.dom-ready) [data-visibility] { opacity: 0; }
-body.is-logged-out [data-visibility="logged-in"] { display: none !important; }
-body.is-logged-in [data-visibility="logged-out"] { display: none !important; }
-body:not(.has-previous-user) [data-visibility="has-previous-user"] { display: none !important; }
-body:not(.signup-completed) [data-visibility="signup-completed"] { display: none !important; }
-```
-
-**HTML usage:**
-
 ```html
-<!-- Only visible when logged OUT -->
-<div data-visibility="logged-out">
-  <button data-event-source="login_cta">Log In</button>
-  <button data-event-source="signup_cta">Sign Up</button>
-</div>
-
-<!-- Only visible when logged IN -->
-<div data-visibility="logged-in">
-  <span>Welcome, <span data-login-identifier-key="user-first-name"></span></span>
-  <button data-action="logout">Log Out</button>
-</div>
-
-<!-- Only visible for returning users -->
-<div data-visibility="has-previous-user">
-  <p>Welcome back, <span data-login-identifier-key="user-first-name"></span>!</p>
-</div>
-
-<!-- Only visible after signup completion -->
-<div data-visibility="signup-completed">
-  <p>Your account is ready!</p>
-</div>
-```
-
-### Identity DOM Injection (`data-login-identifier-key`)
-
-Inject user data into text elements. The module reads from cookies and populates matching elements:
-
-```html
+<div data-visibility="logged-out">Show when logged out</div>
+<div data-visibility="logged-in">Show when logged in</div>
+<div data-visibility="has-previous-user">Welcome back message</div>
 <span data-login-identifier-key="user-first-name"></span>
-```
-
-### Action Buttons (`data-action`)
-
-```html
-<!-- Soft logout: clears session cookies, keeps "remember me" data -->
 <button data-action="logout">Log Out</button>
-
-<!-- Hard logout: clears all cookies including previous user data -->
-<button data-action="forget-me">Forget Me</button>
 ```
 
-## Ecommerce Events
-
-GA4 standard ecommerce events (`view_item`, `add_to_cart`) are handled automatically by the `ecommerce.js` module. No inline scripts needed — just add data attributes to your HTML.
-
-### Data Attributes
-
-| Attribute | Required | Description |
-|---|---|---|
-| `data-ecommerce-item` | Yes | Item ID / treatment slug (e.g., `weight-loss`) |
-| `data-ecommerce-name` | Yes | Display name (e.g., `Weight Loss`) |
-| `data-ecommerce-price` | Yes | Price as string (e.g., `60`) |
-| `data-ecommerce-category` | No | Defaults to `Telehealth` |
-| `data-ecommerce-brand` | No | Defaults to `PocketPills` |
-| `data-ecommerce-variant` | No | Optional variant |
-| `data-ecommerce-discount` | No | Optional discount amount |
-| `data-ecommerce-coupon` | No | Optional coupon code |
-
-### How It Works
-
-- **Page load**: The module scans all `[data-ecommerce-item]` elements and fires a single `view_item` event with all items
-- **CTA click**: When a `[data-event-source="add_to_cart"]` element is clicked, the module resolves item data (from the CTA itself or nearest ancestor) and fires `add_to_cart`
-- Both events are sent to GTM (`dataLayer`) and Mixpanel
-- Previous ecommerce data is cleared before each push (GA4 best practice)
-
-### Container Pattern
-
-Attributes on a parent element, CTA button nested inside:
-
-```html
-<section data-ecommerce-item="weight-loss"
-         data-ecommerce-name="Weight Loss"
-         data-ecommerce-price="60">
-  <h2>Weight Loss Program</h2>
-  <p>$60/month assessment</p>
-  <button data-event-source="add_to_cart">Start Assessment</button>
-</section>
-```
-
-### Flat Pattern
-
-All attributes directly on the CTA:
-
-```html
-<button data-event-source="add_to_cart"
-        data-ecommerce-item="weight-loss"
-        data-ecommerce-name="Weight Loss"
-        data-ecommerce-price="60">
-  Start Assessment
-</button>
-```
-
-### Per-Treatment Examples
-
-**Weight Loss** (`/telehealth/weight-loss-medication`):
-
-```html
-<section data-ecommerce-item="weight-loss"
-         data-ecommerce-name="Weight Loss"
-         data-ecommerce-price="60">
-  <button data-event-source="add_to_cart">Start your transformation</button>
-</section>
-```
-
-**Hair Loss** (`/treatment/hair-loss-treatment`):
-
-```html
-<section data-ecommerce-item="hair-loss"
-         data-ecommerce-name="Hair Loss"
-         data-ecommerce-price="30">
-  <button data-event-source="add_to_cart">Start hair loss treatment</button>
-</section>
-```
-
-**Erectile Dysfunction** (`/treatment/erectile-dysfunction-treatment`):
-
-```html
-<section data-ecommerce-item="erectile-dysfunction"
-         data-ecommerce-name="Erectile Dysfunction"
-         data-ecommerce-price="25">
-  <button data-event-source="add_to_cart">Start ED treatment</button>
-</section>
-```
-
-### Multiple Items on One Page
-
-If a page has multiple `[data-ecommerce-item]` elements, the `view_item` event includes all of them:
-
-```html
-<div data-ecommerce-item="weight-loss"
-     data-ecommerce-name="Weight Loss"
-     data-ecommerce-price="60">
-  <button data-event-source="add_to_cart">Start Weight Loss</button>
-</div>
-
-<div data-ecommerce-item="hair-loss"
-     data-ecommerce-name="Hair Loss"
-     data-ecommerce-price="30">
-  <button data-event-source="add_to_cart">Start Hair Loss</button>
-</div>
-```
-
-On load, one `view_item` fires with both items. Clicking a CTA fires `add_to_cart` with only that item.
-
-### Optional Configuration
-
-Override defaults if needed (not required for standard usage):
-
-```html
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    if (window.ppLib && window.ppLib.ecommerce) {
-      ppLib.ecommerce.configure({
-        defaults: {
-          brand: 'CustomBrand',
-          category: 'CustomCategory',
-          currency: 'USD'
-        }
-      });
-    }
-  });
-</script>
-```
-
-### Migration from Inline Scripts
-
-Replace per-page inline `<script>` blocks with data attributes:
-
-**Before** (inline script per page):
-```html
-<button data-event-source="add_to_cart">Start Assessment</button>
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    var treatmentId = 'weight-loss';
-    // ... 30+ lines of JS per page
-  });
-</script>
-```
-
-**After** (data attributes only):
-```html
-<section data-ecommerce-item="weight-loss"
-         data-ecommerce-name="Weight Loss"
-         data-ecommerce-price="60">
-  <button data-event-source="add_to_cart">Start Assessment</button>
-</section>
-```
-
-Zero JavaScript per page. The `ecommerce.js` module handles everything.
+---
 
 ## API Reference
 
-### `window.ppAnalytics`
+### `window.ppLib` (Common)
 
-- `ppAnalytics.config(options)` — Update analytics configuration
-- `ppAnalytics.track(eventName, properties)` — Track custom event
-- `ppAnalytics.getAttribution()` — Get first/last touch data
-- `ppAnalytics.consent.grant()` / `.revoke()` / `.status()`
-- `ppAnalytics.registerPlatform(name, handler)` — Add custom platform
-- `ppAnalytics.clear()` — Clear stored attribution data
+| Method | Description |
+|---|---|
+| `ppLib.getCookie(name)` | Read a cookie value |
+| `ppLib.deleteCookie(name)` | Delete a cookie |
+| `ppLib.getQueryParam(url, param)` | Extract URL parameter (case-insensitive) |
+| `ppLib.Storage.set(key, value, persistent?)` | Store data (session or persistent) |
+| `ppLib.Storage.get(key, persistent?)` | Retrieve stored data |
+| `ppLib.Security.sanitize(input)` | Sanitize string input (XSS prevention) |
+| `ppLib.Security.isValidUrl(url)` | Validate URL (http/https only) |
+| `ppLib.SafeUtils.get(obj, path, default?)` | Null-safe deep property access |
+| `ppLib.extend(target, source)` | Deep merge objects |
 
-### `window.ppLib`
+### `window.ppAnalytics` (Analytics)
 
-- `ppLib.getCookie(name)` — Read a cookie
-- `ppLib.deleteCookie(name)` — Delete a cookie
-- `ppLib.getQueryParam(url, param)` — Get URL parameter (case-insensitive)
-- `ppLib.Storage.set(key, value, persistent)` — Store data
-- `ppLib.Storage.get(key, persistent)` — Retrieve data
-- `ppLib.Security.sanitize(input)` — Sanitize user input
+| Method | Description |
+|---|---|
+| `ppAnalytics.config(options?)` | Configure attribution and platform settings |
+| `ppAnalytics.track(event, props?)` | Track event across all registered platforms |
+| `ppAnalytics.getAttribution()` | Get first/last touch attribution data |
+| `ppAnalytics.consent.grant()` | Grant tracking consent |
+| `ppAnalytics.consent.revoke()` | Revoke tracking consent |
+| `ppAnalytics.consent.status()` | Check consent status |
+| `ppAnalytics.registerPlatform(name, handler)` | Register custom analytics platform |
+| `ppAnalytics.clear()` | Clear stored attribution data |
 
-### `window.ppLib.eventSource`
+### `ppLib.ecommerce` (Ecommerce)
 
-- `ppLib.eventSource.configure(options)` — Update event source config
-- `ppLib.eventSource.trackElement(element)` — Manually track an element
-- `ppLib.eventSource.trackCustom(eventSource, properties)` — Track custom event
+| Method | Description |
+|---|---|
+| `ppLib.ecommerce.configure(options)` | Override defaults (brand, category, currency) |
+| `ppLib.ecommerce.trackViewItem()` | Re-fire `view_item` from DOM scan |
+| `ppLib.ecommerce.trackItem(itemData)` | Programmatic `add_to_cart` |
+| `ppLib.ecommerce.getItems()` | Get parsed items from DOM |
 
-### `window.ppLib.login`
+### `ppLib.eventSource` (Event Source)
 
-- `ppLib.login.isLoggedIn()` — Check login status
-- `ppLib.login.logout(hard)` — Trigger logout
-- `window.logoutUser(hardLogout)` — Global logout function
+| Method | Description |
+|---|---|
+| `ppLib.eventSource.configure(options)` | Update config |
+| `ppLib.eventSource.trackElement(element)` | Track a specific DOM element |
+| `ppLib.eventSource.trackCustom(source, props)` | Track custom event programmatically |
 
-### `window.ppLib.ecommerce`
+### `ppLib.login` (Login)
 
-- `ppLib.ecommerce.configure(options)` — Override defaults (brand, category, currency, attribute names)
-- `ppLib.ecommerce.trackViewItem()` — Re-fire `view_item` by re-scanning the DOM (useful after dynamic content)
-- `ppLib.ecommerce.trackItem(itemData)` — Programmatically fire `add_to_cart` for a given item
-- `ppLib.ecommerce.getItems()` — Return parsed items currently in the DOM
-- `ppLib.ecommerce.getConfig()` — Return current config
+| Method | Description |
+|---|---|
+| `ppLib.login.configure(options)` | Update cookie names, body classes |
+| `ppLib.login.isLoggedIn()` | Check auth state |
+| `ppLib.login.logout(hard?)` | Trigger logout (soft or hard) |
+| `window.logoutUser(hard?)` | Global logout function |
 
-### `window.ppLib.mixpanel`
+### `ppLib.mixpanel` (Mixpanel)
 
-- `ppLib.mixpanel.configure(options)` — Set token, project name, etc.
-- `ppLib.mixpanel.init()` — Initialize Mixpanel SDK
+| Method | Description |
+|---|---|
+| `ppLib.mixpanel.configure(options)` | Set token, project name, session timeout |
+| `ppLib.mixpanel.init()` | Load SDK and initialize |
+| `ppLib.mixpanel.getMixpanelCookieData()` | Parse Mixpanel cookie |
+
+### `ppLib.braze` (Braze)
+
+| Method | Description |
+|---|---|
+| `ppLib.braze.configure(options)` | Set API key, base URL, form/event config |
+| `ppLib.braze.init()` | Load Braze SDK from CDN and initialize |
+| `ppLib.braze.identify(userId)` | Set external user ID |
+| `ppLib.braze.setEmail(email)` | Set user email |
+| `ppLib.braze.setUserAttributes(attrs)` | Set standard + custom attributes |
+| `ppLib.braze.trackEvent(name, props?)` | Log custom event |
+| `ppLib.braze.trackPurchase(id, price, currency, qty)` | Log purchase |
+| `ppLib.braze.flush()` | Force-flush pending data |
+| `ppLib.braze.isReady()` | Check if SDK is loaded |
+
+---
+
+## Design Principles
+
+1. **Data-attribute driven** — Marketing teams configure tracking via HTML attributes, no JavaScript required
+2. **Module independence** — Each module is a standalone IIFE; load only what you need
+3. **Security first** — All inputs sanitized via `ppLib.Security.sanitize()` (XSS, injection prevention)
+4. **Silent failure** — Errors are caught and logged, never thrown to consumer code
+5. **Factory functions** — Sub-modules use factory pattern (not classes) for dependency injection
+6. **100% test coverage** — Enforced at build time via V8 coverage provider
 
 ## Browser Support
 
-Modern browsers (Chrome, Firefox, Safari, Edge). IE11 is not supported.
+Modern browsers (Chrome, Firefox, Safari, Edge). ES2018 target. IE11 is not supported.
