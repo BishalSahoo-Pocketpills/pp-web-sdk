@@ -60,4 +60,5 @@ export interface PPLib {
   ecommerce?: import('./ecommerce.types').EcommerceAPI;
   eventSource?: import('./event-source.types').EventSourceAPI;
   mixpanel?: import('./mixpanel.types').MixpanelAPI;
+  braze?: import('./braze.types').BrazeAPI;
 }

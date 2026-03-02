@@ -4,3 +4,4 @@ export type { EcommerceConfig, EcommerceAPI, EcommerceItem, EcommerceData } from
 export type { EventSourceConfig, EventSourceAPI, EventSourceData } from './event-source.types';
 export type { LoginConfig, LoginAPI } from './login.types';
 export type { MixpanelConfig, MixpanelAPI, SessionManager } from './mixpanel.types';
+export type { BrazeConfig, BrazeSdkConfig, BrazeConsentConfig, BrazeIdentityConfig, BrazeFormConfig, BrazeEventConfig, BrazePurchaseConfig, BrazeAPI } from './braze.types';

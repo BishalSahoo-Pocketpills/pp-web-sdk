@@ -6,3 +6,6 @@ package-lock.json
 .DS_Store
 *.log
 test.html
+.env
+test-results/
+playwright-report/

@@ -14,6 +14,7 @@ declare global {
     logoutUser: (hardLogout?: boolean) => void;
     dataLayer: any[];
     mixpanel: any;
+    braze: any;
     OnetrustActiveGroups: string;
     requestIdleCallback: ((callback: IdleRequestCallback, options?: IdleRequestOptions) => number) | undefined;
   }
