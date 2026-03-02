@@ -401,9 +401,44 @@ ppLib.braze.trackPurchase('rx-plan', 29.99, 'CAD', 1, {
 
 ## User Attributes
 
-### Via Form (recommended for marketing)
+### Via Form — Multiple Custom Attributes in One Submit (recommended for Webflow)
 
-See [Form Tracking](#form-tracking) — the `data-braze-attr` approach.
+Add as many `custom:` fields as needed to a single form. All custom attributes are set on the Braze user profile in one submit — no JavaScript required.
+
+```html
+<form data-braze-form="patient_profile">
+  <!-- Standard attributes → dedicated Braze setters -->
+  <input data-braze-attr="email" name="email" type="email" />
+  <input data-braze-attr="first_name" name="first_name" />
+  <input data-braze-attr="phone" name="phone" />
+
+  <!-- Custom attributes → setCustomUserAttribute() for each -->
+  <input data-braze-attr="custom:preferred_pharmacy" name="pharmacy" />
+  <input data-braze-attr="custom:insurance_provider" name="insurance" />
+  <input data-braze-attr="custom:province" name="province" />
+  <input data-braze-attr="custom:referral_source" name="referral" />
+  <input data-braze-attr="custom:medication_interest" name="medication" />
+
+  <button type="submit">Update Profile</button>
+</form>
+```
+
+**On submit, a single form sets all of these in one go:**
+
+| Field | Braze Action |
+|---|---|
+| `email` | `getUser().setEmail('...')` (standard) |
+| `first_name` | `getUser().setFirstName('...')` (standard) |
+| `phone` | `getUser().setPhoneNumber('...')` (standard) |
+| `custom:preferred_pharmacy` | `getUser().setCustomUserAttribute('preferred_pharmacy', '...')` |
+| `custom:insurance_provider` | `getUser().setCustomUserAttribute('insurance_provider', '...')` |
+| `custom:province` | `getUser().setCustomUserAttribute('province', '...')` |
+| `custom:referral_source` | `getUser().setCustomUserAttribute('referral_source', '...')` |
+| `custom:medication_interest` | `getUser().setCustomUserAttribute('medication_interest', '...')` |
+
+Plus a custom event: `form_submitted_patient_profile`.
+
+There is **no limit** on the number of `custom:` fields per form. Add as many as you need in Webflow's form builder.
 
 ### Via `setEmail()`
 
@@ -411,13 +446,14 @@ See [Form Tracking](#form-tracking) — the `data-braze-attr` approach.
 ppLib.braze.setEmail('user@example.com');
 ```
 
-### Via `setUserAttributes()` (bulk)
+### Via `setUserAttributes()` — Bulk Programmatic Update
 
 Set multiple standard and custom attributes in a single call:
 
 ```javascript
 ppLib.braze.setUserAttributes({
-  // Standard attributes (use dedicated Braze setters)
+  // Standard attributes → dedicated Braze setters
+  email: 'jane@example.com',
   first_name: 'Jane',
   last_name: 'Doe',
   phone: '+1-555-0199',
@@ -426,14 +462,16 @@ ppLib.braze.setUserAttributes({
   city: 'Toronto',
   language: 'en',
 
-  // Custom attributes (any other key becomes a custom attribute)
+  // Custom attributes → setCustomUserAttribute() for each
   loyalty_tier: 'gold',
-  signup_channel: 'web',
-  preferred_pharmacy: 'Downtown Pharmacy'
+  signup_channel: 'webflow',
+  preferred_pharmacy: 'Downtown Pharmacy',
+  insurance_provider: 'Sun Life',
+  province: 'ON'
 });
 ```
 
-Standard attribute names (`email`, `first_name`, `last_name`, `phone`, `gender`, `dob`, `country`, `city`, `language`) are automatically routed to their dedicated Braze setters. All other keys become custom attributes.
+The 9 standard attribute names (`email`, `first_name`, `last_name`, `phone`, `gender`, `dob`, `country`, `city`, `language`) are automatically routed to their dedicated Braze setters. **Every other key becomes a custom attribute** — you can pass as many as you need in a single call.
 
 ### Attribute Remapping
 
