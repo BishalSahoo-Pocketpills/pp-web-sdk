@@ -26,7 +26,8 @@ window.ppLib                     (common.min.js — MUST load first)
   ├── .ecommerce                 → GA4 ecommerce events
   ├── .eventSource               → Click/tap event tracking
   ├── .mixpanel                  → Mixpanel SDK wrapper & sessions
-  └── .braze                     → Braze engagement platform
+  ├── .braze                     → Braze engagement platform
+  └── .voucherify                → Voucherify pricing & discounts
 
 window.ppAnalytics               (analytics.min.js)
   ├── .config(options?)          → Attribution & multi-platform analytics
@@ -61,6 +62,7 @@ window.ppAnalytics               (analytics.min.js)
 | login | `login.min.js` | `ppLib.login` | Auth state detection, body classes, identity | [src/login/](src/login/README.md) |
 | mixpanel | `mixpanel.min.js` | `ppLib.mixpanel` | Mixpanel SDK loader, sessions, UTM | [src/mixpanel/](src/mixpanel/README.md) |
 | braze | `braze.min.js` | `ppLib.braze` | Braze forms, events, purchases, identity | [src/braze/](src/braze/README.md) |
+| voucherify | `voucherify.min.js` | `ppLib.voucherify` | Voucherify pricing, discounts, voucher validation | [src/voucherify/](src/voucherify/README.md) |
 
 ---
 
@@ -188,6 +190,7 @@ pp-web-sdk/
 │   ├── login/           → Auth state detection & body classes
 │   ├── mixpanel/        → Mixpanel SDK wrapper & sessions
 │   ├── braze/           → Braze engagement platform
+│   ├── voucherify/      → Voucherify pricing & discounts
 │   └── types/           → Shared TypeScript type definitions
 ├── tests/               → Unit tests (mirrors src/ structure)
 ├── e2e/                 → Playwright end-to-end tests
@@ -226,6 +229,17 @@ All modules use `data-*` attributes for declarative, no-code configuration.
          data-ecommerce-price="60">
   <button data-event-source="add_to_cart">Start Assessment</button>
 </section>
+```
+
+### Voucherify Pricing (`data-voucherify-*`)
+
+```html
+<div data-voucherify-product="weight-loss"
+     data-voucherify-base-price="60">
+  <span data-voucherify-original-price></span>
+  <span data-voucherify-discounted-price></span>
+  <span data-voucherify-discount-label></span>
+</div>
 ```
 
 ### Braze Events (`data-braze-event`, `data-braze-purchase`)
@@ -339,6 +353,19 @@ All modules use `data-*` attributes for declarative, no-code configuration.
 | `ppLib.braze.trackPurchase(id, price, currency, qty)` | Log purchase |
 | `ppLib.braze.flush()` | Force-flush pending data |
 | `ppLib.braze.isReady()` | Check if SDK is loaded |
+
+### `ppLib.voucherify` (Voucherify)
+
+| Method | Description |
+|---|---|
+| `ppLib.voucherify.configure(options)` | Set API keys, cache mode, pricing attributes |
+| `ppLib.voucherify.init()` | Check consent and auto-fetch pricing |
+| `ppLib.voucherify.fetchPricing(productIds?)` | Fetch pricing and inject into DOM |
+| `ppLib.voucherify.validateVoucher(code, context?)` | Validate a voucher code |
+| `ppLib.voucherify.checkQualifications(context?)` | Query all applicable promotions |
+| `ppLib.voucherify.clearCache()` | Clear in-memory response cache |
+| `ppLib.voucherify.isReady()` | Always `true` (no CDN SDK to load) |
+| `ppLib.voucherify.getConfig()` | Get current config |
 
 ---
 

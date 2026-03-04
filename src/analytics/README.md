@@ -217,10 +217,183 @@ Events are distributed to all enabled platforms:
 
 ---
 
+## Architecture & Design Decisions
+
+### Single-File Module
+
+Unlike other modules (braze=7 files, voucherify=5 files, login=4 files), analytics is a single 1094-line file with 8 internal closure-scoped objects (Utils, Consent, UrlParser, Session, EventQueue, Platforms, Tracker, API).
+
+**Why:** The analytics module was the first complex module built and predates the multi-file decomposition pattern adopted later. The internal modules are tightly coupled (Tracker depends on Consent, EventQueue, Platforms, UrlParser, Session, and Storage) making extraction non-trivial.
+
+**Tradeoff:** Harder to navigate and test individual sub-systems in isolation. A future refactor could extract Consent, EventQueue, and Platforms into separate files following the braze/voucherify pattern.
+
+### Event Queue with `requestIdleCallback`
+
+Events are queued and processed during browser idle time:
+
+```typescript
+if (typeof win.requestIdleCallback === 'function') {
+  requestIdleCallback(() => self.processQueue(), { timeout: 2000 });
+} else {
+  setTimeout(() => self.processQueue(), 0);
+}
+```
+
+**Why:** Analytics events are non-critical for page rendering. Processing them during idle time avoids blocking the main thread, especially important on mobile where CPU is limited.
+
+**Tradeoff:** Events may be delayed by up to 2 seconds under heavy load. The 2s timeout ensures they're eventually processed even if the browser never goes idle.
+
+### Rate Limiting
+
+GTM events are rate-limited to 100 events per 60-second window:
+
+```typescript
+platforms: {
+  gtm: { rateLimitMax: 100, rateLimitWindow: 60000 }
+}
+```
+
+**Why:** Prevents accidental event floods from runaway code or rapid page navigation from overwhelming GTM/GA4 quotas.
+
+**Tradeoff:** Legitimate high-frequency events could be dropped. The limit is configurable.
+
+### Consent Storage Outside `ppLib.Storage`
+
+The consent module uses raw `localStorage` directly instead of `ppLib.Storage`:
+
+```typescript
+localStorage.setItem(storageKey, this.state);
+```
+
+**Why:** Intentional design. Consent state must survive `Storage.clear()` (which is called when consent is revoked). If consent were stored through `ppLib.Storage`, revoking consent would also clear the consent record itself — creating a loop where the user's preference is lost.
+
+**Tradeoff:** Bypasses `ppLib.Storage` namespace prefixing and `Security.validateData()` checks. This is acceptable because consent is a simple string (`'approved'` or `'denied'`), and the operation is wrapped in try/catch for unavailable-localStorage scenarios.
+
+### Mixpanel Retry Polling
+
+The Mixpanel platform sub-module polls for `window.mixpanel` availability:
+
+```typescript
+const check = setInterval(function() {
+  if (win.mixpanel && win.mixpanel.register) { ... }
+}, retryInterval);  // 50 retries × 100ms = 5s max
+```
+
+**Why:** Mixpanel SDK may load asynchronously after analytics. Events are queued and replayed once the SDK is available.
+
+**Tradeoff:** Creates a 5-second polling interval if Mixpanel never loads (e.g., ad blocker). The interval self-terminates after `maxRetries`, so it's bounded.
+
+### First/Last Touch Attribution Model
+
+- **First touch** — Stored once, never overwritten. Represents original acquisition channel.
+- **Last touch** — Updated on every visit with new tracking parameters. Represents most recent touchpoint.
+
+**Why:** Marketing teams need both attribution models. First touch answers "how did we acquire this user?" and last touch answers "what brought them back?"
+
+**Tradeoff:** First touch can become stale if stored in `sessionStorage` (default). Enable `persistAcrossSessions: true` to use `localStorage` for cross-session persistence.
+
+---
+
+## Validation & Fallbacks
+
+The analytics module validates inputs at every stage of the pipeline and falls back to safe defaults when data is missing or invalid.
+
+### Configuration Fallbacks
+
+| Config Path | Default Value | Description |
+|---|---|---|
+| `consent.required` | `false` | Consent not required by default (tracking starts immediately) |
+| `consent.defaultState` | `'approved'` | Default consent state when no framework is configured |
+| `attribution.sessionTimeout` | `30` | Session timeout in minutes |
+| `attribution.autoCapture` | `true` | Auto-capture URL params on page load |
+| `attribution.enableFirstTouch` | `true` | Store first-touch attribution |
+| `attribution.enableLastTouch` | `true` | Store last-touch attribution |
+| `attribution.persistAcrossSessions` | `false` | Use sessionStorage (not localStorage) for first touch |
+| `performance.maxQueueSize` | `50` | Max queued events before dropping |
+| `performance.useRequestIdleCallback` | `true` | Use idle callback for async processing |
+| `platforms.gtm.rateLimitMax` | `100` | Max GTM events per rate window |
+| `platforms.gtm.rateLimitWindow` | `60000` | Rate limit window in ms |
+| `platforms.mixpanel.maxRetries` | `50` | Max SDK availability retries |
+| `platforms.mixpanel.retryInterval` | `100` | Retry interval in ms |
+
+### URL Parsing Validations
+
+| Input | Validation | Fallback |
+|---|---|---|
+| `window.location.href` | Validated via `Security.isValidUrl()` | Returns empty params `{}` |
+| URL parameters | Only whitelisted params extracted | Non-whitelisted params are ignored |
+| Parameter values | Sanitized via `Security.sanitize()` | Empty/invalid values skipped |
+
+### Attribution Fallbacks
+
+| Condition | Behavior |
+|---|---|
+| No tracking params in URL | `getTrackedParams()` returns `null`, no attribution stored |
+| No referrer present | `getReferrer()` returns `'direct'` |
+| Referrer is same hostname | `getReferrer()` returns `'internal'` |
+| Referrer URL parse fails | Returns `'unknown'` (or `'direct'` if no referrer at all) |
+| No first-touch stored | New first-touch is created with current params |
+| Session expired or missing | New session starts, new first-touch allowed |
+| `utm_source` missing from stored data | Defaults to `'direct'` in GTM/Mixpanel dispatch |
+| `utm_medium` missing from stored data | Defaults to `'none'` in GTM/Mixpanel dispatch |
+
+### Event Queue Validations
+
+| Condition | Warning/Error Logged |
+|---|---|
+| Queue full (>= `maxQueueSize`) | `'Event queue full, dropping event'` (warn) |
+| Event object null or not an object | Silently ignored |
+| Event type null or empty | Silently ignored |
+| GTM rate limit exceeded | `'Rate limit exceeded for gtm'` (warn) |
+
+### Platform Dispatch Validations
+
+| Platform | Validation | Warning/Error Logged |
+|---|---|---|
+| GTM | Data validated via `Security.validateData()` | `'Invalid GTM data rejected'` (error) |
+| Mixpanel | Data validated via `Security.validateData()` | `'Invalid Mixpanel data rejected'` (error) |
+| Mixpanel | SDK not available | Queued and retried (up to 50 attempts) |
+| Mixpanel | SDK never loads | `'Mixpanel not available'` (verbose) after max retries |
+| Custom | Handler must be a function | Silently ignored if not |
+
+### Consent Validations
+
+| Condition | Behavior |
+|---|---|
+| `consent.required` is `false` | Always returns `true` (granted) |
+| Custom consent function throws | Error logged, returns `false` |
+| OneTrust groups string missing | Falls back to stored consent |
+| CookieYes cookie parse fails | Falls back to stored consent |
+| localStorage unavailable | Falls back to default state |
+| Consent revoked | `Storage.clear()` called to purge attribution data |
+
+### Public API Validations
+
+| Method | Validation | Warning/Error Logged |
+|---|---|---|
+| `track(eventName)` | `eventName` must not be empty | `'Event name required'` (error) |
+| `track()` when not initialized | Tracker continues (queues event) | `'Tracker not initialized, queuing event'` (warn) |
+| `registerPlatform(name, handler)` | Name must exist, handler must be a function | `'registerPlatform requires a valid name and handler function'` (warn) |
+
+---
+
+## Known Limitations
+
+1. **Monolithic file** — Single-file architecture is harder to navigate than multi-file modules. Internal sub-systems are only testable through the IIFE boundary.
+
+2. **No deduplication across page reloads** — If a user refreshes a page with UTM params, last-touch attribution is re-captured. This is by design (every pageview is a new "touch") but can over-count in SPA scenarios.
+
+3. **Consent state not synced with CMP** — The module reads from OneTrust/CookieYes on every `isGranted()` call but doesn't listen for real-time consent changes. If a user changes consent preferences in the CMP modal, the analytics module won't pick up the change until the next page load.
+
+4. **`sendAttribution()` field mapping is verbose** — The first/last touch GTM event construction manually maps 10+ fields per touch type. This is intentional for readability but could be DRYer with a loop.
+
+---
+
 ## Dependencies
 
 - **common** (`window.ppLib`) — SafeUtils, Security, Storage, logging
 
 ## Dependents
 
-None — standalone analytics module. Other modules (ecommerce, event-source) push events to GTM/Mixpanel independently.
+- **braze** and **voucherify** modules query `ppAnalytics.consent.status()` for consent gating
+- Other modules (ecommerce, event-source) push events to GTM/Mixpanel independently

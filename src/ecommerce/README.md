@@ -185,8 +185,137 @@ Click and `touchend` events on the same element are debounced with a 300ms windo
 
 ---
 
+## Architecture & Design Decisions
+
+### Event Delegation Pattern
+
+A single `click` and `touchend` listener on `document` handles all CTA interactions:
+
+```typescript
+doc.addEventListener('click', handleInteraction, { capture: false, passive: true });
+doc.addEventListener('touchend', handleInteraction, { capture: false, passive: true });
+```
+
+**Why:** Element delegation means dynamically added product cards (e.g., via JS frameworks or Webflow interactions) are automatically tracked without re-binding listeners.
+
+**Tradeoff:** Every click on the page passes through the handler, though `target.closest(CONFIG.ctaSelector)` short-circuits immediately for non-CTA clicks.
+
+### Container/Flat Resolution Pattern
+
+When a CTA is clicked, the module tries two strategies to find item data:
+
+1. **Flat pattern** — Check if the CTA element itself has `data-ecommerce-item`
+2. **Container pattern** — Walk up the DOM via `closest('[data-ecommerce-item]')` to find a parent with the attribute
+
+```html
+<!-- Container: attributes on parent, CTA nested -->
+<section data-ecommerce-item="weight-loss" data-ecommerce-name="Weight Loss" data-ecommerce-price="60">
+  <button data-event-source="add_to_cart">Start</button>
+</section>
+
+<!-- Flat: all attributes directly on CTA -->
+<button data-event-source="add_to_cart" data-ecommerce-item="weight-loss" ...>Start</button>
+```
+
+**Why:** The container pattern matches typical Webflow page structure (product cards with nested CTAs). The flat pattern supports simple cases.
+
+**Tradeoff:** If nested product cards exist (card inside card), `closest()` returns the nearest ancestor, which may not always be the intended parent.
+
+### Deferred `view_item` to Window Load
+
+```typescript
+if (doc.readyState === 'complete') {
+  trackViewItem();
+} else {
+  win.addEventListener('load', trackViewItem);
+}
+```
+
+**Why:** Defers `view_item` to `window.load` (not `DOMContentLoaded`) so that Mixpanel SDK and GTM have time to fully initialize. The ecommerce module initializes on `DOMContentLoaded`, but the actual event dispatch waits for `load`.
+
+**Tradeoff:** On slow pages, there could be a visible delay between page render and `view_item` firing. This is acceptable since the event is for analytics, not user-visible behavior.
+
+### GTM `ecommerce: null` Clear Pattern
+
+Before each dataLayer push, previous ecommerce data is cleared:
+
+```typescript
+win.dataLayer.push({ ecommerce: null });
+win.dataLayer.push({ event: eventName, ecommerce: ecommerceData });
+```
+
+**Why:** GA4 best practice. Without the `null` clear, subsequent ecommerce events can merge with stale data from previous pushes, causing inflated item counts or incorrect values.
+
+---
+
+## Validation & Fallbacks
+
+The ecommerce module validates all data attributes and falls back to configured defaults when optional fields are missing.
+
+### Item Data Validation
+
+| Attribute | Required | Fallback Value | Warning Logged |
+|---|---|---|---|
+| `data-ecommerce-item` | Yes | - | `'Missing required ecommerce attribute(s): data-ecommerce-item'` (warn) |
+| `data-ecommerce-name` | Yes | - | `'Missing required ecommerce attribute(s): data-ecommerce-name'` (warn) |
+| `data-ecommerce-price` | Yes | - | `'Missing required ecommerce attribute(s): data-ecommerce-price'` (warn) |
+| `data-ecommerce-brand` | No | `CONFIG.defaults.brand` (`'PocketPills'`) | No warning |
+| `data-ecommerce-category` | No | `CONFIG.defaults.category` (`'Telehealth'`) | No warning |
+| `data-ecommerce-variant` | No | Not included in payload | No warning |
+| `data-ecommerce-discount` | No | Not included in payload | No warning |
+| `data-ecommerce-coupon` | No | Not included in payload | No warning |
+
+When any of the three required attributes is missing, the `parseItem()` function returns `null` and logs a single warning listing all missing attributes. The warning is specific and actionable:
+
+```
+[ppEcommerce] Missing required ecommerce attribute(s): data-ecommerce-item data-ecommerce-price
+```
+
+### Input Sanitization
+
+All attribute values pass through `ppLib.Security.sanitize()` before being included in event payloads. This applies to both DOM-extracted and programmatically provided values.
+
+### Event Dispatch Fallbacks
+
+| Condition | Behavior |
+|---|---|
+| No `[data-ecommerce-item]` elements on page | `'No ecommerce items found on page'` logged (verbose), no `view_item` fired |
+| CTA clicked but no ecommerce data found | `'CTA clicked but no ecommerce data found'` logged (verbose), no `add_to_cart` fired |
+| `buildEcommerceData()` receives empty items | Returns `null`, event not dispatched |
+| Price is `NaN` after `parseFloat()` | Item's price contribution to total is `0` |
+| `window.mixpanel` not available | `sendToMixpanel()` silently returns |
+
+### Programmatic API Validation
+
+| Method | Validation | Warning/Error Logged |
+|---|---|---|
+| `trackItem(itemData)` | Requires `item_id`, `item_name`, and `price` | `'trackItem requires item_id, item_name, and price'` (error) |
+| `trackItem(itemData)` | Missing `item_brand` | Falls back to `CONFIG.defaults.brand` |
+| `trackItem(itemData)` | Missing `item_category` | Falls back to `CONFIG.defaults.category` |
+| `trackItem(itemData)` | Missing `quantity` | Falls back to `CONFIG.defaults.quantity` (`1`) |
+
+### Debounce Behavior
+
+| Condition | Behavior |
+|---|---|
+| Same element clicked/tapped within 300ms | Duplicate event suppressed (no warning logged) |
+| Element identity | Composite key: `tagName:itemId:innerText(50 chars)` |
+
+---
+
+## Known Limitations
+
+1. **Price is sent as string in item data** — `price: ppLib.Security.sanitize(itemPrice)` returns a string. GA4 technically expects a number in the `items` array. GTM coerces it, but strict GA4 validation may flag it.
+
+2. **CTA selector is hardcoded to `[data-event-source="add_to_cart"]`** — The ecommerce module is coupled to the event-source module's attribute naming. Configurable via `ctaSelector` in config, but the default creates an implicit dependency.
+
+3. **No `purchase` event** — The module only tracks `view_item` and `add_to_cart`. Full GA4 ecommerce flow (`begin_checkout`, `purchase`) requires the braze module's purchase tracking or custom implementation.
+
+---
+
 ## Dependencies
 
-- **common** (`window.ppLib`) — Security (sanitize), logging
+- **common** (`window.ppLib`) — Security (sanitize), logging, extend
 - **GTM** (`window.dataLayer`) — Created if not present
 - **Mixpanel** (`window.mixpanel`) — Optional; events are sent if available
+- **event-source** (implicit) — Default CTA selector uses `data-event-source` attribute

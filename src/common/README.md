@@ -210,6 +210,155 @@ All modules: analytics, ecommerce, event-source, login, mixpanel, braze.
 
 ---
 
+## Architecture & Design Decisions
+
+### Factory Function Pattern (Not Classes)
+
+Every sub-module is created via `create*()` functions that receive dependencies as parameters:
+
+```typescript
+// security.ts
+export function createSecurity(config, safeUtils, log): Security { ... }
+
+// storage.ts
+export function createStorage(win, config, safeUtils, security, log): Storage { ... }
+```
+
+**Why not classes?**
+- IIFE output format doesn't benefit from `class` syntax (no prototype chain needed)
+- Factory functions with closures produce smaller minified output
+- Dependency injection is explicit — no `this` binding issues in event handlers
+- V8 inlines closure variables efficiently
+
+**Tradeoff:** Slightly more verbose parameter lists, but each dependency is explicit and testable.
+
+### Ready Queue Pattern
+
+The `ppLibReady` array allows modules to load in any order relative to common:
+
+```
+Timeline A: common.js → login.js (synchronous)
+Timeline B: login.js → common.js (async/deferred)
+```
+
+Both work because login pushes to `ppLibReady` if `ppLib._isReady` isn't set yet, and common drains the queue when it initializes.
+
+**Tradeoff:** Every module must include the 5-line boilerplate check. This is duplicated 7 times across the codebase but ensures complete load-order independence.
+
+### Prototype Pollution Protection
+
+`extend()` explicitly skips `__proto__`, `constructor`, and `prototype` keys:
+
+```typescript
+if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+```
+
+**Why:** Every `configure()` call across the SDK passes user-provided objects through `extend()`. Without this guard, an attacker could inject `{ "__proto__": { "isAdmin": true } }` via a data attribute or config object and pollute all objects in the runtime.
+
+### URL Fragment Handling
+
+`getQueryParam()` strips URL fragments before parsing to prevent `#hash` values from leaking into parameter values:
+
+```typescript
+const defragmented = url.split('#')[0]; // Strip fragment
+const urlSplit = defragmented.split('?');
+```
+
+**Why:** `URLSearchParams` does not strip fragments. Without this, `?ref=home#pricing` would return `"home#pricing"` instead of `"home"`.
+
+### Storage Key Namespacing
+
+All storage keys are prefixed with the configured namespace (default: `pp_attr_`):
+
+```
+ppLib.Storage.set('user_id', ...) → sessionStorage['pp_attr_user_id']
+```
+
+**Tradeoff:** Prevents collisions with other scripts, but means keys are SDK-internal. External tools can't easily inspect stored data without knowing the prefix. The `clear()` method only removes known analytics keys, not all namespaced keys.
+
+---
+
+## Validation & Fallbacks
+
+The common module provides the foundation for all validation and fallback behavior across the SDK. Each utility is designed to fail gracefully with safe defaults.
+
+### SafeUtils Fallbacks
+
+| Method | Invalid Input | Fallback |
+|---|---|---|
+| `get(obj, path, defaultValue)` | `obj` is null/undefined or path doesn't exist | Returns `defaultValue` (or `undefined` if not provided) |
+| `set(obj, path, value)` | `obj` is null/undefined | Returns `false` (no-op) |
+| `toString(val)` | `null` or `undefined` | Returns `''` (empty string) |
+| `exists(val)` | `null`, `undefined`, or `''` | Returns `false` |
+| `toArray(val)` | `null` or `undefined` | Returns `[]` (empty array) |
+| `forEach(arr, callback)` | Non-array or non-function callback | No-op (returns `undefined`) |
+
+### Security Validation
+
+| Method | Validation | Warning/Error Logged |
+|---|---|---|
+| `sanitize(input)` | Strips `<>`, quotes, `javascript:`, `on*=` handlers, control chars, `data:text/html` | `'Rejected suspicious input'` when `strictMode: true` and input was modified |
+| `sanitize(input)` | Input exceeds `maxParamLength` | Silently truncated to 500 chars (default) |
+| `sanitize(input)` | Non-existent input | Returns `''` |
+| `isValidUrl(url)` | Null, non-string, exceeds `maxUrlLength`, or non-http(s) protocol | Returns `false` |
+| `json.parse(str)` | Invalid JSON or non-existent string | Returns `fallback` or `null` |
+| `json.parse(str)` | Parsed JSON exceeds `maxStorageSize` | `'Data exceeds size limit'` error logged, returns `fallback` |
+| `json.stringify(obj)` | Stringified JSON exceeds `maxStorageSize` | `'Data too large to stringify'` error logged, returns `null` |
+| `validateData(data)` | Contains `<script>`, `javascript:`, `on*=`, `eval(`, `expression(`, `data:text/html` | `'Dangerous pattern detected'` error logged, returns `false` |
+
+### Storage Fallbacks
+
+| Method | Failure Condition | Fallback |
+|---|---|---|
+| `isAvailable(type)` | Storage not accessible (private browsing, quota exceeded) | Returns `false` |
+| `getKey(key)` | Missing namespace config | Falls back to `'pp_attr_'` prefix |
+| `set(key, value)` | Key null/empty, value falsy, storage unavailable, data fails validation, or JSON stringify fails | Returns `false` |
+| `get(key)` | Key null/empty, storage unavailable, item not found, or data fails validation | Returns `null`; corrupted data is automatically removed |
+| `remove(key)` | Key null/empty or storage unavailable | No-op |
+| `clear()` | Any error | `'Storage clear error'` logged |
+
+### Cookie Fallbacks
+
+| Method | Failure Condition | Fallback |
+|---|---|---|
+| `getCookie(name)` | Name is empty, no cookies, or regex fails | Returns `null` |
+| `deleteCookie(name)` | Name is empty or write fails | `'deleteCookie error'` logged |
+
+### URL Fallbacks
+
+| Method | Failure Condition | Fallback |
+|---|---|---|
+| `getQueryParam(url, param)` | URL or param is empty/null, or parsing fails | Returns `''` (empty string) |
+
+### Logging Fallbacks
+
+| Condition | Behavior |
+|---|---|
+| `config.debug` is `false` | All log calls are no-ops |
+| `config.verbose` is `false` | Verbose-level log calls are no-ops |
+| `console[level]` does not exist | Falls back to `console.log` |
+| Logging itself throws | Silent catch (logging never crashes the SDK) |
+
+### Extend (Deep Merge) Protections
+
+| Input | Behavior |
+|---|---|
+| `target` or `source` is null/undefined | Returns `target` or `{}` |
+| Key is `__proto__`, `constructor`, or `prototype` | Skipped (prototype pollution prevention) |
+| Merge throws | `'Extend error'` logged, returns partial result |
+
+---
+
+## Known Limitations
+
+1. **`deleteCookie()` doesn't specify domain** — Works for same-domain cookies but won't delete cross-subdomain cookies (e.g., `.example.com`). For cross-subdomain deletion, the backend must set the `Domain` attribute.
+
+2. **`sanitize()` strips quotes** — Input like `O'Brien` becomes `OBrien`. This is aggressive but safe. The alternative (HTML entity encoding) would require all consumers to decode, which increases complexity.
+
+3. **`Storage.clear()` is analytics-specific** — It hardcodes `first_touch`, `last_touch`, `session_start` as the keys to clear. Other modules (braze, voucherify) manage their own storage cleanup.
+
+---
+
 ## Design Patterns
 
 - **Factory functions** — Each utility is created via `create*()` functions that receive dependencies as parameters (dependency injection)

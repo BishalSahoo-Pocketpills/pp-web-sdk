@@ -203,6 +203,144 @@ Global logout function (convenience alias). Available on `window` for use in inl
 
 ---
 
+## Architecture & Design Decisions
+
+### CSS + JS Dual Approach for Visibility
+
+The module uses a **two-phase** approach to prevent Flash of Unstyled Content (FOUC):
+
+1. **CSS phase** (`login.min.css` loads first) — Hides all `[data-visibility]` elements via `opacity: 0`
+2. **JS phase** (`login.min.js` runs) — Adds body classes, then applies `dom-ready` which restores opacity
+
+```css
+body:not(.dom-ready) [data-visibility] { opacity: 0; }
+body.is-logged-out [data-visibility="logged-in"] { display: none !important; }
+```
+
+**Why:** CSS loads before JavaScript, so `[data-visibility]` elements are invisible from the start. Once JS determines auth state and applies body classes, the CSS rules take over with `display: none` for the wrong state, and `dom-ready` removes the opacity blanket.
+
+**Tradeoff:** Requires loading `login.min.css` in `<head>` (before body renders). If the CSS fails to load, all `[data-visibility]` elements remain visible, which is the safe fallback.
+
+### Cookie-Based Auth Detection
+
+Authentication state is determined by checking `userId` and `Authorization` cookies:
+
+```typescript
+const isLoggedIn = userId && userId !== '-1' && authToken && authToken !== '';
+```
+
+**Why:** The PocketPills backend sets these cookies on login. The SDK doesn't make API calls to verify auth — it trusts the cookie state. This is appropriate for a Webflow marketing site that shows/hides UI elements but doesn't handle sensitive operations.
+
+**Tradeoff:** If cookies are stale (e.g., expired auth token still present), the module may show "logged in" UI incorrectly. The backend should clear cookies on token expiry to avoid this.
+
+### Idempotent Class Management
+
+`initAuthState()` removes the opposite class before adding the correct one:
+
+```typescript
+if (isLoggedIn) {
+  doc.body.classList.remove('is-logged-out');
+  doc.body.classList.add('is-logged-in');
+} else {
+  doc.body.classList.remove('is-logged-in');
+  doc.body.classList.add('is-logged-out');
+}
+```
+
+**Why:** Ensures calling `ppLib.login.init()` multiple times doesn't accumulate conflicting body classes. This is important if the module is re-initialized after a soft logout without page reload.
+
+### Soft vs. Hard Logout
+
+Two logout modes handle different user intentions:
+
+| Mode | Clears Session Cookies | Clears `previousUser` | Use Case |
+|---|---|---|---|
+| Soft (`logout`) | Yes | No | Regular logout — "welcome back" on return |
+| Hard (`forget-me`) | Yes | Yes | Privacy-conscious logout — fully clears identity |
+
+**Tradeoff:** `reloadOnLogout: true` (default) means every logout triggers a full page reload. This ensures the server sees the cleared cookies and returns appropriate content. For SPA scenarios, set `reloadOnLogout: false` and handle state updates manually.
+
+### `textContent` for DOM Injection
+
+User names are injected via `textContent` (not `innerHTML`):
+
+```typescript
+el.textContent = ppLib.Security.sanitize(previousUserName);
+```
+
+**Why:** `textContent` is inherently XSS-safe — it doesn't parse HTML. Combined with `Security.sanitize()`, this provides defense-in-depth: even if sanitization had a gap, `textContent` would render the input as plain text.
+
+---
+
+## Validation & Fallbacks
+
+The login module validates cookie data and handles edge cases in authentication state detection.
+
+### Authentication State Validation
+
+| Cookie | Expected Value | Invalid State Handling |
+|---|---|---|
+| `userId` | Non-empty string, not `'-1'` | User treated as logged out |
+| `Authorization` | Non-empty string | User treated as logged out |
+| `app_is_authenticated` | `'true'` | `signup-completed` class not applied |
+| `previousUser` | JSON string with `firstName` or `phone` | JSON parse failure logged as error, falls back to `firstName` cookie |
+| `firstName` | Any non-empty string | Falls back to no previous user name |
+
+### Cookie Parsing Fallbacks
+
+| Condition | Behavior |
+|---|---|
+| `previousUser` cookie is invalid JSON | `'Previous user JSON parse error'` logged (error), parsing continues |
+| `previousUser` cookie is valid JSON but lacks `firstName` and `phone` | Not treated as having a previous user |
+| `firstName` cookie exists (overrides JSON) | Used as fallback for previous user name |
+| Both `previousUser` and `firstName` missing | `has-previous-user` class not applied |
+| `userId` is `'-1'` | Treated as logged out (backend sentinel value) |
+
+### Identity Injection Validation
+
+| Condition | Behavior |
+|---|---|
+| User name injected into DOM | Sanitized via `ppLib.Security.sanitize()` before `textContent` set |
+| No `[data-login-identifier-key="user-first-name"]` elements | No-op (no error logged) |
+| Previous user name is empty after sanitization | Element `textContent` set to empty string |
+
+### Logout Validation
+
+| Condition | Behavior |
+|---|---|
+| `hardLogout` parameter is not `true` | Defaults to `false` (soft logout) |
+| `hardLogout` is truthy but not `true` (e.g., `1`, `'yes'`) | Treated as `false` (strict boolean check: `hardLogout === true`) |
+| Cookie deletion fails | `'Logout error'` logged (error) |
+| `reloadOnLogout` is `false` | Page does not reload after logout |
+
+### Body Class Safety
+
+| Condition | Behavior |
+|---|---|
+| `initAuthState()` called multiple times | Idempotent: removes opposite class before adding correct one |
+| `dom-ready` class | Always applied after initialization (even on error recovery) |
+| Body element not available | `'initAuthState error'` logged (error), function exits gracefully |
+
+### Action Binding Validation
+
+| Condition | Behavior |
+|---|---|
+| No `[data-action="logout"]` elements | No listeners bound (no error) |
+| No `[data-action="forget-me"]` elements | No listeners bound (no error) |
+| Button click handler fails | `'bindActions error'` logged (error) |
+
+---
+
+## Known Limitations
+
+1. **No real-time cookie watching** — Auth state is checked once on `DOMContentLoaded`. If the user logs in/out in another tab, the current tab won't update until a page reload.
+
+2. **`previousUser` cookie parsing assumes specific format** — Supports both JSON (`{ firstName: "...", phone: "..." }`) and plain string formats. Other formats will be silently ignored.
+
+3. **`logoutUser` is a global function** — Exposed on `window` for inline `onclick` handlers. This is intentional for Webflow's no-code environment but pollutes the global namespace.
+
+---
+
 ## Dependencies
 
-- **common** (`window.ppLib`) — getCookie, deleteCookie, Security (sanitize), logging
+- **common** (`window.ppLib`) — getCookie, deleteCookie, Security (sanitize), extend, logging

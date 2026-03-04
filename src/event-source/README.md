@@ -176,8 +176,120 @@ Click and `touchend` events on the same element are debounced with a 300ms windo
 
 ---
 
+## Architecture & Design Decisions
+
+### Event Delegation vs. Per-Element Listeners
+
+The module uses a single `document`-level listener instead of attaching listeners to each `[data-event-source]` element:
+
+```typescript
+doc.addEventListener('click', handleInteraction, { capture: false, passive: true });
+```
+
+**Why:**
+- **Dynamic elements** — Elements added after DOMContentLoaded (Webflow interactions, JS rendering) are automatically tracked
+- **Memory efficiency** — One listener regardless of how many trackable elements exist
+- **No MutationObserver needed** — No need to watch for DOM changes and rebind
+
+**Tradeoff:** Every click event bubbles through the handler. The `target.closest('[data-event-source]')` check short-circuits immediately for non-tracked clicks, so the overhead is negligible.
+
+### Debounce by Element Identity
+
+Events are debounced per element using a composite key:
+
+```typescript
+function getElementId(el) {
+  return el.tagName + ':' + el.getAttribute('data-event-source') + ':' + el.innerText.substring(0, 50);
+}
+```
+
+**Why:** On mobile, a single tap fires both `touchend` and `click` events. Without debouncing, every tap would produce duplicate analytics events.
+
+**Tradeoff:** The 300ms debounce window means legitimate double-clicks within 300ms are deduplicated. This is acceptable for analytics tracking where the first click is the meaningful signal.
+
+### Passive Event Listeners
+
+```typescript
+{ capture: false, passive: true }
+```
+
+**Why:** `passive: true` tells the browser the handler won't call `preventDefault()`, allowing the browser to optimize scroll and touch performance. Since this is analytics tracking (not behavior modification), there's no need to prevent default actions.
+
+### Element Context Enrichment
+
+Every event includes the element's tag name, truncated text content (100 chars), and href (for links):
+
+```typescript
+data.element_tag = el.tagName.toLowerCase();
+data.element_text = ppLib.Security.sanitize(el.innerText.substring(0, 100).trim());
+data.element_href = el.href; // only for <a> tags
+```
+
+**Why:** Context helps marketing teams identify which specific button was clicked without needing unique `data-event-source` values for every element. The 100-character truncation prevents excessively large payloads.
+
+---
+
+## Validation & Fallbacks
+
+The event source module validates all inputs and silently handles missing or invalid data.
+
+### Event Data Extraction Validation
+
+| Attribute | Required | Fallback | Warning Logged |
+|---|---|---|---|
+| `data-event-source` | Yes | - | Returns `null` (element skipped, no event dispatched) |
+| `data-event-category` | No | Not included in payload | No warning |
+| `data-event-label` | No | Not included in payload | No warning |
+| `data-event-value` | No | Not included in payload | No warning |
+| `element_href` | Auto-detected | `''` (empty string) for non-`<a>` elements | No warning |
+| `element_text` | Auto-extracted | Truncated to 100 chars, trimmed | No warning |
+| `interaction_type` | Auto-set | From `Event.type` (`'click'` or `'touchend'`) | No warning |
+
+### Input Sanitization
+
+All extracted attribute values pass through `ppLib.Security.sanitize()`. If sanitization returns an empty string for the `data-event-source` value, the entire event is skipped.
+
+### Public API Validation
+
+| Method | Validation | Warning Logged |
+|---|---|---|
+| `trackElement(element)` | `element` must not be null/undefined | `'trackElement called with null/undefined element'` (warn) |
+| `trackElement(element)` | Element must have `data-event-source` | No event dispatched (silent) |
+| `trackCustom(eventSource)` | `eventSource` must be non-empty | `'trackCustom requires a non-empty eventSource'` (warn) |
+| `trackCustom(eventSource)` | `eventSource` must survive sanitization | `'trackCustom: eventSource was rejected by sanitization'` (warn) |
+| `trackCustom(_, properties)` | Properties must be an object | Non-object properties are ignored |
+
+### Dispatch Fallbacks
+
+| Condition | Behavior |
+|---|---|
+| `CONFIG.platforms.mixpanel.enabled` is `false` | `sendToMixpanel()` is a no-op |
+| `CONFIG.platforms.gtm.enabled` is `false` | `sendToGTM()` is a no-op |
+| `window.mixpanel` not available | `sendToMixpanel()` silently returns |
+| `CONFIG.includePageContext` is `false` | Page URL, path, and title are not included in event data |
+
+### Debounce Behavior
+
+| Condition | Behavior |
+|---|---|
+| Same element clicked/tapped within 300ms | Duplicate event suppressed (no warning logged) |
+| Element identity | Composite key: `tagName:eventSource:innerText(50 chars)` |
+| `trackCustom()` calls | Not debounced (each call dispatches immediately) |
+
+---
+
+## Known Limitations
+
+1. **No event batching** — Each click dispatches immediately to GTM and Mixpanel. For high-traffic pages with many tracked elements, this could create burst traffic. The analytics module's event queue is not shared with event-source.
+
+2. **GTM/Mixpanel dispatch is independent** — The event-source module dispatches directly to `window.dataLayer` and `window.mixpanel.track()`, not through the analytics module's event queue. This means rate limiting and `requestIdleCallback` scheduling don't apply.
+
+3. **`element_text` uses `innerText`** — This triggers layout computation on each extraction. For analytics purposes the performance impact is negligible, but `textContent` would be technically faster.
+
+---
+
 ## Dependencies
 
-- **common** (`window.ppLib`) — Security (sanitize), logging
+- **common** (`window.ppLib`) — Security (sanitize), logging, extend
 - **GTM** (`window.dataLayer`) — Created if not present
 - **Mixpanel** (`window.mixpanel`) — Optional; events sent if available

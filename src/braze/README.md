@@ -131,7 +131,7 @@ ppLib.braze.configure({
   attributeMap: {
     'signup_email': 'email',      // field "signup_email" → Braze "email"
     'phone_number': 'phone',      // field "phone_number" → Braze "phone"
-    'user_dob': 'dob'             // field "user_dob" → Braze "dob"
+    'home_town': 'city'           // field "home_town" → Braze "city"
   }
 });
 ```
@@ -193,7 +193,6 @@ These field names map to dedicated Braze user profile setters:
 | `last_name` | `setLastName()` | Last name |
 | `phone` | `setPhoneNumber()` | Phone number |
 | `gender` | `setGender()` | Gender |
-| `dob` | `setDateOfBirth()` | Date of birth |
 | `country` | `setCountry()` | Country |
 | `city` | `setHomeCity()` | City |
 | `language` | `setLanguage()` | Language preference |
@@ -471,7 +470,9 @@ ppLib.braze.setUserAttributes({
 });
 ```
 
-The 9 standard attribute names (`email`, `first_name`, `last_name`, `phone`, `gender`, `dob`, `country`, `city`, `language`) are automatically routed to their dedicated Braze setters. **Every other key becomes a custom attribute** — you can pass as many as you need in a single call.
+The 8 standard attribute names (`email`, `first_name`, `last_name`, `phone`, `gender`, `country`, `city`, `language`) are automatically routed to their dedicated Braze setters. **Every other key becomes a custom attribute** — you can pass as many as you need in a single call.
+
+> **Note on `dob`:** Date of birth is intentionally excluded from standard attribute mapping because Braze's `setDateOfBirth(year, month, day)` requires 3 separate arguments, which can't be populated from a single form field string. Instead, `dob` is stored as a custom attribute. For programmatic DOB setting, use `window.braze.getUser().setDateOfBirth(year, month, day)` directly after SDK initialization.
 
 ### Attribute Remapping
 
@@ -652,6 +653,84 @@ HTML Element (data-braze-*)
 - The SDK API key is a public client-side key (safe to embed in HTML)
 - REST API keys are never used client-side
 - The SDK respects consent gating when configured
+
+---
+
+## Validation & Fallbacks
+
+The Braze module validates all inputs through sanitization and logs descriptive warnings when required fields are missing.
+
+### Initialization Validation
+
+| Condition | Warning Logged | Behavior |
+|---|---|---|
+| `sdk.apiKey` is empty | `'No apiKey configured. Call ppLib.braze.configure({ sdk: { apiKey: "..." } }) before init.'` (warn) | `init()` returns early |
+| `sdk.baseUrl` is empty | `'No baseUrl configured. Call ppLib.braze.configure({ sdk: { baseUrl: "..." } }) before init.'` (warn) | `init()` returns early |
+| `sdk.cdnUrl` is empty | `'No cdnUrl configured -- cannot load Braze SDK'` (warn) | SDK not loaded |
+| Consent not granted | `'Consent not granted -- SDK not loaded'` (info) | SDK not loaded |
+| Consent check throws | `'consent check error'` (error) | Returns `false` (denied) |
+
+### User Identity Validation
+
+| Method | Validation | Warning Logged |
+|---|---|---|
+| `identify(userId)` | `userId` sanitized, must be non-empty | `'identify called with empty userId'` (warn) |
+| `setEmail(email)` | Must be non-empty before sanitization | `'setEmail called with empty email'` (warn) |
+| `setEmail(email)` | Must survive sanitization | `'Email was rejected by sanitization'` (warn) |
+| `setUserAttributes(attrs)` | Must be a non-null object | Silently returns |
+| `autoIdentify()` | `userId` cookie value not `'-1'` | Silent (no identify call if invalid) |
+
+### Form Tracking Validation
+
+| Condition | Warning Logged | Behavior |
+|---|---|---|
+| Form element has empty `data-braze-form` | `'Form element found but [...] attribute is empty'` (warn) | Form skipped |
+| Form name rejected by sanitization | `'Form name was rejected by sanitization'` (warn) | Form skipped |
+| `requireEmail: true` and email field empty | `'Form rejected -- email required but missing'` (warn) | Form skipped |
+| Duplicate form submit within 500ms | None | Debounced (silently dropped) |
+| No `data-braze-attr` fields found in form | None | No user attributes set (event still fires) |
+| `flushOnSubmit: true` (default) | None | `requestImmediateDataFlush()` called after submit |
+
+### Event Tracking Validation
+
+| Condition | Warning Logged | Behavior |
+|---|---|---|
+| Element has empty `data-braze-event` | `'Element found with [...] but attribute value is empty'` (warn) | Event skipped |
+| Event name rejected by sanitization | `'Event name was rejected by sanitization'` (warn) | Event skipped |
+| Duplicate click within 300ms | None | Debounced (silently dropped) |
+| `data-braze-prop-*` attribute with empty suffix | None | Property skipped |
+
+### Purchase Tracking Validation
+
+| Condition | Warning Logged | Behavior |
+|---|---|---|
+| Missing `data-braze-purchase` or `data-braze-price` | `'Purchase element missing required attribute(s): ...'` (warn) | Purchase skipped |
+| Product ID rejected by sanitization | None | Purchase skipped (silently) |
+| Price is `NaN` | `'Invalid price: ...'` (warn) | Purchase skipped |
+| `trackPurchase()` with empty `productId` | `'trackPurchase requires a non-empty productId'` (warn) | Purchase skipped |
+| `trackPurchase()` with `NaN` price | `'trackPurchase invalid price: ...'` (warn) | Purchase skipped |
+| Missing `data-braze-currency` | Falls back to `CONFIG.purchase.defaultCurrency` (`'CAD'`) | No warning |
+| Missing `data-braze-quantity` | Falls back to `1` | No warning |
+| Quantity is `NaN` or `< 1` | Falls back to `1` | No warning |
+
+### SDK Loader Fallbacks
+
+| Condition | Behavior |
+|---|---|
+| SDK CDN blocked (ad blocker) | `'Failed to load SDK from ...'` logged (error), stub queue retains calls |
+| API calls before SDK loads | Queued in stub, drained after `script.onload` |
+| `getUser().method()` calls before SDK loads | Queued as `'getUser().method'` entries, replayed after load |
+| `braze` global not available during drain | `'drainQueue error'` logged per failed entry |
+
+### Attribute Mapping Fallbacks
+
+| Condition | Behavior |
+|---|---|
+| Field name matches standard attribute (`email`, `first_name`, etc.) | Uses dedicated Braze setter (e.g., `setEmail()`, `setFirstName()`) |
+| Field name not in `STANDARD_ATTRS` and not in `attributeMap` | Stored as custom attribute via `setCustomUserAttribute()` |
+| Field name prefixed with `custom:` | Prefix stripped, stored as custom attribute |
+| `attributeMap` remaps field name | Remapped name checked against standard attrs first |
+| `dob` field | Intentionally excluded from standard mapping (requires 3 args); stored as custom attribute |
 
 ---
 
