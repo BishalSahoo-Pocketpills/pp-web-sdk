@@ -6,7 +6,10 @@ export function createFormHandler(
   doc: Document,
   ppLib: PPLib,
   CONFIG: BrazeConfig,
-  userManager: { processFormAttrs: (fieldMap: Record<string, string>) => void }
+  userManager: {
+    processFormAttrs: (fieldMap: Record<string, string>) => void;
+    identify: (userId: string) => void;
+  }
 ) {
   const lastSubmitMap: Record<string, number> = {};
   var debounceWriteCount = 0;
@@ -100,6 +103,23 @@ export function createFormHandler(
         /*! v8 ignore stop */
           ppLib.log('warn', '[ppBraze] Form rejected — email required but missing');
           return;
+        }
+      }
+
+      // Identify by email if configured and user is not already identified
+      /*! v8 ignore start */
+      if (CONFIG.form.identifyByEmail && fields.email) {
+      /*! v8 ignore stop */
+        var emailVal = fields.email.trim();
+        /*! v8 ignore start */
+        if (emailVal) {
+        /*! v8 ignore stop */
+          var existingUserId = ppLib.getCookie(CONFIG.identity.userIdCookie);
+          /*! v8 ignore start */
+          if (!existingUserId || existingUserId === '-1') {
+          /*! v8 ignore stop */
+            userManager.identify(emailVal);
+          }
         }
       }
 

@@ -74,6 +74,7 @@ describe('Configuration', () => {
     expect(config.form.debounceMs).toBe(500);
     expect(config.form.flushOnSubmit).toBe(true);
     expect(config.form.requireEmail).toBe(false);
+    expect(config.form.identifyByEmail).toBe(true);
     expect(config.event.eventAttribute).toBe('data-braze-event');
     expect(config.event.propPrefix).toBe('data-braze-prop-');
     expect(config.event.debounceMs).toBe(300);
@@ -986,6 +987,133 @@ describe('Form Handling', () => {
 
     // Event should still fire even with no fields
     expect(mockBraze.logCustomEvent).toHaveBeenCalledWith('form_submitted_empty_form', expect.any(Object));
+  });
+
+  it('identifyByEmail calls changeUser(email) before setting attrs', () => {
+    loadWithCommon('braze');
+    window.ppLib.braze!.configure({
+      sdk: { apiKey: 'key', baseUrl: 'sdk.braze.com' } as any,
+      identity: { autoIdentify: false, userIdCookie: 'userId', emailCookie: '' },
+      form: { identifyByEmail: true } as any
+    });
+    window.ppLib.braze!.init();
+
+    const mockBraze = createMockBraze();
+    window.braze = mockBraze as any;
+    const script = document.querySelector('script[src*="appboycdn"]') as HTMLScriptElement;
+    script.onload!(new Event('load'));
+
+    document.body.innerHTML = `
+      <form data-braze-form="newsletter">
+        <input data-braze-attr="email" value="visitor@example.com">
+        <input data-braze-attr="first_name" value="Jane">
+        <button type="submit">Subscribe</button>
+      </form>
+    `;
+
+    const form = document.querySelector('form')!;
+    form.dispatchEvent(new Event('submit', { bubbles: true }));
+
+    expect(mockBraze.changeUser).toHaveBeenCalledWith('visitor@example.com');
+    expect(mockBraze._mockUser.setEmail).toHaveBeenCalledWith('visitor@example.com');
+    expect(mockBraze._mockUser.setFirstName).toHaveBeenCalledWith('Jane');
+
+    // changeUser must be called before setEmail (order check)
+    const changeUserOrder = mockBraze.changeUser.mock.invocationCallOrder[0];
+    const setEmailOrder = mockBraze._mockUser.setEmail.mock.invocationCallOrder[0];
+    expect(changeUserOrder).toBeLessThan(setEmailOrder);
+  });
+
+  it('identifyByEmail skips changeUser when userId cookie exists', () => {
+    loadWithCommon('braze');
+    window.ppLib.braze!.configure({
+      sdk: { apiKey: 'key', baseUrl: 'sdk.braze.com' } as any,
+      identity: { autoIdentify: false, userIdCookie: 'userId', emailCookie: '' },
+      form: { identifyByEmail: true } as any
+    });
+    window.ppLib.braze!.init();
+
+    const mockBraze = createMockBraze();
+    window.braze = mockBraze as any;
+    const script = document.querySelector('script[src*="appboycdn"]') as HTMLScriptElement;
+    script.onload!(new Event('load'));
+
+    // Set userId cookie to simulate an already-identified user
+    document.cookie = 'userId=user-abc-123; path=/';
+
+    document.body.innerHTML = `
+      <form data-braze-form="newsletter">
+        <input data-braze-attr="email" value="visitor@example.com">
+        <button type="submit">Subscribe</button>
+      </form>
+    `;
+
+    const form = document.querySelector('form')!;
+    form.dispatchEvent(new Event('submit', { bubbles: true }));
+
+    // changeUser should NOT be called with the email
+    expect(mockBraze.changeUser).not.toHaveBeenCalled();
+    // But attrs should still be set
+    expect(mockBraze._mockUser.setEmail).toHaveBeenCalledWith('visitor@example.com');
+
+    // Clean up cookie
+    document.cookie = 'userId=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+  });
+
+  it('identifyByEmail: false does not call changeUser', () => {
+    loadWithCommon('braze');
+    window.ppLib.braze!.configure({
+      sdk: { apiKey: 'key', baseUrl: 'sdk.braze.com' } as any,
+      identity: { autoIdentify: false, userIdCookie: 'userId', emailCookie: '' },
+      form: { identifyByEmail: false } as any
+    });
+    window.ppLib.braze!.init();
+
+    const mockBraze = createMockBraze();
+    window.braze = mockBraze as any;
+    const script = document.querySelector('script[src*="appboycdn"]') as HTMLScriptElement;
+    script.onload!(new Event('load'));
+
+    document.body.innerHTML = `
+      <form data-braze-form="signup">
+        <input data-braze-attr="email" value="visitor@example.com">
+        <button type="submit">Submit</button>
+      </form>
+    `;
+
+    const form = document.querySelector('form')!;
+    form.dispatchEvent(new Event('submit', { bubbles: true }));
+
+    expect(mockBraze.changeUser).not.toHaveBeenCalled();
+    expect(mockBraze._mockUser.setEmail).toHaveBeenCalledWith('visitor@example.com');
+  });
+
+  it('identifyByEmail does not trigger changeUser when email field is empty', () => {
+    loadWithCommon('braze');
+    window.ppLib.braze!.configure({
+      sdk: { apiKey: 'key', baseUrl: 'sdk.braze.com' } as any,
+      identity: { autoIdentify: false, userIdCookie: 'userId', emailCookie: '' },
+      form: { identifyByEmail: true } as any
+    });
+    window.ppLib.braze!.init();
+
+    const mockBraze = createMockBraze();
+    window.braze = mockBraze as any;
+    const script = document.querySelector('script[src*="appboycdn"]') as HTMLScriptElement;
+    script.onload!(new Event('load'));
+
+    document.body.innerHTML = `
+      <form data-braze-form="signup">
+        <input data-braze-attr="email" value="">
+        <input data-braze-attr="first_name" value="John">
+        <button type="submit">Submit</button>
+      </form>
+    `;
+
+    const form = document.querySelector('form')!;
+    form.dispatchEvent(new Event('submit', { bubbles: true }));
+
+    expect(mockBraze.changeUser).not.toHaveBeenCalled();
   });
 });
 

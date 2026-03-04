@@ -26,6 +26,7 @@ export interface BrazeFormConfig {
   debounceMs: number;
   flushOnSubmit: boolean;
   requireEmail: boolean;
+  identifyByEmail: boolean;
 }
 
 export interface BrazeEventConfig {

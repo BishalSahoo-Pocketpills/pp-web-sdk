@@ -26,7 +26,8 @@ export function createBrazeConfig(): BrazeConfig {
       preventDefault: false,
       debounceMs: 500,
       flushOnSubmit: true,
-      requireEmail: false
+      requireEmail: false,
+      identifyByEmail: true
     },
     event: {
       eventAttribute: 'data-braze-event',

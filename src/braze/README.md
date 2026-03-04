@@ -101,6 +101,7 @@ All options are passed via `ppLib.braze.configure({ ... })` before calling `init
 | `debounceMs` | `number` | `500` | Debounce window per form name to prevent duplicate submissions. |
 | `flushOnSubmit` | `boolean` | `true` | Call `requestImmediateDataFlush()` after form submit to flush before page navigation. |
 | `requireEmail` | `boolean` | `false` | Reject form if the `email` field is empty. |
+| `identifyByEmail` | `boolean` | `true` | Call `changeUser(email)` on form submit to prevent duplicate anonymous profiles. Only applies when no `userId` cookie exists. |
 
 ### `event` — Event Tracking
 
@@ -273,6 +274,22 @@ ppLib.braze.configure({
   form: { requireEmail: true }
 });
 ```
+
+### Identifying Anonymous Visitors by Email
+
+When an anonymous visitor submits a form with their email, Braze creates a device-specific anonymous profile by default. If the same person submits from a different device, a duplicate profile is created.
+
+`identifyByEmail` is enabled by default — it calls `changeUser(email)` before setting attributes, making the email the external ID. Braze will then find-or-create by that ID — same email = same profile, no duplicates.
+
+To disable it:
+
+```javascript
+ppLib.braze.configure({
+  form: { identifyByEmail: false }
+});
+```
+
+**Safety:** If the user is already identified (has a `userId` cookie), `changeUser(email)` is **not** called — this prevents switching Braze context to a different profile. The option only takes effect for truly anonymous visitors.
 
 ---
 
@@ -687,6 +704,8 @@ The Braze module validates all inputs through sanitization and logs descriptive 
 | Form element has empty `data-braze-form` | `'Form element found but [...] attribute is empty'` (warn) | Form skipped |
 | Form name rejected by sanitization | `'Form name was rejected by sanitization'` (warn) | Form skipped |
 | `requireEmail: true` and email field empty | `'Form rejected -- email required but missing'` (warn) | Form skipped |
+| `identifyByEmail: true` and email present, no `userId` cookie | None | `changeUser(email)` called before setting attributes |
+| `identifyByEmail: true` but `userId` cookie exists | None | `changeUser(email)` skipped (already identified) |
 | Duplicate form submit within 500ms | None | Debounced (silently dropped) |
 | No `data-braze-attr` fields found in form | None | No user attributes set (event still fires) |
 | `flushOnSubmit: true` (default) | None | `requestImmediateDataFlush()` called after submit |
