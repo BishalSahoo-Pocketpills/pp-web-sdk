@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head><title>Braze Integration Test</title></head>
+<body>
+  <!-- Scripts loaded from dist/ served by 'serve' -->
+  <script src="/common.min.js"></script>
+  <script src="/braze.min.js"></script>
+
+  <!-- Form: lead capture -->
+  <form id="test-form" data-braze-form="lead_capture">
+    <input data-braze-attr="email" name="email" type="email" />
+    <input data-braze-attr="first_name" name="first_name" />
+    <input data-braze-attr="phone" name="phone" />
+    <input data-braze-attr="custom:preferred_pharmacy" name="pharmacy" />
+    <input data-braze-attr="custom:insurance_provider" name="insurance" />
+    <input data-braze-attr="custom:province" name="province" />
+    <input data-braze-attr="custom:referral_source" name="referral" />
+    <button type="submit">Subscribe</button>
+  </form>
+
+  <!-- Form: custom event override -->
+  <form id="test-form-override" data-braze-form="contact_us"
+        data-braze-form-event="custom_contact_event">
+    <input data-braze-attr="email" name="email" type="email" />
+    <button type="submit">Contact</button>
+  </form>
+
+  <!-- Event: button click -->
+  <button id="test-event-btn" data-braze-event="started_signup"
+          data-braze-prop-source="hero_banner"
+          data-braze-prop-plan="premium">
+    Get Started
+  </button>
+
+  <!-- Purchase: button click -->
+  <button id="test-purchase-btn" data-braze-purchase="assessment-pkg"
+          data-braze-price="60"
+          data-braze-currency="CAD"
+          data-braze-quantity="2">
+    Buy Package
+  </button>
+
+  <!-- Plain element with no data-braze-* attributes -->
+  <button id="plain-btn">No Tracking</button>
+
+  <!-- Init script -->
+  <script>
+    ppLib.braze.configure({
+      sdk: {
+        apiKey: 'test-key-123',
+        baseUrl: 'sdk.iad-01.braze.com'
+      },
+      form: {
+        preventDefault: true
+      }
+    });
+    ppLib.braze.init();
+  </script>
+</body>
+</html>

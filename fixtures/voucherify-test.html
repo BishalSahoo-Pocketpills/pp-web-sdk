@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head><title>Voucherify Integration Test</title></head>
+<body>
+  <!-- Scripts loaded from dist/ served by 'serve' -->
+  <script src="/common.min.js"></script>
+  <script src="/voucherify.min.js"></script>
+
+  <!-- Product: Weight Loss -->
+  <div data-voucherify-product="weight-loss" data-voucherify-base-price="60">
+    <span data-voucherify-original-price></span>
+    <span data-voucherify-discounted-price></span>
+    <span data-voucherify-discount-label></span>
+  </div>
+
+  <!-- Product: Hair Loss -->
+  <div data-voucherify-product="hair-loss" data-voucherify-base-price="30">
+    <span data-voucherify-original-price></span>
+    <span data-voucherify-discounted-price></span>
+    <span data-voucherify-discount-label></span>
+  </div>
+
+  <!-- Product: No Discount Test -->
+  <div data-voucherify-product="no-discount" data-voucherify-base-price="50">
+    <span data-voucherify-original-price></span>
+    <span data-voucherify-discounted-price></span>
+    <span data-voucherify-discount-label></span>
+  </div>
+
+  <!-- Init script -->
+  <script>
+    ppLib.voucherify.configure({
+      api: {
+        applicationId: 'test-app-id',
+        clientSecretKey: 'test-client-key',
+        baseUrl: 'https://as1.api.voucherify.io'
+      },
+      pricing: {
+        autoFetch: false
+      }
+    });
+  </script>
+</body>
+</html>
