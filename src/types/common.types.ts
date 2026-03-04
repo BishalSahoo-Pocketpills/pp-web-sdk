@@ -61,4 +61,5 @@ export interface PPLib {
   eventSource?: import('./event-source.types').EventSourceAPI;
   mixpanel?: import('./mixpanel.types').MixpanelAPI;
   braze?: import('./braze.types').BrazeAPI;
+  voucherify?: import('./voucherify.types').VoucherifyAPI;
 }

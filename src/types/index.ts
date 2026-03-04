@@ -5,3 +5,4 @@ export type { EventSourceConfig, EventSourceAPI, EventSourceData } from './event
 export type { LoginConfig, LoginAPI } from './login.types';
 export type { MixpanelConfig, MixpanelAPI, SessionManager } from './mixpanel.types';
 export type { BrazeConfig, BrazeSdkConfig, BrazeConsentConfig, BrazeIdentityConfig, BrazeFormConfig, BrazeEventConfig, BrazePurchaseConfig, BrazeAPI } from './braze.types';
+export type { VoucherifyConfig, VoucherifyApiConfig, VoucherifyCacheConfig, VoucherifyPricingConfig, VoucherifyContextConfig, VoucherifyConsentConfig, VoucherifyAPI, OrderItem, QualificationContext, ValidationContext, PricingResult, ValidationResult, QualificationResult } from './voucherify.types';
