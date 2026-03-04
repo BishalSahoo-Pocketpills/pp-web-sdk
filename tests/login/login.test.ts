@@ -369,7 +369,7 @@ describe('initAuthState()', () => {
         '[data-login-identifier-key="user-first-name"]'
       );
       spans.forEach((span) => {
-        expect(span.innerText).toBe('Alice');
+        expect(span.textContent).toBe('Alice');
       });
     });
 
@@ -390,7 +390,7 @@ describe('initAuthState()', () => {
       const span = document.querySelector(
         '[data-login-identifier-key="user-first-name"]'
       );
-      expect(span.innerText).toBe('Bob');
+      expect(span.textContent).toBe('Bob');
     });
 
     it('sets has-previous-user from firstName cookie alone (no JSON)', () => {
@@ -402,7 +402,7 @@ describe('initAuthState()', () => {
       const span = document.querySelector(
         '[data-login-identifier-key="user-first-name"]'
       );
-      expect(span.innerText).toBe('Charlie');
+      expect(span.textContent).toBe('Charlie');
     });
 
     it('sanitizes name before DOM injection to prevent XSS', () => {
@@ -413,7 +413,7 @@ describe('initAuthState()', () => {
       loadFresh();
 
       // Security.sanitize strips < > ' " characters
-      expect(span.innerText).toBe('scriptalert(1)/script');
+      expect(span.textContent).toBe('scriptalert(1)/script');
     });
 
     it('handles invalid JSON in previousUser gracefully', () => {
@@ -716,7 +716,7 @@ describe('Edge cases and integration', () => {
     const span = document.querySelector(
       '[data-login-identifier-key="user-first-name"]'
     );
-    expect(span.innerText).toBe('Bob');
+    expect(span.textContent).toBe('Bob');
   });
 
   it('full logged-out flow: no cookies at all', () => {

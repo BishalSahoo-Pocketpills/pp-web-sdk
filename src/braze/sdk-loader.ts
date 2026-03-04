@@ -84,6 +84,11 @@ export function createSdkLoader(
   }
 
   function loadSDK(onReady: () => void): void {
+    if (!CONFIG.sdk.cdnUrl) {
+      ppLib.log('warn', '[ppBraze] No cdnUrl configured — cannot load Braze SDK');
+      return;
+    }
+
     createStub();
 
     var script = doc.createElement('script');

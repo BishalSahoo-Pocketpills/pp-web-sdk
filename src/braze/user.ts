@@ -2,13 +2,15 @@ import type { PPLib } from '../types/common.types';
 import type { BrazeConfig } from '../types/braze.types';
 
 // Standard Braze attribute → dedicated setter method mapping
+// Note: dob/setDateOfBirth is intentionally excluded — it requires 3 separate
+// args (year, month, day) which can't be set from a single form field string.
+// Use setCustomUserAttribute('dob', value) or the programmatic API instead.
 const STANDARD_ATTRS: Record<string, string> = {
   email: 'setEmail',
   first_name: 'setFirstName',
   last_name: 'setLastName',
   phone: 'setPhoneNumber',
   gender: 'setGender',
-  dob: 'setDateOfBirth',
   country: 'setCountry',
   city: 'setHomeCity',
   language: 'setLanguage'
@@ -72,9 +74,16 @@ export function createUserManager(
 
   function setEmail(email: string): void {
     try {
+      if (!email) {
+        ppLib.log('warn', '[ppBraze] setEmail called with empty email');
+        return;
+      }
       var sanitized = ppLib.Security.sanitize(email);
       /*! v8 ignore start */
-      if (!sanitized) return;
+      if (!sanitized) {
+        ppLib.log('warn', '[ppBraze] Email was rejected by sanitization: ' + email);
+        return;
+      }
       /*! v8 ignore stop */
       win.braze.getUser().setEmail(sanitized);
       ppLib.log('info', '[ppBraze] setEmail → ' + sanitized);

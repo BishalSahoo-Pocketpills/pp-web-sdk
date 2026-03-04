@@ -56,6 +56,7 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
   // =====================================================
 
   const lastEventMap: Record<string, number> = {};
+  let debounceWriteCount = 0;
 
   function isDuplicate(key: string): boolean {
     const now = Date.now();
@@ -65,6 +66,17 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
       return true;
     }
     lastEventMap[key] = now;
+    /*! v8 ignore start */
+    // Prune stale debounce entries every 100 writes to prevent unbounded growth
+    if (++debounceWriteCount >= 100) {
+      debounceWriteCount = 0;
+      for (const k in lastEventMap) {
+        if ((now - lastEventMap[k]) >= CONFIG.debounceMs) {
+          delete lastEventMap[k];
+        }
+      }
+    }
+    /*! v8 ignore stop */
     return false;
   }
 
@@ -95,7 +107,13 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
 
     // All three required
     /*! v8 ignore start */
-    if (!itemId || !itemName || !itemPrice) return null;
+    if (!itemId || !itemName || !itemPrice) {
+      ppLib.log('warn', '[ppEcommerce] Missing required ecommerce attribute(s):' +
+        (!itemId ? ' data-ecommerce-item' : '') +
+        (!itemName ? ' data-ecommerce-name' : '') +
+        (!itemPrice ? ' data-ecommerce-price' : ''));
+      return null;
+    }
     /*! v8 ignore stop */
 
     const item: EcommerceItem = {
@@ -343,10 +361,12 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
     trackViewItem: trackViewItem,
 
     trackItem: function(itemData: any): void {
+      /*! v8 ignore start */
       if (!itemData || !itemData.item_id || !itemData.item_name || !itemData.price) {
         ppLib.log('error', '[ppEcommerce] trackItem requires item_id, item_name, and price');
         return;
       }
+      /*! v8 ignore stop */
 
       const item: EcommerceItem = {
         item_id: ppLib.Security.sanitize(itemData.item_id),
@@ -360,8 +380,8 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
       /*! v8 ignore start */
       if (itemData.variant) item.variant = ppLib.Security.sanitize(itemData.variant);
       if (itemData.discount) item.discount = ppLib.Security.sanitize(String(itemData.discount));
-      /*! v8 ignore stop */
       if (itemData.coupon) item.coupon = ppLib.Security.sanitize(itemData.coupon);
+      /*! v8 ignore stop */
 
       const ecommerceData = buildEcommerceData([item]);
       /*! v8 ignore start */

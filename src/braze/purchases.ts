@@ -13,10 +13,20 @@ export function createPurchaseHandler(
   const QUANTITY_ATTR = 'data-braze-quantity';
 
   const lastPurchaseMap: Record<string, number> = {};
+  var debounceWriteCount = 0;
 
   function isDuplicate(key: string): boolean {
     var now = Date.now();
     /*! v8 ignore start */
+    // Prune stale entries every 100 writes to prevent unbounded growth
+    if (++debounceWriteCount >= 100) {
+      debounceWriteCount = 0;
+      for (var k in lastPurchaseMap) {
+        if ((now - lastPurchaseMap[k]) >= CONFIG.event.debounceMs) {
+          delete lastPurchaseMap[k];
+        }
+      }
+    }
     if (lastPurchaseMap[key] && (now - lastPurchaseMap[key]) < CONFIG.event.debounceMs) {
     /*! v8 ignore stop */
       return true;
@@ -38,7 +48,12 @@ export function createPurchaseHandler(
       var priceStr = el.getAttribute(PRICE_ATTR);
 
       /*! v8 ignore start */
-      if (!productId || !priceStr) return;
+      if (!productId || !priceStr) {
+        ppLib.log('warn', '[ppBraze] Purchase element missing required attribute(s):' +
+          (!productId ? ' data-braze-purchase' : '') +
+          (!priceStr ? ' data-braze-price' : ''));
+        return;
+      }
       /*! v8 ignore stop */
 
       var sanitizedId = ppLib.Security.sanitize(productId);
@@ -84,13 +99,16 @@ export function createPurchaseHandler(
     try {
       var sanitizedId = ppLib.Security.sanitize(productId);
       /*! v8 ignore start */
-      if (!sanitizedId) return;
+      if (!sanitizedId) {
+        ppLib.log('warn', '[ppBraze] trackPurchase requires a non-empty productId');
+        return;
+      }
       /*! v8 ignore stop */
 
       /*! v8 ignore start */
       if (isNaN(price)) {
       /*! v8 ignore stop */
-        ppLib.log('warn', '[ppBraze] trackPurchase invalid price');
+        ppLib.log('warn', '[ppBraze] trackPurchase invalid price: ' + price);
         return;
       }
 

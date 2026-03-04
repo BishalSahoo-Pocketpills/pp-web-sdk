@@ -47,10 +47,20 @@ import type { EventSourceConfig, EventSourceData } from '../types/event-source.t
   // =====================================================
 
   const lastEventMap: Record<string, number> = {};
+  let debounceWriteCount = 0;
 
   function isDuplicate(elementId: string): boolean {
     const now = Date.now();
     /*! v8 ignore start */
+    // Prune stale entries every 100 writes to prevent unbounded growth
+    if (++debounceWriteCount >= 100) {
+      debounceWriteCount = 0;
+      for (const k in lastEventMap) {
+        if ((now - lastEventMap[k]) >= CONFIG.debounceMs) {
+          delete lastEventMap[k];
+        }
+      }
+    }
     if (lastEventMap[elementId] && (now - lastEventMap[elementId]) < CONFIG.debounceMs) {
     /*! v8 ignore stop */
       return true;
@@ -257,7 +267,10 @@ import type { EventSourceConfig, EventSourceData } from '../types/event-source.t
     // Manually track an element interaction
     /*! v8 ignore start */
     trackElement: function(element: Element): void {
-      if (!element) return;
+      if (!element) {
+        ppLib.log('warn', '[ppEventSource] trackElement called with null/undefined element');
+        return;
+      }
       /*! v8 ignore stop */
       const data = extractEventData(element);
       /*! v8 ignore start */
@@ -270,8 +283,23 @@ import type { EventSourceConfig, EventSourceData } from '../types/event-source.t
 
     // Manually track a custom event through the same pipeline
     trackCustom: function(eventSource: string, properties?: Record<string, any>): void {
+      /*! v8 ignore start */
+      if (!eventSource) {
+        ppLib.log('warn', '[ppEventSource] trackCustom requires a non-empty eventSource');
+        return;
+      }
+      /*! v8 ignore stop */
+
+      const sanitizedSource = ppLib.Security.sanitize(eventSource);
+      /*! v8 ignore start */
+      if (!sanitizedSource) {
+        ppLib.log('warn', '[ppEventSource] trackCustom: eventSource was rejected by sanitization');
+        return;
+      }
+      /*! v8 ignore stop */
+
       const data: EventSourceData = {
-        event_source: ppLib.Security.sanitize(eventSource),
+        event_source: sanitizedSource,
         element_tag: 'custom',
         element_text: '',
         timestamp: new Date().toISOString(),

@@ -589,6 +589,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
 
     Mixpanel: {
       ready: false,
+      _checking: false,
       queue: [] as any[],
 
       send: function(data: any): void {
@@ -607,7 +608,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
           /*! v8 ignore start */
           if (!this.ready) {
             this.queue.push(data);
-            this.checkReady();
+            if (!this._checking) this.checkReady();
             return;
           }
           /*! v8 ignore stop */
@@ -634,6 +635,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
 
       checkReady: function(): void {
         try {
+          this._checking = true;
           const self = this;
           let attempts = 0;
           const maxRetries = SafeUtils.get(CONFIG, 'platforms.mixpanel.maxRetries', 50);
@@ -646,13 +648,16 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
             if (attempts >= maxRetries) {
             /*! v8 ignore stop */
               clearInterval(check);
-              Utils.log('verbose', 'Mixpanel not available');
+              self._checking = false;
+              self.queue.length = 0;
+              Utils.log('verbose', 'Mixpanel not available, clearing queued events');
               return;
             }
 
             /*! v8 ignore start */
             if (win.mixpanel && win.mixpanel.register) {
               clearInterval(check);
+              self._checking = false;
               self.ready = true;
             /*! v8 ignore stop */
 
@@ -667,6 +672,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
             }
           }, retryInterval);
         } catch (e) {
+          this._checking = false;
           Utils.log('error', 'Mixpanel check ready error', e);
         }
       }
@@ -675,8 +681,11 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
     register: function(name: string, handler: (data: any) => void): void {
       try {
         /*! v8 ignore start */
-        if (!SafeUtils.exists(name) || typeof handler !== 'function') return;
+        if (!SafeUtils.exists(name) || typeof handler !== 'function') {
         /*! v8 ignore stop */
+          Utils.log('warn', 'registerPlatform requires a valid name and handler function');
+          return;
+        }
 
         /*! v8 ignore start */
         CONFIG.platforms.custom = CONFIG.platforms.custom || [];

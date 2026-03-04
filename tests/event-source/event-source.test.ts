@@ -1099,6 +1099,29 @@ describe('event-source module', () => {
         expect(dataLayer.length - dlBefore).toBe(1);
       });
 
+      it('logs warning and returns for empty eventSource', () => {
+        const logSpy = vi.spyOn(window.ppLib, 'log');
+        const dataLayer = createMockDataLayer();
+        const before = dataLayer.length;
+
+        window.ppLib.eventSource.trackCustom('');
+
+        expect(dataLayer.length).toBe(before);
+        expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('trackCustom requires a non-empty eventSource'));
+      });
+
+      it('logs warning when eventSource is rejected by sanitization', () => {
+        const logSpy = vi.spyOn(window.ppLib, 'log');
+        const dataLayer = createMockDataLayer();
+        const before = dataLayer.length;
+
+        // A string consisting only of characters that sanitize strips → empty after sanitization
+        window.ppLib.eventSource.trackCustom('<>');
+
+        expect(dataLayer.length).toBe(before);
+        expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('rejected by sanitization'));
+      });
+
       it('only copies own properties from properties object', () => {
         const dataLayer = createMockDataLayer();
 

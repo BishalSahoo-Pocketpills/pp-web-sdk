@@ -19,8 +19,10 @@ export function createInitAuthState(
       const isAuthTokenValid = authToken && authToken !== '';
 
       if (isUserIdValid && isAuthTokenValid) {
+        doc.body.classList.remove(CONFIG.bodyClasses.loggedOut);
         doc.body.classList.add(CONFIG.bodyClasses.loggedIn);
       } else {
+        doc.body.classList.remove(CONFIG.bodyClasses.loggedIn);
         doc.body.classList.add(CONFIG.bodyClasses.loggedOut);
       }
 
@@ -58,7 +60,7 @@ export function createInitAuthState(
         // Inject name into elements with data-login-identifier-key="user-first-name"
         const nameElements = doc.querySelectorAll('[' + CONFIG.identifierAttribute + '="user-first-name"]');
         nameElements.forEach(function(el: any) {
-          el.innerText = ppLib.Security.sanitize(previousUserName);
+          el.textContent = ppLib.Security.sanitize(previousUserName);
         });
       }
 

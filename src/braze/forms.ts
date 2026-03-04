@@ -9,10 +9,20 @@ export function createFormHandler(
   userManager: { processFormAttrs: (fieldMap: Record<string, string>) => void }
 ) {
   const lastSubmitMap: Record<string, number> = {};
+  var debounceWriteCount = 0;
 
   function isDuplicate(formName: string): boolean {
     var now = Date.now();
     /*! v8 ignore start */
+    // Prune stale entries every 100 writes to prevent unbounded growth
+    if (++debounceWriteCount >= 100) {
+      debounceWriteCount = 0;
+      for (var k in lastSubmitMap) {
+        if ((now - lastSubmitMap[k]) >= CONFIG.form.debounceMs) {
+          delete lastSubmitMap[k];
+        }
+      }
+    }
     if (lastSubmitMap[formName] && (now - lastSubmitMap[formName]) < CONFIG.form.debounceMs) {
     /*! v8 ignore stop */
       return true;
@@ -54,12 +64,18 @@ export function createFormHandler(
 
       var formName = form.getAttribute(CONFIG.form.formAttribute) || '';
       /*! v8 ignore start */
-      if (!formName) return;
+      if (!formName) {
+        ppLib.log('warn', '[ppBraze] Form element found but [' + CONFIG.form.formAttribute + '] attribute is empty');
+        return;
+      }
       /*! v8 ignore stop */
 
       var sanitizedName = ppLib.Security.sanitize(formName);
       /*! v8 ignore start */
-      if (!sanitizedName) return;
+      if (!sanitizedName) {
+        ppLib.log('warn', '[ppBraze] Form name was rejected by sanitization: ' + formName);
+        return;
+      }
       /*! v8 ignore stop */
 
       // Debounce per form name

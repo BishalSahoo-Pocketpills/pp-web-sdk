@@ -124,6 +124,22 @@ describe('init()', () => {
     expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('No baseUrl'));
   });
 
+  it('logs warning and returns when cdnUrl is empty', () => {
+    loadWithCommon('braze');
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+
+    window.ppLib.braze!.configure({
+      sdk: { apiKey: 'key', baseUrl: 'sdk.braze.com', cdnUrl: '' } as any
+    });
+    window.ppLib.braze!.init();
+
+    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('No cdnUrl configured'));
+    // No script tag should be injected
+    const scripts = document.querySelectorAll('script');
+    const brazeScript = Array.from(scripts).find(s => s.src.includes('appboycdn'));
+    expect(brazeScript).toBeUndefined();
+  });
+
   it('does not load SDK when consent is required but not granted', () => {
     loadWithCommon('braze');
     const logSpy = vi.spyOn(window.ppLib, 'log');
@@ -517,14 +533,16 @@ describe('setEmail()', () => {
     expect(mockBraze._mockUser.setEmail).toHaveBeenCalledWith('hello@world.com');
   });
 
-  it('does nothing for empty email', () => {
+  it('does nothing for empty email and logs warning', () => {
     loadWithCommon('braze');
     const mockBraze = createMockBraze();
     window.braze = mockBraze as any;
+    const logSpy = vi.spyOn(window.ppLib, 'log');
 
     window.ppLib.braze!.setEmail('');
 
     expect(mockBraze._mockUser.setEmail).not.toHaveBeenCalled();
+    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('setEmail called with empty email'));
   });
 });
 
@@ -901,7 +919,9 @@ describe('Form Handling', () => {
     expect(user.setLastName).toHaveBeenCalledWith('Smith');
     expect(user.setPhoneNumber).toHaveBeenCalledWith('555-0000');
     expect(user.setGender).toHaveBeenCalledWith('female');
-    expect(user.setDateOfBirth).toHaveBeenCalledWith('1990-01-01');
+    // dob is intentionally not mapped to setDateOfBirth (requires 3 args: year, month, day)
+    // It falls through to setCustomUserAttribute instead
+    expect(user.setCustomUserAttribute).toHaveBeenCalledWith('dob', '1990-01-01');
     expect(user.setCountry).toHaveBeenCalledWith('CA');
     expect(user.setHomeCity).toHaveBeenCalledWith('Toronto');
     expect(user.setLanguage).toHaveBeenCalledWith('en');

@@ -3,7 +3,9 @@ export function createGetQueryParam(): (url: string, findParam: string) => strin
     try {
       if (!findParam || !url) return '';
 
-      const urlSplit = url.split('?');
+      // Strip fragment before parsing to prevent #hash leaking into param values
+      const defragmented = url.split('#')[0];
+      const urlSplit = defragmented.split('?');
       const queryParams = urlSplit.length > 1 ? '?' + urlSplit[1] : urlSplit[0];
       const urlSearchParams = new URLSearchParams(queryParams);
       const params: Record<string, string> = {};

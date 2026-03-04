@@ -8,10 +8,20 @@ export function createEventHandler(
   CONFIG: BrazeConfig
 ) {
   const lastEventMap: Record<string, number> = {};
+  var debounceWriteCount = 0;
 
   function isDuplicate(key: string): boolean {
     var now = Date.now();
     /*! v8 ignore start */
+    // Prune stale entries every 100 writes to prevent unbounded growth
+    if (++debounceWriteCount >= 100) {
+      debounceWriteCount = 0;
+      for (var k in lastEventMap) {
+        if ((now - lastEventMap[k]) >= CONFIG.event.debounceMs) {
+          delete lastEventMap[k];
+        }
+      }
+    }
     if (lastEventMap[key] && (now - lastEventMap[key]) < CONFIG.event.debounceMs) {
     /*! v8 ignore stop */
       return true;
@@ -61,12 +71,18 @@ export function createEventHandler(
 
       var eventName = el.getAttribute(CONFIG.event.eventAttribute);
       /*! v8 ignore start */
-      if (!eventName) return;
+      if (!eventName) {
+        ppLib.log('warn', '[ppBraze] Element found with [' + CONFIG.event.eventAttribute + '] but attribute value is empty');
+        return;
+      }
       /*! v8 ignore stop */
 
       var sanitizedName = ppLib.Security.sanitize(eventName);
       /*! v8 ignore start */
-      if (!sanitizedName) return;
+      if (!sanitizedName) {
+        ppLib.log('warn', '[ppBraze] Event name was rejected by sanitization: ' + eventName);
+        return;
+      }
       /*! v8 ignore stop */
 
       // Debounce
