@@ -1,0 +1,181 @@
+/**
+ * pp-analytics-lib: DataLayer Module v1.0.0
+ * Unified GTM event system — pushes enriched events to window.dataLayer.
+ *
+ * Requires: common.js (window.ppLib)
+ * Exposes: window.ppLib.datalayer
+ */
+import type { PPLib } from '../types/common.types';
+import type { DataLayerConfig, DataLayerItemInput, DataLayerUser, UserDataInput, UserDataHashedInput } from '../types/datalayer.types';
+import { createDataLayerConfig } from './config';
+import { createPageBuilder } from './page';
+import { createUserBuilder } from './user';
+import { createUserDataManager } from './user-data';
+import { createItemBuilder } from './items';
+import { createEventPusher } from './events';
+import { createDomBinder } from './dom';
+
+(function(win: Window & typeof globalThis, doc: Document) {
+  'use strict';
+
+  function initModule(ppLib: PPLib) {
+
+  // =====================================================
+  // CONFIGURATION
+  // =====================================================
+
+  const CONFIG: DataLayerConfig = createDataLayerConfig();
+
+  // =====================================================
+  // SUB-MODULES
+  // =====================================================
+
+  const pageBuilder = createPageBuilder(win, doc);
+  const userBuilder = createUserBuilder(ppLib, CONFIG);
+  const userDataManager = createUserDataManager();
+  const itemBuilder = createItemBuilder(ppLib, CONFIG);
+  const eventPusher = createEventPusher(win, ppLib, CONFIG, userBuilder, userDataManager, pageBuilder, itemBuilder);
+  const domBinder = createDomBinder(win, doc, ppLib, CONFIG, eventPusher, itemBuilder);
+
+  // Fire-and-forget: auto-populate user data from cookies
+  userDataManager.setUserData({
+    first_name: ppLib.getCookie(CONFIG.cookieNames.firstName) || '',
+    last_name: ppLib.getCookie(CONFIG.cookieNames.lastName) || ''
+  });
+
+  // =====================================================
+  // HELPERS
+  // =====================================================
+
+  function buildAuthOverride(data: { pp_user_id?: string; pp_patient_id?: string }): Partial<DataLayerUser> {
+    var override: Partial<DataLayerUser> = { logged_in: true };
+    override.pp_user_id = data.pp_user_id || override.pp_user_id;
+    override.pp_patient_id = data.pp_patient_id || override.pp_patient_id;
+    return override;
+  }
+
+  function ecom(eventName: string): (items: DataLayerItemInput[]) => void {
+    return function(items: DataLayerItemInput[]) {
+      eventPusher.pushEcommerceEvent(eventName, items);
+    };
+  }
+
+  // =====================================================
+  // AUTO-INIT DOM BINDING
+  // =====================================================
+
+  /*! v8 ignore start */
+  if (doc.readyState === 'loading') {
+    doc.addEventListener('DOMContentLoaded', function() { domBinder.init(); });
+  } else {
+    domBinder.init();
+  }
+  /*! v8 ignore stop */
+
+  // =====================================================
+  // PUBLIC API
+  // =====================================================
+
+  ppLib.datalayer = {
+    configure: function(options?: Partial<DataLayerConfig>) {
+      ppLib.extend(CONFIG, options || {});
+      return CONFIG;
+    },
+
+    // ---- User context ----
+
+    setUser: function(user: Partial<DataLayerUser>) {
+      userBuilder.setUser(user);
+    },
+
+    setUserData: function(data: UserDataInput): Promise<void> {
+      return userDataManager.setUserData(data);
+    },
+
+    setUserDataHashed: function(data: UserDataHashedInput) {
+      userDataManager.setUserDataHashed(data);
+    },
+
+    // ---- Generic push ----
+
+    push: function(eventName: string, data?: Record<string, any>) {
+      eventPusher.pushEvent(eventName, data);
+    },
+
+    pushEcommerce: function(eventName: string, items: DataLayerItemInput[], data?: Record<string, any>) {
+      eventPusher.pushEcommerceEvent(eventName, items, data);
+    },
+
+    // ---- Core events ----
+
+    pageview: function(data?: Record<string, any>) {
+      var extra: Record<string, any> = { platform: CONFIG.defaults.platform };
+      ppLib.extend(extra, data || {});
+      eventPusher.pushEvent('pageview', extra);
+    },
+
+    loginView: function(data: { method: string }) {
+      eventPusher.pushEvent('login_view', data);
+    },
+
+    loginSuccess: function(data: { method: string; pp_user_id?: string; pp_patient_id?: string }) {
+      userBuilder.setUser(buildAuthOverride(data));
+      eventPusher.pushEvent('login_success', { method: data.method });
+    },
+
+    signupView: function(data: { method: string; signup_flow?: string }) {
+      eventPusher.pushEvent('signup_view', data);
+    },
+
+    signupStart: function(data: { method: string }) {
+      eventPusher.pushEvent('signup_start', data);
+    },
+
+    signupComplete: function(data: { method: string; pp_user_id?: string; pp_patient_id?: string }) {
+      userBuilder.setUser(buildAuthOverride(data));
+      eventPusher.pushEvent('signup_complete', { method: data.method });
+    },
+
+    search: function(data: { search_term: string; results_count?: number; search_type?: string }) {
+      eventPusher.pushEvent('search', data);
+    },
+
+    // ---- Ecommerce events ----
+
+    viewItem: ecom('view_item'),
+    addToCart: ecom('add_to_cart'),
+    beginCheckout: ecom('begin_checkout'),
+    addPaymentInfo: ecom('add_payment_info'),
+
+    purchase: function(transactionId: string, items: DataLayerItemInput[]) {
+      eventPusher.pushEcommerceEvent('purchase', items, { transaction_id: transactionId });
+    },
+
+    // ---- DOM binding ----
+
+    init: domBinder.init,
+    bindDOM: domBinder.init,
+
+    getConfig: function(): DataLayerConfig {
+      return CONFIG;
+    }
+  };
+
+  ppLib.log('info', '[ppDataLayer] Module loaded');
+
+  } // end initModule
+
+  // Safe load: wait for ppLib if not yet available.
+  // Both paths are tested (loadWithCommon vs loadModule-then-common),
+  // but V8 cannot attribute coverage through vm.runInThisContext() across
+  // separate IIFE loads. This is the only v8 ignore in the module.
+  /*! v8 ignore start */
+  if (win.ppLib && win.ppLib._isReady) {
+    initModule(win.ppLib);
+  } else {
+    win.ppLibReady = win.ppLibReady || [];
+    win.ppLibReady.push(initModule);
+  }
+  /*! v8 ignore stop */
+
+})(window, document);

@@ -1,0 +1,69 @@
+import type { PPLib } from '../types/common.types';
+import type { DataLayerConfig, DataLayerItem, DataLayerItemInput, DataLayerUser } from '../types/datalayer.types';
+
+export function createEventPusher(
+  win: Window & typeof globalThis,
+  ppLib: PPLib,
+  CONFIG: DataLayerConfig,
+  userBuilder: { buildUser: () => DataLayerUser; setUser: (u: Partial<DataLayerUser>) => void },
+  userDataManager: { getUserData: () => any },
+  pageBuilder: { buildPage: () => any },
+  itemBuilder: { normalizeItem: (input: DataLayerItemInput) => DataLayerItem; calculateValue: (items: DataLayerItem[]) => number }
+) {
+
+  function ensureDataLayer(): any[] {
+    win.dataLayer = win.dataLayer || [];
+    return win.dataLayer;
+  }
+
+  function merge(target: Record<string, any>, source: Record<string, any>): void {
+    var keys = Object.keys(source);
+    for (var i = 0; i < keys.length; i++) {
+      target[keys[i]] = source[keys[i]];
+    }
+  }
+
+  function pushEvent(eventName: string, extra?: Record<string, any>): void {
+    var dl = ensureDataLayer();
+    var enriched: Record<string, any> = {
+      event: eventName,
+      user: userBuilder.buildUser(),
+      user_data: userDataManager.getUserData(),
+      page: pageBuilder.buildPage(),
+      pp_timestamp: new Date().toISOString()
+    };
+
+    merge(enriched, extra || {});
+
+    ppLib.Security.validateData(enriched);
+    dl.push(enriched);
+    ppLib.log('info', '[ppDataLayer] push → ' + eventName, enriched);
+  }
+
+  function pushEcommerceEvent(eventName: string, inputItems: DataLayerItemInput[], extra?: Record<string, any>): void {
+    var dl = ensureDataLayer();
+
+    // Clear previous ecommerce data
+    dl.push({ ecommerce: null });
+
+    var items: DataLayerItem[] = [];
+    for (var i = 0; i < inputItems.length; i++) {
+      items.push(itemBuilder.normalizeItem(inputItems[i]));
+    }
+
+    var value = itemBuilder.calculateValue(items);
+
+    var ecommerceData: Record<string, any> = {
+      items: items,
+      value: value,
+      currency: CONFIG.defaults.currency
+    };
+
+    var merged: Record<string, any> = { ecommerce: ecommerceData };
+    merge(merged, extra || {});
+
+    pushEvent(eventName, merged);
+  }
+
+  return { pushEvent: pushEvent, pushEcommerceEvent: pushEcommerceEvent };
+}

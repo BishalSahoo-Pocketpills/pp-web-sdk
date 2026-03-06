@@ -62,4 +62,5 @@ export interface PPLib {
   mixpanel?: import('./mixpanel.types').MixpanelAPI;
   braze?: import('./braze.types').BrazeAPI;
   voucherify?: import('./voucherify.types').VoucherifyAPI;
+  datalayer?: import('./datalayer.types').DataLayerAPI;
 }

@@ -39,6 +39,24 @@ export function createEventSourceDOM(elements) {
 }
 
 /**
+ * Build datalayer DOM fixtures.
+ */
+export function createDataLayerDOM(elements) {
+  elements.forEach(cfg => {
+    const el = document.createElement(cfg.tag || 'button');
+    el.setAttribute('data-dl-event', cfg.event);
+    if (cfg.id) el.id = cfg.id;
+    if (cfg.attrs) {
+      Object.keys(cfg.attrs).forEach(key => {
+        el.setAttribute(key, cfg.attrs[key]);
+      });
+    }
+    el.textContent = cfg.text || '';
+    document.body.appendChild(el);
+  });
+}
+
+/**
  * Build login module DOM fixtures.
  */
 export function createLoginDOM({ logoutButtons = 0, forgetButtons = 0, nameElements = 0 } = {}) {

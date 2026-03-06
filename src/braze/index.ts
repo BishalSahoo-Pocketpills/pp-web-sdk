@@ -156,9 +156,9 @@ import { createPurchaseHandler } from './purchases';
         } else {
           win.braze.logCustomEvent(sanitized);
         }
-        /*! v8 ignore stop */
 
         ppLib.log('info', '[ppBraze] trackEvent → ' + sanitized, sanitizedProps);
+        /*! v8 ignore stop */
       } catch (e) {
         ppLib.log('error', '[ppBraze] trackEvent error', e);
       }
