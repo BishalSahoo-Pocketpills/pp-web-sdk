@@ -2,7 +2,7 @@
 
 Modular web SDK for PocketPills web properties. Provides analytics, attribution, login detection, ecommerce tracking, Mixpanel integration, and Braze engagement — all driven by HTML data attributes.
 
-**Version:** 2.0.1 | **Language:** TypeScript | **Build:** esbuild (IIFE) | **Tests:** Vitest + Playwright
+**Version:** 2.1.1 | **Language:** TypeScript | **Build:** esbuild (IIFE) | **Tests:** Vitest + Playwright
 
 ---
 
@@ -27,7 +27,8 @@ window.ppLib                     (common.min.js — MUST load first)
   ├── .eventSource               → Click/tap event tracking
   ├── .mixpanel                  → Mixpanel SDK wrapper & sessions
   ├── .braze                     → Braze engagement platform
-  └── .voucherify                → Voucherify pricing & discounts
+  ├── .voucherify                → Voucherify pricing & discounts
+  └── .datalayer                 → GTM dataLayer events (DOM + programmatic)
 
 window.ppAnalytics               (analytics.min.js)
   ├── .config(options?)          → Attribution & multi-platform analytics
@@ -63,6 +64,7 @@ window.ppAnalytics               (analytics.min.js)
 | mixpanel | `mixpanel.min.js` | `ppLib.mixpanel` | Mixpanel SDK loader, sessions, UTM | [src/mixpanel/](src/mixpanel/README.md) |
 | braze | `braze.min.js` | `ppLib.braze` | Braze forms, events, purchases, identity | [src/braze/](src/braze/README.md) |
 | voucherify | `voucherify.min.js` | `ppLib.voucherify` | Voucherify pricing, discounts, voucher validation | [src/voucherify/](src/voucherify/README.md) |
+| datalayer | `datalayer.min.js` | `ppLib.datalayer` | GTM dataLayer events via API and `data-dl-*` attributes | [src/datalayer/](src/datalayer/README.md) |
 
 ---
 
@@ -191,6 +193,7 @@ pp-web-sdk/
 │   ├── mixpanel/        → Mixpanel SDK wrapper & sessions
 │   ├── braze/           → Braze engagement platform
 │   ├── voucherify/      → Voucherify pricing & discounts
+│   ├── datalayer/       → GTM dataLayer events (DOM + programmatic)
 │   └── types/           → Shared TypeScript type definitions
 ├── tests/               → Unit tests (mirrors src/ structure)
 ├── e2e/                 → Playwright end-to-end tests
@@ -263,6 +266,30 @@ All modules use `data-*` attributes for declarative, no-code configuration.
   <input data-braze-attr="custom:preferred_pharmacy" name="pharmacy" />
   <button type="submit">Subscribe</button>
 </form>
+```
+
+### DataLayer Events (`data-dl-*`)
+
+```html
+<!-- Core event -->
+<button data-dl-event="login_view" data-dl-method="email">Log In</button>
+
+<!-- Ecommerce: container pattern -->
+<section data-dl-item-id="RX-001" data-dl-item-name="Aspirin" data-dl-price="12.99">
+  <button data-dl-event="add_to_cart">Add to Cart</button>
+</section>
+
+<!-- Anchor hitCallback: push event, then navigate -->
+<a href="/checkout" data-dl-event="begin_checkout"
+   data-dl-item-id="RX-001" data-dl-price="12.99">
+  Checkout
+</a>
+
+<!-- Purchase with transaction ID -->
+<button data-dl-event="purchase" data-dl-transaction-id="TXN-001"
+        data-dl-item-id="RX-001" data-dl-price="12.99">
+  Complete Purchase
+</button>
 ```
 
 ### Login Visibility (`data-visibility`)
@@ -366,6 +393,32 @@ All modules use `data-*` attributes for declarative, no-code configuration.
 | `ppLib.voucherify.clearCache()` | Clear in-memory response cache |
 | `ppLib.voucherify.isReady()` | Always `true` (no CDN SDK to load) |
 | `ppLib.voucherify.getConfig()` | Get current config |
+
+### `ppLib.datalayer` (DataLayer)
+
+| Method | Description |
+|---|---|
+| `ppLib.datalayer.configure(options)` | Override config (cookies, defaults, attributes, debounce) |
+| `ppLib.datalayer.setUser(user)` | Manual user context override |
+| `ppLib.datalayer.setUserData(data)` | Set PII (auto-hashed via SHA-256) |
+| `ppLib.datalayer.setUserDataHashed(data)` | Set pre-hashed PII (passed through) |
+| `ppLib.datalayer.push(event, data?)` | Push custom event to dataLayer |
+| `ppLib.datalayer.pushEcommerce(event, items, data?)` | Push custom ecommerce event |
+| `ppLib.datalayer.pageview(data?)` | Push pageview event |
+| `ppLib.datalayer.loginView(data)` | Push login_view event |
+| `ppLib.datalayer.loginSuccess(data)` | Push login_success event (sets user) |
+| `ppLib.datalayer.signupView(data)` | Push signup_view event |
+| `ppLib.datalayer.signupStart(data)` | Push signup_start event |
+| `ppLib.datalayer.signupComplete(data)` | Push signup_complete event (sets user) |
+| `ppLib.datalayer.search(data)` | Push search event |
+| `ppLib.datalayer.viewItem(items)` | Push view_item ecommerce event |
+| `ppLib.datalayer.addToCart(items)` | Push add_to_cart ecommerce event |
+| `ppLib.datalayer.beginCheckout(items)` | Push begin_checkout ecommerce event |
+| `ppLib.datalayer.addPaymentInfo(items)` | Push add_payment_info ecommerce event |
+| `ppLib.datalayer.purchase(txnId, items)` | Push purchase ecommerce event |
+| `ppLib.datalayer.init()` | Manually initialize DOM binding |
+| `ppLib.datalayer.bindDOM()` | Alias for init() |
+| `ppLib.datalayer.getConfig()` | Get current config |
 
 ---
 

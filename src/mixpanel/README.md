@@ -52,7 +52,7 @@ The Mixpanel module handles the full lifecycle of Mixpanel integration:
 ppLib.mixpanel.configure({
   token: '',                         // Mixpanel project token (required)
   projectName: '',                   // Custom project label
-  crossSubdomainCookie: true,        // Enable cross-subdomain tracking
+  crossSubdomainCookie: false,        // Enable cross-subdomain tracking
   optOutByDefault: false,            // Opt-out tracking by default
   sessionTimeout: 1800000,           // Session timeout in ms (30 minutes)
 
@@ -153,10 +153,10 @@ The module identifies users via cookies:
 
 ```javascript
 // If userId cookie exists:
-mixpanel.identify(userId);
+mixpanel.register({ pp_user_id: userId });
 
 // If ipAddress cookie exists:
-mixpanel.register({ ip_address: ipAddress });
+mixpanel.register({ pp_user_ip: ipAddress });
 ```
 
 ---

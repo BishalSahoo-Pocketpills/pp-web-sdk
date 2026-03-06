@@ -206,7 +206,7 @@ None — this is the foundation module. All other modules depend on it.
 
 ## Dependents
 
-All modules: analytics, ecommerce, event-source, login, mixpanel, braze.
+All modules: analytics, ecommerce, event-source, login, mixpanel, braze, voucherify, datalayer.
 
 ---
 
@@ -243,7 +243,7 @@ Timeline B: login.js → common.js (async/deferred)
 
 Both work because login pushes to `ppLibReady` if `ppLib._isReady` isn't set yet, and common drains the queue when it initializes.
 
-**Tradeoff:** Every module must include the 5-line boilerplate check. This is duplicated 7 times across the codebase but ensures complete load-order independence.
+**Tradeoff:** Every module must include the 5-line boilerplate check. This is duplicated 9 times across the codebase but ensures complete load-order independence.
 
 ### Prototype Pollution Protection
 

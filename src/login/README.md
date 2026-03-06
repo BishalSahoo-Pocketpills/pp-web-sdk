@@ -122,8 +122,8 @@ ppLib.login.configure({
     userId: 'userId',                    // User ID cookie
     patientId: 'patientId',              // Patient ID cookie
     auth: 'Authorization',               // Auth token cookie
-    appAuthenticated: 'app_is_authenticated',
-    previousUser: 'previousUser',        // Returning user marker
+    appAuth: 'app_is_authenticated',
+    prevUser: 'previousUser',            // Returning user marker
     firstName: 'firstName'               // First name for identity injection
   },
 
@@ -137,7 +137,7 @@ ppLib.login.configure({
 
   identifierAttribute: 'data-login-identifier-key',
   actionAttribute: 'data-action',
-  autoReload: true                       // Reload page after logout
+  reloadOnLogout: true                    // Reload page after logout
 });
 ```
 
@@ -192,8 +192,8 @@ Global logout function (convenience alias). Available on `window` for use in inl
 ### Soft Logout (`data-action="logout"`)
 
 1. Deletes session cookies: `userId`, `patientId`, `Authorization`, `app_is_authenticated`
-2. Sets `previousUser` cookie (for "welcome back" on next visit)
-3. Reloads page (if `autoReload` is enabled)
+2. Updates UI state (removes logged-in class, adds logged-out class)
+3. Reloads page (if `reloadOnLogout` is enabled)
 
 ### Hard Logout / Forget Me (`data-action="forget-me"`)
 

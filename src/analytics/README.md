@@ -133,9 +133,8 @@ Returns the current first-touch and last-touch attribution data.
 ```javascript
 var data = ppAnalytics.getAttribution();
 // {
-//   first_touch: { utm_source: 'google', utm_medium: 'cpc', ... },
-//   last_touch:  { utm_source: 'email', utm_campaign: 'promo', ... },
-//   session_start: '2024-01-15T10:30:00.000Z'
+//   firstTouch: { utm_source: 'google', utm_medium: 'cpc', ... },
+//   lastTouch:  { utm_source: 'email', utm_campaign: 'promo', ... }
 // }
 ```
 
@@ -146,7 +145,7 @@ Consent management for privacy compliance.
 ```javascript
 ppAnalytics.consent.grant();   // Allow tracking
 ppAnalytics.consent.revoke();  // Stop tracking, clear stored data
-ppAnalytics.consent.status();  // 'approved' | 'pending' | 'denied'
+ppAnalytics.consent.status();  // boolean (true = granted, false = denied/pending)
 ```
 
 When consent is revoked, the module stops capturing parameters and clears stored attribution data.

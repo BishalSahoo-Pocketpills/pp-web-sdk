@@ -142,7 +142,7 @@ Each tracked interaction generates an event with:
   event_value: '49.99',              // from data-event-value (optional)
   element_tag: 'BUTTON',             // HTML tag name
   element_text: 'Sign Up',           // trimmed text content
-  element_href: null,                // href for anchor elements
+  element_href: '',                   // href for anchor elements (empty string for non-links)
   page_url: 'https://...',           // current page URL
   page_path: '/pricing',             // pathname
   page_title: 'Pricing'              // document title
