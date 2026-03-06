@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DataLayer Module — Test Fixture</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; color: #333; }
+    h1 { margin-bottom: 8px; }
+    h2 { margin: 24px 0 12px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+    h3 { margin: 16px 0 8px; color: #555; }
+    section { margin-bottom: 24px; }
+    button, a.btn { display: inline-block; padding: 8px 16px; border: 1px solid #0066cc; background: #0066cc; color: #fff; border-radius: 4px; cursor: pointer; font-size: 14px; text-decoration: none; margin: 4px 4px 4px 0; }
+    button:hover, a.btn:hover { background: #0052a3; }
+    .product-card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 8px 0; background: #fafafa; }
+    .product-card h4 { margin-bottom: 8px; }
+    .product-card .price { font-size: 18px; font-weight: bold; color: #0066cc; }
+    .log { background: #1a1a2e; color: #00ff88; font-family: monospace; font-size: 12px; padding: 12px; border-radius: 4px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; }
+    .badge-core { background: #e3f2fd; color: #1565c0; }
+    .badge-ecom { background: #e8f5e9; color: #2e7d32; }
+    .badge-link { background: #fff3e0; color: #e65100; }
+    #status { padding: 8px 12px; border-radius: 4px; margin: 8px 0; font-size: 13px; }
+    #status.ready { background: #e8f5e9; color: #2e7d32; }
+    #status.error { background: #ffebee; color: #c62828; }
+  </style>
+</head>
+<body>
+
+  <h1>DataLayer Module Test Fixture</h1>
+  <p>Open DevTools console and click elements to test. Events push to <code>window.dataLayer</code>.</p>
+  <div id="status">Loading...</div>
+
+  <!-- ===== CORE EVENTS ===== -->
+
+  <h2><span class="badge badge-core">Core</span> Core Events</h2>
+
+  <section>
+    <h3>Pageview</h3>
+    <button data-dl-event="pageview" data-dl-page-type="test">Pageview (click)</button>
+    <button id="btn-pageview-api">Pageview (API)</button>
+  </section>
+
+  <section>
+    <h3>Login</h3>
+    <button data-dl-event="login_view" data-dl-method="email">Login View</button>
+    <button data-dl-event="login_success" data-dl-method="email">Login Success</button>
+  </section>
+
+  <section>
+    <h3>Signup</h3>
+    <button data-dl-event="signup_view" data-dl-method="email" data-dl-signup-flow="onboarding">Signup View</button>
+    <button data-dl-event="signup_start" data-dl-method="email">Signup Start</button>
+    <button data-dl-event="signup_complete" data-dl-method="email">Signup Complete</button>
+  </section>
+
+  <section>
+    <h3>Search</h3>
+    <button data-dl-event="search" data-dl-search-term="aspirin" data-dl-results-count="12" data-dl-search-type="medication">Search</button>
+  </section>
+
+  <!-- ===== ECOMMERCE EVENTS ===== -->
+
+  <h2><span class="badge badge-ecom">Ecom</span> Ecommerce Events</h2>
+
+  <section>
+    <h3>Flat Pattern (all attributes on one element)</h3>
+    <button data-dl-event="view_item"
+            data-dl-item-id="RX-001"
+            data-dl-item-name="Aspirin 81mg"
+            data-dl-price="12.99"
+            data-dl-category="Pain Relief">
+      View Item (flat)
+    </button>
+    <button data-dl-event="add_to_cart"
+            data-dl-item-id="RX-001"
+            data-dl-item-name="Aspirin 81mg"
+            data-dl-price="12.99"
+            data-dl-quantity="2">
+      Add to Cart (flat)
+    </button>
+  </section>
+
+  <section>
+    <h3>Container Pattern (item data on parent)</h3>
+    <div class="product-card"
+         data-dl-item-id="RX-002"
+         data-dl-item-name="Metformin 500mg"
+         data-dl-price="8.49"
+         data-dl-category="Diabetes"
+         data-dl-item-brand="Pocketpills">
+      <h4>Metformin 500mg</h4>
+      <p class="price">$8.49</p>
+      <button data-dl-event="view_item">View Item</button>
+      <button data-dl-event="add_to_cart">Add to Cart</button>
+      <button data-dl-event="begin_checkout">Begin Checkout</button>
+    </div>
+  </section>
+
+  <section>
+    <h3>Purchase</h3>
+    <button data-dl-event="purchase"
+            data-dl-transaction-id="TXN-12345"
+            data-dl-item-id="RX-002"
+            data-dl-item-name="Metformin 500mg"
+            data-dl-price="8.49">
+      Complete Purchase
+    </button>
+  </section>
+
+  <section>
+    <h3>Ecommerce API</h3>
+    <button id="btn-ecom-api">Add to Cart (API)</button>
+  </section>
+
+  <!-- ===== ANCHOR hitCallback ===== -->
+
+  <h2><span class="badge badge-link">Link</span> Anchor hitCallback</h2>
+
+  <section>
+    <p>These links intercept navigation, push the event, then navigate after 100ms.</p>
+    <a href="#checkout-destination"
+       data-dl-event="begin_checkout"
+       data-dl-item-id="RX-001"
+       data-dl-price="12.99"
+       class="btn">
+      Checkout Link (anchor)
+    </a>
+    <a href="https://example.com"
+       data-dl-event="outbound_click"
+       class="btn">
+      Outbound Link
+    </a>
+  </section>
+
+  <!-- ===== USER DATA ===== -->
+
+  <h2>User Data</h2>
+
+  <section>
+    <button id="btn-set-user">Set User (logged_in=true)</button>
+    <button id="btn-set-userdata">Set User Data (PII)</button>
+    <button id="btn-set-hashed">Set User Data (pre-hashed)</button>
+  </section>
+
+  <!-- ===== EVENT LOG ===== -->
+
+  <h2>Event Log</h2>
+  <div id="event-log" class="log">(events will appear here)</div>
+
+  <!-- ===== SCRIPTS ===== -->
+
+  <script src="/common.min.js"></script>
+  <script src="/datalayer.min.js"></script>
+  <script>
+    (function() {
+      var logEl = document.getElementById('event-log');
+      var statusEl = document.getElementById('status');
+
+      function logEvent(msg) {
+        var ts = new Date().toISOString().split('T')[1].split('.')[0];
+        logEl.textContent = '[' + ts + '] ' + msg + '\n' + logEl.textContent;
+      }
+
+      // Monitor dataLayer pushes
+      var originalPush = Array.prototype.push;
+      window.dataLayer = window.dataLayer || [];
+      window.dataLayer.push = function() {
+        for (var i = 0; i < arguments.length; i++) {
+          var item = arguments[i];
+          if (item && item.event) {
+            var summary = item.event;
+            if (item.ecommerce && item.ecommerce.items) {
+              summary += ' | items: ' + item.ecommerce.items.length + ' | value: ' + (item.ecommerce.value || 0);
+            }
+            if (item.user) {
+              summary += ' | logged_in: ' + item.user.logged_in;
+            }
+            logEvent(summary);
+          }
+        }
+        return originalPush.apply(this, arguments);
+      };
+
+      // Check module readiness
+      function checkReady() {
+        if (window.ppLib && window.ppLib.datalayer) {
+          statusEl.textContent = 'Module loaded. Config: ' + JSON.stringify(window.ppLib.datalayer.getConfig().defaults);
+          statusEl.className = 'ready';
+          ppLib.config.debug = true;
+          bindApiButtons();
+        } else {
+          statusEl.textContent = 'ERROR: ppLib.datalayer not found. Check script paths.';
+          statusEl.className = 'error';
+        }
+      }
+
+      function bindApiButtons() {
+        document.getElementById('btn-pageview-api').addEventListener('click', function() {
+          ppLib.datalayer.pageview({ page_type: 'test_fixture' });
+        });
+
+        document.getElementById('btn-ecom-api').addEventListener('click', function() {
+          ppLib.datalayer.addToCart([
+            { item_id: 'API-001', item_name: 'API Test Item', price: 19.99, quantity: 1 }
+          ]);
+        });
+
+        document.getElementById('btn-set-user').addEventListener('click', function() {
+          ppLib.datalayer.setUser({ pp_user_id: 'TEST-123', pp_patient_id: 'PAT-456', logged_in: true });
+          logEvent('setUser({ pp_user_id: "TEST-123", logged_in: true })');
+        });
+
+        document.getElementById('btn-set-userdata').addEventListener('click', function() {
+          ppLib.datalayer.setUserData({
+            email: 'test@example.com',
+            phone: '+15551234567',
+            first_name: 'Jane',
+            last_name: 'Doe',
+            city: 'Toronto',
+            region: 'ON',
+            country: 'CA'
+          }).then(function() {
+            logEvent('setUserData complete (PII hashed)');
+          });
+        });
+
+        document.getElementById('btn-set-hashed').addEventListener('click', function() {
+          ppLib.datalayer.setUserDataHashed({
+            sha256_email_address: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+            address: { sha256_first_name: 'f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5', city: 'Toronto' }
+          });
+          logEvent('setUserDataHashed complete (pre-hashed)');
+        });
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', checkReady);
+      } else {
+        checkReady();
+      }
+    })();
+  </script>
+
+</body>
+</html>

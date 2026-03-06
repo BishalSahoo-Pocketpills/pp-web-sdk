@@ -39,8 +39,15 @@ import { createDomBinder } from './dom';
 
   // Fire-and-forget: auto-populate user data from cookies
   userDataManager.setUserData({
+    email: ppLib.getCookie(CONFIG.cookieNames.email) || '',
+    phone: ppLib.getCookie(CONFIG.cookieNames.phone) || '',
     first_name: ppLib.getCookie(CONFIG.cookieNames.firstName) || '',
-    last_name: ppLib.getCookie(CONFIG.cookieNames.lastName) || ''
+    last_name: ppLib.getCookie(CONFIG.cookieNames.lastName) || '',
+    street: ppLib.getCookie(CONFIG.cookieNames.street) || '',
+    city: ppLib.getCookie(CONFIG.cookieNames.city) || '',
+    region: ppLib.getCookie(CONFIG.cookieNames.region) || '',
+    postal_code: ppLib.getCookie(CONFIG.cookieNames.postalCode) || '',
+    country: ppLib.getCookie(CONFIG.cookieNames.country) || ''
   });
 
   // =====================================================
@@ -61,16 +68,20 @@ import { createDomBinder } from './dom';
   }
 
   // =====================================================
-  // AUTO-INIT DOM BINDING
+  // AUTO-INIT DOM BINDING + AUTO-PAGEVIEW
   // =====================================================
 
   /*! v8 ignore start */
   if (doc.readyState === 'loading') {
-    doc.addEventListener('DOMContentLoaded', function() { domBinder.init(); });
+    doc.addEventListener('DOMContentLoaded', function() {
+      domBinder.init();
+      eventPusher.pushEvent('pageview', { platform: CONFIG.defaults.platform });
+    });
   } else {
-    domBinder.init();
-  }
   /*! v8 ignore stop */
+    domBinder.init();
+    eventPusher.pushEvent('pageview', { platform: CONFIG.defaults.platform });
+  }
 
   // =====================================================
   // PUBLIC API

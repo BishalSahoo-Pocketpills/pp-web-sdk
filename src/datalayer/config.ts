@@ -7,7 +7,14 @@ export function createDataLayerConfig(): DataLayerConfig {
       patientId: 'patientId',
       firstName: 'firstName',
       lastName: 'lastName',
-      appAuth: 'app_is_authenticated'
+      appAuth: 'app_is_authenticated',
+      email: 'email',
+      phone: 'phone',
+      street: 'street',
+      city: 'city',
+      region: 'region',
+      postalCode: 'postalCode',
+      country: 'country'
     },
     defaults: {
       itemBrand: 'Pocketpills',

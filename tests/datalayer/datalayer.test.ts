@@ -53,6 +53,18 @@ describe('IIFE Bootstrap', () => {
     expect(window.ppLib.datalayer).toBeDefined();
   });
 
+  it('auto-fires pageview event on module load', () => {
+    createMockDataLayer();
+    loadWithCommon('datalayer');
+
+    const events = window.dataLayer.filter((e: any) => e.event === 'pageview');
+    expect(events.length).toBe(1);
+    expect(events[0].platform).toBe('web');
+    expect(events[0].user).toBeDefined();
+    expect(events[0].page).toBeDefined();
+    expect(events[0].pp_timestamp).toBeDefined();
+  });
+
   it('exposes ppLib.datalayer public API with all expected methods', () => {
     loadWithCommon('datalayer');
     const api = window.ppLib.datalayer;
@@ -95,7 +107,14 @@ describe('Configuration', () => {
       patientId: 'patientId',
       firstName: 'firstName',
       lastName: 'lastName',
-      appAuth: 'app_is_authenticated'
+      appAuth: 'app_is_authenticated',
+      email: 'email',
+      phone: 'phone',
+      street: 'street',
+      city: 'city',
+      region: 'region',
+      postalCode: 'postalCode',
+      country: 'country'
     });
     expect(config.defaults).toEqual({ itemBrand: 'Pocketpills', currency: 'CAD', platform: 'web' });
   });
@@ -412,9 +431,16 @@ describe('User Data / SHA-256', () => {
 // 4a. COOKIE AUTO-POPULATE
 // =========================================================================
 describe('Cookie Auto-populate', () => {
-  it('hashes firstName and lastName cookies into user_data', async () => {
+  it('hashes all PII cookies into user_data', async () => {
+    setCookie('email', 'alice@example.com');
+    setCookie('phone', '+15551234567');
     setCookie('firstName', 'Alice');
     setCookie('lastName', 'Smith');
+    setCookie('street', '123 Main St');
+    setCookie('city', 'Toronto');
+    setCookie('region', 'ON');
+    setCookie('postalCode', 'M5V 1A1');
+    setCookie('country', 'CA');
 
     loadWithCommon('datalayer');
     createMockDataLayer();
@@ -425,8 +451,15 @@ describe('Cookie Auto-populate', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
+    expect(event.user_data.sha256_email_address).toBe(await sha256hex('alice@example.com'));
+    expect(event.user_data.sha256_phone_number).toBe(await sha256hex('+15551234567'));
     expect(event.user_data.address.sha256_first_name).toBe(await sha256hex('Alice'));
     expect(event.user_data.address.sha256_last_name).toBe(await sha256hex('Smith'));
+    expect(event.user_data.address.sha256_street).toBe(await sha256hex('123 Main St'));
+    expect(event.user_data.address.city).toBe('Toronto');
+    expect(event.user_data.address.region).toBe('ON');
+    expect(event.user_data.address.postal_code).toBe('M5V 1A1');
+    expect(event.user_data.address.country).toBe('CA');
   });
 
   it('returns empty strings when cookies are not set', () => {
@@ -436,11 +469,19 @@ describe('Cookie Auto-populate', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
+    expect(event.user_data.sha256_email_address).toBe('');
+    expect(event.user_data.sha256_phone_number).toBe('');
     expect(event.user_data.address.sha256_first_name).toBe('');
     expect(event.user_data.address.sha256_last_name).toBe('');
+    expect(event.user_data.address.sha256_street).toBe('');
+    expect(event.user_data.address.city).toBe('');
+    expect(event.user_data.address.region).toBe('');
+    expect(event.user_data.address.postal_code).toBe('');
+    expect(event.user_data.address.country).toBe('');
   });
 
   it('manual setUserData overrides cookie defaults', async () => {
+    setCookie('email', 'alice@example.com');
     setCookie('firstName', 'Alice');
     setCookie('lastName', 'Smith');
 
@@ -451,10 +492,11 @@ describe('Cookie Auto-populate', () => {
     await new Promise(r => setTimeout(r, 50));
 
     // Manual override
-    await window.ppLib.datalayer.setUserData({ first_name: 'Bob', last_name: 'Jones' });
+    await window.ppLib.datalayer.setUserData({ email: 'bob@example.com', first_name: 'Bob', last_name: 'Jones' });
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
+    expect(event.user_data.sha256_email_address).toBe(await sha256hex('bob@example.com'));
     expect(event.user_data.address.sha256_first_name).toBe(await sha256hex('Bob'));
     expect(event.user_data.address.sha256_last_name).toBe(await sha256hex('Jones'));
   });

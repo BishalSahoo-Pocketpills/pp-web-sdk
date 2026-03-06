@@ -29,6 +29,13 @@ export interface DataLayerConfig {
     firstName: string;
     lastName: string;
     appAuth: string;
+    email: string;
+    phone: string;
+    street: string;
+    city: string;
+    region: string;
+    postalCode: string;
+    country: string;
   };
   defaults: { itemBrand: string; currency: string; platform: string };
   attributes: DataLayerAttributes;
