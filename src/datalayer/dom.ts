@@ -157,9 +157,15 @@ export function createDomBinder(
 
       // Delayed navigation for anchors
       if (isAnchor) {
-        var href = (el as HTMLAnchorElement).href;
+        var anchor = el as HTMLAnchorElement;
+        var href = anchor.href;
+        var anchorTarget = anchor.target;
         win.setTimeout(function() {
-          win.location.href = href;
+          if (anchorTarget === '_blank') {
+            win.open(href, '_blank', 'noopener');
+          } else {
+            win.location.href = href;
+          }
         }, CONFIG.navigationDelay);
       }
     } catch (e) {

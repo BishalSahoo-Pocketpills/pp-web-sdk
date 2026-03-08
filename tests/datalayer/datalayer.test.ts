@@ -1042,6 +1042,28 @@ describe('DOM Binding — Anchor hitCallback', () => {
     expect(hrefSpy).toHaveBeenCalledWith('https://example.com/delayed');
   });
 
+  it('opens new tab for target="_blank" anchors after delay', async () => {
+    const anchor = document.createElement('a');
+    anchor.href = 'https://example.com/new-tab';
+    anchor.target = '_blank';
+    anchor.setAttribute('data-dl-event', 'login_view');
+    anchor.setAttribute('data-dl-method', 'link');
+    document.body.appendChild(anchor);
+
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+
+    anchor.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }));
+
+    // Not opened immediately
+    expect(openSpy).not.toHaveBeenCalled();
+
+    // Wait for navigationDelay (100ms) + buffer
+    await new Promise(r => setTimeout(r, 150));
+
+    expect(openSpy).toHaveBeenCalledWith('https://example.com/new-tab', '_blank', 'noopener');
+    openSpy.mockRestore();
+  });
+
   it('does not call preventDefault on non-anchor elements', () => {
     createDataLayerDOM([
       { event: 'test_click', tag: 'button' }
