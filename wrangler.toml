@@ -16,7 +16,7 @@
 #   - Immutable URL:  https://<hash>.<project>.pages.dev/ (for version pinning)
 
 name = "pp-web-sdk"
-pages_build_output_dir = "dist"
+compatibility_date = "2026-03-07"
 
-# Custom headers for CDN caching
-# Create a _headers file in dist/ for fine-grained control
+[assets]
+directory = "./dist"
