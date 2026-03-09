@@ -1,13 +1,13 @@
 import type { PPLib } from '../types/common.types';
-import type { DataLayerConfig, DataLayerItem, DataLayerItemInput, DataLayerUser } from '../types/datalayer.types';
+import type { DataLayerConfig, DataLayerItem, DataLayerItemInput, DataLayerUser, DataLayerUserData, DataLayerPage } from '../types/datalayer.types';
 
 export function createEventPusher(
   win: Window & typeof globalThis,
   ppLib: PPLib,
   CONFIG: DataLayerConfig,
   userBuilder: { buildUser: () => DataLayerUser; setUser: (u: Partial<DataLayerUser>) => void },
-  userDataManager: { getUserData: () => any },
-  pageBuilder: { buildPage: () => any },
+  userDataManager: { getUserData: () => DataLayerUserData },
+  pageBuilder: { buildPage: () => DataLayerPage },
   itemBuilder: { normalizeItem: (input: DataLayerItemInput) => DataLayerItem; calculateValue: (items: DataLayerItem[]) => number }
 ) {
 

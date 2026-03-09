@@ -511,17 +511,12 @@ describe('bindActions()', () => {
 
     const btn = document.querySelector('[data-action="logout"]');
 
-    // Add a second listener that checks defaultPrevented after the module's handler ran
-    let wasDefaultPrevented = false;
-    btn.addEventListener('click', (e) => {
-      wasDefaultPrevented = e.defaultPrevented;
-    });
-
-    // Use dispatchEvent with a cancelable event
+    // Use dispatchEvent with a cancelable event — event delegation on document
+    // means preventDefault is called during bubbling, so check after dispatch
     const evt = new window.Event('click', { bubbles: true, cancelable: true });
     btn.dispatchEvent(evt);
 
-    expect(wasDefaultPrevented).toBe(true);
+    expect(evt.defaultPrevented).toBe(true);
   });
 
   it('handles multiple logout and forget-me buttons', () => {
@@ -544,21 +539,24 @@ describe('bindActions()', () => {
   });
 
   it('handles bindActions error gracefully', () => {
-    loadWithCommon('login');
-    const origQSA = document.querySelectorAll;
-    document.querySelectorAll = () => {
-      throw new Error('querySelectorAll broken');
+    // Load common first, then break addEventListener before loading login
+    loadModule('common');
+
+    const origAddEventListener = document.addEventListener;
+    document.addEventListener = () => {
+      throw new Error('addEventListener broken');
     };
 
     const logSpy = vi.spyOn(window.ppLib, 'log');
-    expect(() => window.ppLib.login.init()).not.toThrow();
+    // Loading login triggers init → bindActions → addEventListener → throws
+    expect(() => loadModule('login')).not.toThrow();
     expect(logSpy).toHaveBeenCalledWith(
       'error',
       '[ppLogin] bindActions error',
       expect.any(Error)
     );
 
-    document.querySelectorAll = origQSA;
+    document.addEventListener = origAddEventListener;
   });
 });
 

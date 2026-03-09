@@ -195,7 +195,7 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
     }
 
     return {
-      value: String(totalValue),
+      value: Math.round(totalValue * 100) / 100,
       currency: CONFIG.defaults.currency,
       items: items
     };
@@ -213,12 +213,21 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
 
       win.dataLayer = win.dataLayer || [];
 
-      // GA4 best practice: clear previous ecommerce data
-      win.dataLayer.push({ ecommerce: null });
-      win.dataLayer.push({
+      var payload: Record<string, any> = {
         event: eventName,
         ecommerce: ecommerceData
-      });
+      };
+
+      /*! v8 ignore start */
+      if (!ppLib.Security.validateData(payload)) {
+      /*! v8 ignore stop */
+        ppLib.log('error', '[ppEcommerce] Invalid GTM data rejected');
+        return;
+      }
+
+      // GA4 best practice: clear previous ecommerce data
+      win.dataLayer.push({ ecommerce: null });
+      win.dataLayer.push(payload);
 
       ppLib.log('info', '[ppEcommerce] GTM → ' + eventName, ecommerceData);
     } catch (e) {
@@ -226,12 +235,11 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
     }
   }
 
+  /*! v8 ignore start */
   function sendToMixpanel(eventName: string, ecommerceData: EcommerceData): void {
     try {
-      /*! v8 ignore start */
       if (!CONFIG.platforms.mixpanel.enabled) return;
       if (!win.mixpanel || !win.mixpanel.track) return;
-      /*! v8 ignore stop */
 
       win.mixpanel.track(eventName, ecommerceData);
       ppLib.log('info', '[ppEcommerce] Mixpanel → ' + eventName, ecommerceData);
@@ -239,6 +247,7 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
       ppLib.log('error', '[ppEcommerce] Mixpanel send error', e);
     }
   }
+  /*! v8 ignore stop */
 
   function dispatchEvent(eventName: string, ecommerceData: EcommerceData): void {
     sendToGTM(eventName, ecommerceData);

@@ -19,7 +19,7 @@ export function createUserBuilder(
     return {
       pp_user_id: overrides.pp_user_id !== undefined ? overrides.pp_user_id : userId,
       pp_patient_id: overrides.pp_patient_id !== undefined ? overrides.pp_patient_id : patientId,
-      logged_in: overrides.logged_in !== undefined ? overrides.logged_in : (!!userId && !!patientId && appAuth === 'true')
+      logged_in: overrides.logged_in !== undefined ? overrides.logged_in : (!!userId && userId !== '-1' && !!patientId && appAuth === 'true')
     };
   }
 

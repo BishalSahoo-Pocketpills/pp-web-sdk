@@ -1,4 +1,7 @@
 import { loadModule } from '../helpers/iife-loader.ts';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const PKG_VERSION: string = require('../../package.json').version;
 
 /**
  * Comprehensive tests for src/common/index.js
@@ -18,8 +21,8 @@ describe('IIFE Bootstrap', () => {
     expect(typeof window.ppLib).toBe('object');
   });
 
-  it('should set version to 2.0.0', () => {
-    expect(window.ppLib.version).toBe('2.0.1');
+  it('should set version from package.json', () => {
+    expect(window.ppLib.version).toBe(PKG_VERSION);
   });
 
   it('should set _isReady to true', () => {
@@ -71,7 +74,7 @@ describe('IIFE Bootstrap', () => {
     window.ppLib.customProp = 'keep me';
     loadModule('common');
     expect(window.ppLib.customProp).toBe('keep me');
-    expect(window.ppLib.version).toBe('2.0.1');
+    expect(window.ppLib.version).toBe(PKG_VERSION);
   });
 });
 
@@ -480,7 +483,7 @@ describe('ppLib.log()', () => {
     ppLib.config.debug = true;
     const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
     ppLib.log('info', 'test message');
-    expect(spy).toHaveBeenCalledWith('[ppLib v2.0.1]', 'test message', '');
+    expect(spy).toHaveBeenCalledWith(`[ppLib v${PKG_VERSION}]`, 'test message', '');
   });
 
   it('should skip verbose log when verbose is false', () => {
@@ -497,28 +500,28 @@ describe('ppLib.log()', () => {
     // 'verbose' is not a standard console method so it falls back to console.log
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     ppLib.log('verbose', 'verbose msg');
-    expect(spy).toHaveBeenCalledWith('[ppLib v2.0.1]', 'verbose msg', '');
+    expect(spy).toHaveBeenCalledWith(`[ppLib v${PKG_VERSION}]`, 'verbose msg', '');
   });
 
   it('should fallback to console.log for unknown level', () => {
     ppLib.config.debug = true;
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     ppLib.log('nonexistent', 'fallback msg');
-    expect(spy).toHaveBeenCalledWith('[ppLib v2.0.1]', 'fallback msg', '');
+    expect(spy).toHaveBeenCalledWith(`[ppLib v${PKG_VERSION}]`, 'fallback msg', '');
   });
 
   it('should include data parameter when present', () => {
     ppLib.config.debug = true;
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     ppLib.log('warn', 'warning', { detail: 1 });
-    expect(spy).toHaveBeenCalledWith('[ppLib v2.0.1]', 'warning', { detail: 1 });
+    expect(spy).toHaveBeenCalledWith(`[ppLib v${PKG_VERSION}]`, 'warning', { detail: 1 });
   });
 
   it('should use empty string when data is absent', () => {
     ppLib.config.debug = true;
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     ppLib.log('error', 'err msg');
-    expect(spy).toHaveBeenCalledWith('[ppLib v2.0.1]', 'err msg', '');
+    expect(spy).toHaveBeenCalledWith(`[ppLib v${PKG_VERSION}]`, 'err msg', '');
   });
 
   it('should silently catch exception in console method', () => {
@@ -1398,7 +1401,7 @@ describe('Storage.clear()', () => {
     ppLib.config.debug = true;
     const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
     ppLib.Storage.clear();
-    expect(spy).toHaveBeenCalledWith('[ppLib v2.0.1]', 'Storage cleared', '');
+    expect(spy).toHaveBeenCalledWith(`[ppLib v${PKG_VERSION}]`, 'Storage cleared', '');
   });
 
   it('should catch and log error on exception', () => {

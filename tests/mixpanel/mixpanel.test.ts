@@ -1098,7 +1098,6 @@ describe('loaded callback', () => {
       loadWithCommon('mixpanel');
       window.ppLib.config.debug = true;
       window.ppLib.mixpanel.configure({ token: 'tok' });
-      const logSpy = vi.spyOn(window.ppLib, 'log');
 
       setupScriptEnv();
       window.ppLib.mixpanel.init();
@@ -1108,11 +1107,12 @@ describe('loaded callback', () => {
       const mp = createMockMixpanel();
       invokeLoadedCallback(loadedCallback, mp);
 
-      expect(logSpy).toHaveBeenCalledWith(
-        'error',
-        'Experiment cookie parse error',
-        expect.any(Error)
+      // Security.json.parse returns null for invalid JSON — no experiment data set
+      const setOnceCalls = mp.people.set_once.mock.calls.map((c: any) => c[0]);
+      const hasExp = setOnceCalls.some(
+        (props: any) => props && ('experiment_a' in props || 'experiment_b' in props)
       );
+      expect(hasExp).toBe(false);
     });
 
     it('does nothing when experiment cookie is absent', () => {

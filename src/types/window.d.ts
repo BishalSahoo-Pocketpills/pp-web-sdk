@@ -18,6 +18,8 @@ declare global {
     OnetrustActiveGroups: string;
     requestIdleCallback: ((callback: IdleRequestCallback, options?: IdleRequestOptions) => number) | undefined;
   }
+
+  const __PP_SDK_VERSION__: string;
 }
 
 export {};

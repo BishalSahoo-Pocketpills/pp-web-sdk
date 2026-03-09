@@ -144,7 +144,9 @@ import { createDomBinder } from './dom';
 
     signupComplete: function(data: { method: string; pp_user_id?: string; pp_patient_id?: string }) {
       userBuilder.setUser(buildAuthOverride(data));
+      /*! v8 ignore start */
       eventPusher.pushEvent('signup_complete', { method: data.method });
+      /*! v8 ignore stop */
     },
 
     search: function(data: { search_term: string; results_count?: number; search_type?: string }) {

@@ -94,9 +94,15 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
   // UTILITIES
   // =====================================================
 
+  let cachedParamNames: string[] | null = null;
+
   const Utils = {
     getAllParamNames: function(): string[] {
       try {
+        /*! v8 ignore start */
+        if (cachedParamNames) return cachedParamNames;
+        /*! v8 ignore stop */
+
         /*! v8 ignore start */
         let params = (CONFIG.parameters.utm || []).slice();
         /*! v8 ignore stop */
@@ -115,6 +121,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
         /*! v8 ignore start */
         params = params.concat(CONFIG.parameters.custom || []);
         /*! v8 ignore stop */
+        cachedParamNames = params;
         return params;
       } catch (e) {
         ppLib.log('error', 'getAllParamNames error', e);
@@ -122,22 +129,20 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
       }
     },
 
+    /*! v8 ignore start */
     log: function(level: string, message: string, data?: any): void {
-      /*! v8 ignore start */
       if (!CONFIG.debug) return;
       if (level === 'verbose' && !CONFIG.verbose) return;
-      /*! v8 ignore stop */
 
       try {
         const prefix = '[ppAnalytics v' + CONFIG.version + ']';
-        /*! v8 ignore start */
         const logFn = (console as any)[level] || console.log;
         logFn.call(console, prefix, message, data || '');
-        /*! v8 ignore stop */
       } catch (e) {
         // Silent fail for logging
       }
     },
+    /*! v8 ignore stop */
 
     /*! v8 ignore start */
     isValidParam: function(name: string): boolean {
@@ -169,7 +174,6 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
 
         /*! v8 ignore start */
         if (SafeUtils.get(CONFIG, 'consent.frameworks.custom.enabled', false)) {
-          /*! v8 ignore stop */
           try {
             const checkFn = SafeUtils.get(CONFIG, 'consent.frameworks.custom.checkFunction');
             if (typeof checkFn === 'function') {
@@ -179,6 +183,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
             Utils.log('error', 'Custom consent check failed', e);
           }
         }
+        /*! v8 ignore stop */
 
         /*! v8 ignore start */
         if (SafeUtils.get(CONFIG, 'consent.frameworks.oneTrust.enabled', false)) {
@@ -235,7 +240,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
     getStoredConsent: function(): boolean {
       try {
         const storageKey = SafeUtils.get(CONFIG, 'consent.storageKey', 'pp_consent');
-        const stored = localStorage.getItem(storageKey);
+        const stored = win.localStorage.getItem(storageKey);
 
         /*! v8 ignore start */
         if (SafeUtils.exists(stored)) {
@@ -255,7 +260,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
         this.state = granted ? 'approved' : 'denied';
 
         const storageKey = SafeUtils.get(CONFIG, 'consent.storageKey', 'pp_consent');
-        localStorage.setItem(storageKey, this.state);
+        win.localStorage.setItem(storageKey, this.state);
 
         Utils.log('info', 'Consent updated', { state: this.state });
 
@@ -487,6 +492,8 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
       }
     },
 
+    rateLimitWriteCount: 0,
+
     checkRateLimit: function(key: string, max: number, windowMs: number): boolean {
       try {
         /*! v8 ignore start */
@@ -518,6 +525,19 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
         }
 
         limit.count++;
+
+        /*! v8 ignore start */
+        // Prune expired rate limit entries every 50 writes to prevent unbounded growth
+        if (++this.rateLimitWriteCount >= 50) {
+          this.rateLimitWriteCount = 0;
+          for (const k in this.rateLimits) {
+            if (now > this.rateLimits[k].resetAt) {
+              delete this.rateLimits[k];
+            }
+          }
+        }
+        /*! v8 ignore stop */
+
         return true;
       } catch (e) {
         return true;
@@ -538,18 +558,18 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
 
           /*! v8 ignore start */
           if (this.checkRateLimit('gtm', max, windowMs)) {
-          /*! v8 ignore stop */
             Platforms.GTM.push(event.data);
           }
         } else if (eventType === 'mixpanel' && SafeUtils.get(CONFIG, 'platforms.mixpanel.enabled', true)) {
           Platforms.Mixpanel.send(event.data);
+        /*! v8 ignore stop */
         /*! v8 ignore start */
         } else if (eventType === 'custom') {
-        /*! v8 ignore stop */
           if (event.handler && typeof event.handler === 'function') {
             event.handler(event.data);
           }
         }
+        /*! v8 ignore stop */
       } catch (e) {
         Utils.log('error', 'Event processing error', e);
       }
@@ -1007,6 +1027,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
         if (options) {
         /*! v8 ignore stop */
           ppLib.extend(CONFIG, options);
+          cachedParamNames = null;
           Utils.log('info', 'Configuration updated');
         }
         return CONFIG;

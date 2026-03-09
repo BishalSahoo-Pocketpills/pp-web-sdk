@@ -35,28 +35,45 @@ import { createInitAuthState } from './auth-state';
   const initAuthState = createInitAuthState(doc, ppLib, CONFIG);
 
   // =====================================================
-  // EVENT BINDING
+  // EVENT BINDING (delegation)
   // =====================================================
+
+  var bound = false;
+
+  function handleLoginAction(e: Event): void {
+    try {
+      var target = e.target as Element;
+      /*! v8 ignore start */
+      if (!target || !target.closest) return;
+      /*! v8 ignore stop */
+
+      var el = target.closest('[' + CONFIG.actionAttribute + ']');
+      /*! v8 ignore start */
+      if (!el) return;
+      /*! v8 ignore stop */
+
+      var action = el.getAttribute(CONFIG.actionAttribute);
+      if (action === 'logout') {
+        e.preventDefault();
+        logoutUser(false);
+      /*! v8 ignore start */
+      } else if (action === 'forget-me') {
+      /*! v8 ignore stop */
+        e.preventDefault();
+        logoutUser(true);
+      }
+    } catch (err) {
+      ppLib.log('error', '[ppLogin] handleLoginAction error', err);
+    }
+  }
 
   function bindActions(): void {
     try {
-      // Bind Regular Logout Buttons
-      const logoutButtons = doc.querySelectorAll('[' + CONFIG.actionAttribute + '="logout"]');
-      logoutButtons.forEach(function(btn) {
-        btn.addEventListener('click', function(e) {
-          e.preventDefault();
-          logoutUser(false);
-        });
-      });
-
-      // Bind "Forget Me" Buttons
-      const forgetButtons = doc.querySelectorAll('[' + CONFIG.actionAttribute + '="forget-me"]');
-      forgetButtons.forEach(function(btn) {
-        btn.addEventListener('click', function(e) {
-          e.preventDefault();
-          logoutUser(true);
-        });
-      });
+      /*! v8 ignore start */
+      if (bound) return;
+      /*! v8 ignore stop */
+      bound = true;
+      doc.addEventListener('click', handleLoginAction, { capture: false, passive: false } as EventListenerOptions);
     } catch (e) {
       ppLib.log('error', '[ppLogin] bindActions error', e);
     }

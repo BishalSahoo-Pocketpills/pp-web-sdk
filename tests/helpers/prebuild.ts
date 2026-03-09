@@ -19,6 +19,7 @@ const srcDir = path.resolve(rootDir, 'src');
 const require = createRequire(import.meta.url);
 
 const MODULES: string[] = require(path.resolve(rootDir, 'modules'));
+const PKG_VERSION: string = require(path.resolve(rootDir, 'package.json')).version;
 
 export function setup() {
   const esbuild = require('esbuild');
@@ -40,6 +41,7 @@ export function setup() {
       target: ['es2018'],
       charset: 'utf8',
       legalComments: 'inline',
+      define: { '__PP_SDK_VERSION__': JSON.stringify(PKG_VERSION) },
     });
 
     writeFileSync(path.resolve(cacheDir, moduleName + '.js'), result.outputFiles[0].text);

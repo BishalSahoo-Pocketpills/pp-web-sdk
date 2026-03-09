@@ -42,7 +42,7 @@ export interface EcommerceItem {
 }
 
 export interface EcommerceData {
-  value: string;
+  value: number;
   currency: string;
   items: EcommerceItem[];
 }

@@ -674,7 +674,7 @@ describe('buildEcommerceData() — tested via trackItem and trackViewItem', () =
     });
 
     const event = dataLayer.find(d => d.event === 'add_to_cart');
-    expect(event.ecommerce.value).toBe('25');
+    expect(event.ecommerce.value).toBe(25);
   });
 
   it('calculates total value from multiple items', () => {
@@ -689,7 +689,7 @@ describe('buildEcommerceData() — tested via trackItem and trackViewItem', () =
     window.ppLib.ecommerce.trackViewItem();
 
     const event = dataLayer.find(d => d.event === 'view_item');
-    expect(event.ecommerce.value).toBe('30');
+    expect(event.ecommerce.value).toBe(30);
   });
 
   it('handles string price values (parseFloat)', () => {
@@ -702,7 +702,7 @@ describe('buildEcommerceData() — tested via trackItem and trackViewItem', () =
     });
 
     const event = dataLayer.find(d => d.event === 'add_to_cart');
-    expect(event.ecommerce.value).toBe('19.99');
+    expect(event.ecommerce.value).toBe(19.99);
   });
 
   it('uses configured currency', () => {
@@ -738,7 +738,7 @@ describe('buildEcommerceData() — tested via trackItem and trackViewItem', () =
     const event = dataLayer.find(d => d.event === 'view_item');
     expect(event).toBeDefined();
     // NaN price contributes 0, valid contributes 10
-    expect(event.ecommerce.value).toBe('10');
+    expect(event.ecommerce.value).toBe(10);
   });
 
   it('multiplies price by quantity in total value', () => {
@@ -753,7 +753,7 @@ describe('buildEcommerceData() — tested via trackItem and trackViewItem', () =
 
     const event = dataLayer.find(d => d.event === 'add_to_cart');
     // 15 * 2 = 30
-    expect(event.ecommerce.value).toBe('30');
+    expect(event.ecommerce.value).toBe(30);
   });
 
   it('returns null for empty items array (trackViewItem early return)', () => {
@@ -790,7 +790,7 @@ describe('buildEcommerceData() — tested via trackItem and trackViewItem', () =
 
     const event = dataLayer.find(d => d.event === 'add_to_cart');
     // price * (0 || 1) = 10 * 1 = 10
-    expect(event.ecommerce.value).toBe('10');
+    expect(event.ecommerce.value).toBe(10);
   });
 });
 
@@ -903,7 +903,7 @@ describe('sendToMixpanel()', () => {
     expect(mp.track).toHaveBeenCalledWith(
       'add_to_cart',
       expect.objectContaining({
-        value: '30',
+        value: 30,
         currency: 'CAD',
         items: expect.any(Array),
       })
@@ -1029,7 +1029,7 @@ describe('trackViewItem()', () => {
     const event = dataLayer.find(d => d.event === 'view_item');
     expect(event).toBeDefined();
     expect(event.ecommerce.items.length).toBe(2);
-    expect(event.ecommerce.value).toBe('30');
+    expect(event.ecommerce.value).toBe(30);
   });
 
   it('returns early when no items in DOM', () => {
@@ -1546,7 +1546,7 @@ describe('Public API', () => {
       const event = dataLayer.find(d => d.event === 'add_to_cart');
       expect(event.ecommerce.items[0].quantity).toBe(5);
       // Total value: 10 * 5 = 50
-      expect(event.ecommerce.value).toBe('50');
+      expect(event.ecommerce.value).toBe(50);
     });
 
     it('uses CONFIG default quantity when not provided', () => {
@@ -1701,7 +1701,7 @@ describe('Edge cases and integration', () => {
     const viewItem = dataLayer.find(d => d.event === 'view_item');
     expect(viewItem).toBeDefined();
     expect(viewItem.ecommerce.items.length).toBe(2);
-    expect(viewItem.ecommerce.value).toBe('105');
+    expect(viewItem.ecommerce.value).toBe(105);
 
     // Now click the CTA
     const btn = document.querySelector('[data-event-source="add_to_cart"]');
@@ -1711,7 +1711,7 @@ describe('Edge cases and integration', () => {
     const addToCart = dataLayer.slice(beforeClick).find(d => d.event === 'add_to_cart');
     expect(addToCart).toBeDefined();
     expect(addToCart.ecommerce.items[0].item_id).toBe('wl');
-    expect(addToCart.ecommerce.value).toBe('60');
+    expect(addToCart.ecommerce.value).toBe(60);
 
     // Mixpanel should have been called for both
     expect(mp.track).toHaveBeenCalledWith('view_item', expect.any(Object));

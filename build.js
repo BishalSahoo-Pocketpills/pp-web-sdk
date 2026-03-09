@@ -6,6 +6,7 @@ const srcDir = path.join(__dirname, 'src');
 const distDir = path.join(__dirname, 'dist');
 
 const MODULES = require('./modules');
+const PKG_VERSION = require('./package.json').version;
 
 function findFiles(dir, ext) {
   const results = [];
@@ -38,6 +39,7 @@ async function build() {
       minify: true,
       target: ['es2018'],
       charset: 'utf8',
+      define: { '__PP_SDK_VERSION__': JSON.stringify(PKG_VERSION) },
     });
 
     console.log('Built: dist/' + moduleName + '.min.js');

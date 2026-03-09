@@ -238,7 +238,7 @@ import type { MixpanelConfig } from '../types/mixpanel.types';
         if (regex.test(name)) {
         /*! v8 ignore stop */
           const value = decodeURIComponent(parts.splice(1).join('='));
-          mixpanelData = JSON.parse(value);
+          mixpanelData = ppLib.Security.json.parse(value, {});
         }
       });
     } catch (e) {
@@ -319,16 +319,16 @@ import type { MixpanelConfig } from '../types/mixpanel.types';
         /*! v8 ignore start */
         if (expCookie) {
         /*! v8 ignore stop */
-          try {
-            const expJson = JSON.parse(expCookie);
+          const expJson = ppLib.Security.json.parse(expCookie);
+          /*! v8 ignore start */
+          if (expJson && typeof expJson === 'object') {
+          /*! v8 ignore stop */
             const data: Record<string, any> = {};
             Object.keys(expJson).forEach(function(item: string) {
               data[item] = expJson[item];
             });
             mp.people.set_once(data);
             mp.register(data);
-          } catch (e) {
-            ppLib.log('error', 'Experiment cookie parse error', e);
           }
         }
 
