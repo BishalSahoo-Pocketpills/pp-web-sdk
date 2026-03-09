@@ -41,6 +41,7 @@ export function createDataLayerConfig(): DataLayerConfig {
       transactionId: 'data-dl-transaction-id'
     },
     debounceMs: 300,
-    navigationDelay: 100
+    navigationDelay: 200,
+    autoViewItem: true
   };
 }

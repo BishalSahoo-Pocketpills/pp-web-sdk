@@ -161,9 +161,16 @@ export function createDomBinder(
         var href = anchor.href;
         var anchorTarget = anchor.target;
         win.setTimeout(function() {
-          if (anchorTarget === '_blank') {
-            win.open(href, '_blank', 'noopener');
-          } else {
+          try {
+            if (anchorTarget === '_blank') {
+              var popup = win.open(href, '_blank', 'noopener');
+              if (!popup) {
+                win.location.href = href;
+              }
+            } else {
+              win.location.href = href;
+            }
+          } catch (navErr) {
             win.location.href = href;
           }
         }, CONFIG.navigationDelay);
@@ -183,5 +190,31 @@ export function createDomBinder(
     }
   }
 
-  return { init: init, bindDOM: init, handleInteraction: handleInteraction };
+  function scanViewItems(): void {
+    try {
+      var selector = '[' + CONFIG.attributes.itemId + '], [' + CONFIG.attributes.itemName + ']';
+      var elements = doc.querySelectorAll(selector);
+      if (elements.length === 0) {
+        ppLib.log('verbose', '[ppDataLayer] No item elements found for auto view_item');
+        return;
+      }
+
+      var items: DataLayerItemInput[] = [];
+      for (var i = 0; i < elements.length; i++) {
+        var item = extractItemFromElement(elements[i]);
+        if (item.item_id || item.item_name) {
+          items.push(item);
+        }
+      }
+
+      if (items.length === 0) return;
+
+      eventPusher.pushEcommerceEvent('view_item', items);
+      ppLib.log('info', '[ppDataLayer] auto view_item fired with ' + items.length + ' item(s)');
+    } catch (e) {
+      ppLib.log('error', '[ppDataLayer] scanViewItems error', e);
+    }
+  }
+
+  return { init: init, bindDOM: init, handleInteraction: handleInteraction, scanViewItems: scanViewItems };
 }

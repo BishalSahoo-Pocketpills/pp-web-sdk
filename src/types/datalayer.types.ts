@@ -41,6 +41,7 @@ export interface DataLayerConfig {
   attributes: DataLayerAttributes;
   debounceMs: number;
   navigationDelay: number;
+  autoViewItem: boolean;
 }
 
 // =====================================================
@@ -165,6 +166,7 @@ export interface DataLayerAPI {
 
   init: () => void;
   bindDOM: () => void;
+  scanViewItems: () => void;
 
   getConfig: () => DataLayerConfig;
 }

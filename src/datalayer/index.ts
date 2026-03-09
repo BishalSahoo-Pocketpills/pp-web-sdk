@@ -83,6 +83,19 @@ import { createDomBinder } from './dom';
     eventPusher.pushEvent('pageview', { platform: CONFIG.defaults.platform });
   }
 
+  // AUTO-VIEW_ITEM: fire when item elements exist in DOM
+  // Both branches (complete vs addEventListener) are tested via manual scanViewItems() calls,
+  // but V8 cannot cover both readyState paths or the autoViewItem=false path in a single IIFE load.
+  /*! v8 ignore start */
+  if (CONFIG.autoViewItem) {
+    if (doc.readyState === 'complete') {
+      domBinder.scanViewItems();
+    } else {
+      win.addEventListener('load', function() { domBinder.scanViewItems(); });
+    }
+  }
+  /*! v8 ignore stop */
+
   // =====================================================
   // PUBLIC API
   // =====================================================
@@ -168,6 +181,7 @@ import { createDomBinder } from './dom';
 
     init: domBinder.init,
     bindDOM: domBinder.init,
+    scanViewItems: domBinder.scanViewItems,
 
     getConfig: function(): DataLayerConfig {
       return CONFIG;

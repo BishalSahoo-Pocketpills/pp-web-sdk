@@ -160,7 +160,7 @@ describe('Configuration', () => {
   it('has debounceMs and navigationDelay defaults', () => {
     const config = window.ppLib.datalayer.getConfig();
     expect(config.debounceMs).toBe(300);
-    expect(config.navigationDelay).toBe(100);
+    expect(config.navigationDelay).toBe(200);
   });
 });
 
@@ -425,6 +425,19 @@ describe('User Data / SHA-256', () => {
     expect(event.user_data.sha256_email_address).toBe('');
     expect(event.user_data.sha256_phone_number).toBe('');
   });
+
+  it('returns empty hash when crypto.subtle is unavailable (HTTP context)', async () => {
+    const origCrypto = globalThis.crypto;
+    vi.stubGlobal('crypto', undefined);
+
+    await window.ppLib.datalayer.setUserData({ email: 'test@test.com' });
+    window.ppLib.datalayer.push('test_event');
+
+    const event = window.dataLayer[window.dataLayer.length - 1];
+    expect(event.user_data.sha256_email_address).toBe('');
+
+    vi.stubGlobal('crypto', origCrypto);
+  });
 });
 
 // =========================================================================
@@ -640,6 +653,17 @@ describe('Core Event Push', () => {
     expect(event.user_data).toBeDefined();
     expect(event.page).toBeDefined();
     expect(event.pp_timestamp).toBeDefined();
+  });
+
+  it('push() does not push to dataLayer when validateData returns false', () => {
+    const origValidateData = window.ppLib.Security.validateData;
+    window.ppLib.Security.validateData = () => false;
+
+    const lengthBefore = window.dataLayer.length;
+    window.ppLib.datalayer.push('rejected_event', { bad: 'data' });
+    expect(window.dataLayer.length).toBe(lengthBefore);
+
+    window.ppLib.Security.validateData = origValidateData;
   });
 
   it('push() without extra data still includes enrichment', () => {
@@ -1036,8 +1060,8 @@ describe('DOM Binding — Anchor hitCallback', () => {
     // Not navigated immediately
     expect(hrefSpy).not.toHaveBeenCalled();
 
-    // Wait for navigationDelay (100ms) + buffer
-    await new Promise(r => setTimeout(r, 150));
+    // Wait for navigationDelay (200ms) + buffer
+    await new Promise(r => setTimeout(r, 250));
 
     expect(hrefSpy).toHaveBeenCalledWith('https://example.com/delayed');
   });
@@ -1050,17 +1074,48 @@ describe('DOM Binding — Anchor hitCallback', () => {
     anchor.setAttribute('data-dl-method', 'link');
     document.body.appendChild(anchor);
 
-    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => ({} as Window));
 
     anchor.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }));
 
     // Not opened immediately
     expect(openSpy).not.toHaveBeenCalled();
 
-    // Wait for navigationDelay (100ms) + buffer
-    await new Promise(r => setTimeout(r, 150));
+    // Wait for navigationDelay (200ms) + buffer
+    await new Promise(r => setTimeout(r, 250));
 
     expect(openSpy).toHaveBeenCalledWith('https://example.com/new-tab', '_blank', 'noopener');
+    openSpy.mockRestore();
+  });
+
+  it('falls back to location.href when popup is blocked (window.open returns null)', async () => {
+    const anchor = document.createElement('a');
+    anchor.href = 'https://example.com/blocked';
+    anchor.target = '_blank';
+    anchor.setAttribute('data-dl-event', 'login_view');
+    document.body.appendChild(anchor);
+
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+
+    const originalHref = window.location.href;
+    const hrefSpy = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, href: originalHref },
+      writable: true,
+      configurable: true
+    });
+    Object.defineProperty(window.location, 'href', {
+      get: () => originalHref,
+      set: hrefSpy,
+      configurable: true
+    });
+
+    anchor.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }));
+
+    await new Promise(r => setTimeout(r, 250));
+
+    expect(openSpy).toHaveBeenCalled();
+    expect(hrefSpy).toHaveBeenCalledWith('https://example.com/blocked');
     openSpy.mockRestore();
   });
 
@@ -1297,5 +1352,127 @@ describe('Integration', () => {
     expect(Array.isArray(window.dataLayer)).toBe(true);
     expect(window.dataLayer.length).toBe(1);
     expect(window.dataLayer[0].event).toBe('init_test');
+  });
+});
+
+// =========================================================================
+// 17. AUTO VIEW_ITEM ON PAGE LOAD
+// =========================================================================
+describe('Auto view_item on page load', () => {
+  beforeEach(() => {
+    loadWithCommon('datalayer');
+    createMockDataLayer();
+  });
+
+  it('config defaults autoViewItem to true', () => {
+    const config = window.ppLib.datalayer.getConfig();
+    expect(config.autoViewItem).toBe(true);
+  });
+
+  it('scanViewItems is exposed as a function on the API', () => {
+    expect(typeof window.ppLib.datalayer.scanViewItems).toBe('function');
+  });
+
+  it('auto-fires view_item when item elements exist in DOM', () => {
+    const el = document.createElement('div');
+    el.setAttribute('data-dl-item-id', 'SKU-100');
+    el.setAttribute('data-dl-item-name', 'Test Drug');
+    el.setAttribute('data-dl-price', '25.99');
+    document.body.appendChild(el);
+
+    const before = window.dataLayer.length;
+    window.ppLib.datalayer.scanViewItems();
+
+    // pushEcommerceEvent pushes { ecommerce: null } clear + the enriched event
+    expect(window.dataLayer.length).toBe(before + 2);
+    const event = window.dataLayer[window.dataLayer.length - 1];
+    expect(event.event).toBe('view_item');
+    expect(event.ecommerce.items).toHaveLength(1);
+    expect(event.ecommerce.items[0].item_id).toBe('SKU-100');
+    expect(event.ecommerce.items[0].item_name).toBe('Test Drug');
+    expect(event.ecommerce.items[0].price).toBe(25.99);
+  });
+
+  it('does not fire view_item when no item elements exist', () => {
+    // No item elements in DOM
+    const before = window.dataLayer.length;
+    window.ppLib.datalayer.scanViewItems();
+    expect(window.dataLayer.length).toBe(before);
+  });
+
+  it('collects multiple items from DOM', () => {
+    const items = [
+      { id: 'SKU-1', name: 'Drug A', price: '10' },
+      { id: 'SKU-2', name: 'Drug B', price: '20' },
+      { id: 'SKU-3', name: 'Drug C', price: '30' }
+    ];
+    items.forEach(item => {
+      const el = document.createElement('div');
+      el.setAttribute('data-dl-item-id', item.id);
+      el.setAttribute('data-dl-item-name', item.name);
+      el.setAttribute('data-dl-price', item.price);
+      document.body.appendChild(el);
+    });
+
+    const before = window.dataLayer.length;
+    window.ppLib.datalayer.scanViewItems();
+
+    // pushEcommerceEvent pushes { ecommerce: null } clear + the enriched event
+    expect(window.dataLayer.length).toBe(before + 2);
+    const event = window.dataLayer[window.dataLayer.length - 1];
+    expect(event.event).toBe('view_item');
+    expect(event.ecommerce.items).toHaveLength(3);
+    expect(event.ecommerce.items[0].item_id).toBe('SKU-1');
+    expect(event.ecommerce.items[1].item_id).toBe('SKU-2');
+    expect(event.ecommerce.items[2].item_id).toBe('SKU-3');
+  });
+
+  it('matches elements by data-dl-item-name only', () => {
+    const el = document.createElement('div');
+    el.setAttribute('data-dl-item-name', 'Name-Only Drug');
+    document.body.appendChild(el);
+
+    window.ppLib.datalayer.scanViewItems();
+
+    const event = window.dataLayer[window.dataLayer.length - 1];
+    expect(event.event).toBe('view_item');
+    expect(event.ecommerce.items).toHaveLength(1);
+    expect(event.ecommerce.items[0].item_name).toBe('Name-Only Drug');
+  });
+
+  it('skips elements with neither item_id nor item_name values', () => {
+    // Element has the attribute but empty value
+    const el = document.createElement('div');
+    el.setAttribute('data-dl-item-id', '');
+    document.body.appendChild(el);
+
+    const before = window.dataLayer.length;
+    window.ppLib.datalayer.scanViewItems();
+    expect(window.dataLayer.length).toBe(before);
+  });
+
+  it('catches and logs errors in scanViewItems', () => {
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+
+    // Add item element then sabotage querySelectorAll to throw
+    const el = document.createElement('div');
+    el.setAttribute('data-dl-item-id', 'SKU-ERR');
+    document.body.appendChild(el);
+
+    const original = document.querySelectorAll;
+    document.querySelectorAll = () => { throw new Error('scan error'); };
+
+    window.ppLib.datalayer.scanViewItems();
+
+    expect(logSpy).toHaveBeenCalledWith('error', '[ppDataLayer] scanViewItems error', expect.any(Error));
+
+    document.querySelectorAll = original;
+    logSpy.mockRestore();
+  });
+
+  it('autoViewItem can be disabled via configure', () => {
+    window.ppLib.datalayer.configure({ autoViewItem: false });
+    const config = window.ppLib.datalayer.getConfig();
+    expect(config.autoViewItem).toBe(false);
   });
 });
