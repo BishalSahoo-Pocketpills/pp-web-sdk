@@ -70,13 +70,13 @@ The module auto-initializes DOM binding on `DOMContentLoaded` and auto-populates
 </button>
 
 <!-- Ecommerce item with container pattern -->
-<section data-dl-item-id="RX-001" data-dl-item-name="Aspirin" data-dl-price="12.99">
+<section data-dl-item-id="RX-001" data-dl-item-name="Aspirin" data-dl-item-price="12.99">
   <button data-dl-event="add_to_cart">Add to Cart</button>
 </section>
 
 <!-- Anchor with hitCallback — intercepts navigation, pushes event, then navigates -->
 <a href="/checkout" data-dl-event="begin_checkout"
-   data-dl-item-id="RX-001" data-dl-item-name="Aspirin" data-dl-price="12.99">
+   data-dl-item-id="RX-001" data-dl-item-name="Aspirin" data-dl-item-price="12.99">
   Proceed to Checkout
 </a>
 ```
@@ -112,8 +112,8 @@ ppLib.datalayer.configure({
     itemId: 'data-dl-item-id',           // Ecommerce item ID
     itemName: 'data-dl-item-name',       // Ecommerce item name
     itemBrand: 'data-dl-item-brand',     // Ecommerce item brand
-    itemCategory: 'data-dl-category',    // Ecommerce item category
-    price: 'data-dl-price',              // Ecommerce price
+    itemCategory: 'data-dl-item-category', // Ecommerce item category
+    price: 'data-dl-item-price',              // Ecommerce price
     quantity: 'data-dl-quantity',         // Ecommerce quantity
     discount: 'data-dl-discount',        // Ecommerce discount
     coupon: 'data-dl-coupon',            // Ecommerce coupon code
@@ -151,7 +151,7 @@ All options have sensible defaults — override only what you need.
 | `data-dl-item-name` | Product/item name |
 | `data-dl-item-brand` | Brand (defaults to config `itemBrand`) |
 | `data-dl-category` | Product category |
-| `data-dl-price` | Price (string parsed to float) |
+| `data-dl-item-price` | Price (string parsed to float) |
 | `data-dl-quantity` | Quantity (string parsed to int, default: 1) |
 | `data-dl-discount` | Discount amount (string parsed to float) |
 | `data-dl-coupon` | Coupon code |
@@ -176,12 +176,12 @@ When a `data-dl-event` element is clicked, item data is resolved in this order:
 ```html
 <!-- Flat: item data on the same element -->
 <button data-dl-event="add_to_cart"
-        data-dl-item-id="RX-001" data-dl-price="12.99">
+        data-dl-item-id="RX-001" data-dl-item-price="12.99">
   Add
 </button>
 
 <!-- Container: button inherits item data from parent -->
-<section data-dl-item-id="RX-001" data-dl-item-name="Aspirin" data-dl-price="12.99">
+<section data-dl-item-id="RX-001" data-dl-item-name="Aspirin" data-dl-item-price="12.99">
   <button data-dl-event="add_to_cart">Add</button>
 </section>
 ```

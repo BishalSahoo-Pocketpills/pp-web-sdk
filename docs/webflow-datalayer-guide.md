@@ -169,7 +169,7 @@ Ecommerce events require item data. There are two ways to set up items.
 |  +---------------------+------------------+ |
 |  | data-dl-item-name   | Aspirin          | |
 |  +---------------------+------------------+ |
-|  | data-dl-price       | 12.99            | |
+|  | data-dl-item-price       | 12.99            | |
 |  +---------------------+------------------+ |
 +---------------------------------------------+
 ```
@@ -182,8 +182,8 @@ When multiple buttons share the same item, put item data on a parent element:
 <!-- Item data on the Section/Div -->
 <section data-dl-item-id="RX-001"
          data-dl-item-name="Aspirin"
-         data-dl-price="12.99"
-         data-dl-category="Pain Relief">
+         data-dl-item-price="12.99"
+         data-dl-item-category="Pain Relief">
 
   <!-- Each button only needs the event attribute -->
   <button data-dl-event="view_item">View Details</button>
@@ -203,9 +203,9 @@ In Webflow Designer:
 |  +---------------------+-------------------+ |
 |  | data-dl-item-name   | Aspirin           | |
 |  +---------------------+-------------------+ |
-|  | data-dl-price       | 12.99             | |
+|  | data-dl-item-price       | 12.99             | |
 |  +---------------------+-------------------+ |
-|  | data-dl-category    | Pain Relief       | |
+|  | data-dl-item-category    | Pain Relief       | |
 |  +---------------------+-------------------+ |
 +----------------------------------------------+
 
@@ -228,7 +228,7 @@ Purchase events need a `data-dl-transaction-id`:
         data-dl-transaction-id="TXN-001"
         data-dl-item-id="RX-001"
         data-dl-item-name="Aspirin"
-        data-dl-price="12.99">
+        data-dl-item-price="12.99">
   Complete Purchase
 </button>
 ```
@@ -263,7 +263,7 @@ This ensures the event is captured before the browser leaves the page.
 <a href="/checkout"
    data-dl-event="begin_checkout"
    data-dl-item-id="RX-001"
-   data-dl-price="12.99">
+   data-dl-item-price="12.99">
   Proceed to Checkout
 </a>
 ```
@@ -326,7 +326,7 @@ window.dataLayer
 
 ### Ecommerce items empty
 
-- For **container pattern**, ensure item attributes (`data-dl-item-id`, `data-dl-price`) are on an **ancestor** of the clicked element, not a sibling
+- For **container pattern**, ensure item attributes (`data-dl-item-id`, `data-dl-item-price`) are on an **ancestor** of the clicked element, not a sibling
 - For **flat pattern**, ensure item attributes are on the same element as `data-dl-event`
 
 ### Anchor not navigating
@@ -363,8 +363,8 @@ window.dataLayer
 | `data-dl-item-id` | Event element or ancestor | Product ID |
 | `data-dl-item-name` | Same | Product name |
 | `data-dl-item-brand` | Same (optional) | Brand (default: config `itemBrand`) |
-| `data-dl-category` | Same (optional) | Product category |
-| `data-dl-price` | Same | Price (number) |
+| `data-dl-item-category` | Same (optional) | Product category |
+| `data-dl-item-price` | Same | Price (number) |
 | `data-dl-quantity` | Same (optional) | Quantity (default: `1`) |
 | `data-dl-discount` | Same (optional) | Discount amount |
 | `data-dl-coupon` | Same (optional) | Coupon code |

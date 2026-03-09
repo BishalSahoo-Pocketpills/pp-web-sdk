@@ -275,19 +275,19 @@ All modules use `data-*` attributes for declarative, no-code configuration.
 <button data-dl-event="login_view" data-dl-method="email">Log In</button>
 
 <!-- Ecommerce: container pattern -->
-<section data-dl-item-id="RX-001" data-dl-item-name="Aspirin" data-dl-price="12.99">
+<section data-dl-item-id="RX-001" data-dl-item-name="Aspirin" data-dl-item-price="12.99">
   <button data-dl-event="add_to_cart">Add to Cart</button>
 </section>
 
 <!-- Anchor hitCallback: push event, then navigate -->
 <a href="/checkout" data-dl-event="begin_checkout"
-   data-dl-item-id="RX-001" data-dl-price="12.99">
+   data-dl-item-id="RX-001" data-dl-item-price="12.99">
   Checkout
 </a>
 
 <!-- Purchase with transaction ID -->
 <button data-dl-event="purchase" data-dl-transaction-id="TXN-001"
-        data-dl-item-id="RX-001" data-dl-price="12.99">
+        data-dl-item-id="RX-001" data-dl-item-price="12.99">
   Complete Purchase
 </button>
 ```

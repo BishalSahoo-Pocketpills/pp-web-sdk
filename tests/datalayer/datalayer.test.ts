@@ -148,8 +148,8 @@ describe('Configuration', () => {
     expect(config.attributes.itemId).toBe('data-dl-item-id');
     expect(config.attributes.itemName).toBe('data-dl-item-name');
     expect(config.attributes.itemBrand).toBe('data-dl-item-brand');
-    expect(config.attributes.itemCategory).toBe('data-dl-category');
-    expect(config.attributes.price).toBe('data-dl-price');
+    expect(config.attributes.itemCategory).toBe('data-dl-item-category');
+    expect(config.attributes.price).toBe('data-dl-item-price');
     expect(config.attributes.quantity).toBe('data-dl-quantity');
     expect(config.attributes.discount).toBe('data-dl-discount');
     expect(config.attributes.coupon).toBe('data-dl-coupon');
@@ -942,7 +942,7 @@ describe('DOM Binding — Ecommerce Events', () => {
 
   it('pushes view_item from data-dl-event with item attributes', () => {
     createDataLayerDOM([
-      { event: 'view_item', attrs: { 'data-dl-item-id': 'RX-1', 'data-dl-item-name': 'Aspirin', 'data-dl-price': '10.99' } }
+      { event: 'view_item', attrs: { 'data-dl-item-id': 'RX-1', 'data-dl-item-name': 'Aspirin', 'data-dl-item-price': '10.99' } }
     ]);
 
     const btn = document.querySelector('[data-dl-event="view_item"]')!;
@@ -958,7 +958,7 @@ describe('DOM Binding — Ecommerce Events', () => {
 
   it('pushes add_to_cart from data-dl-event with quantity and discount', () => {
     createDataLayerDOM([
-      { event: 'add_to_cart', attrs: { 'data-dl-item-id': 'RX-2', 'data-dl-price': '20', 'data-dl-quantity': '3', 'data-dl-discount': '5' } }
+      { event: 'add_to_cart', attrs: { 'data-dl-item-id': 'RX-2', 'data-dl-item-price': '20', 'data-dl-quantity': '3', 'data-dl-discount': '5' } }
     ]);
 
     const btn = document.querySelector('[data-dl-event="add_to_cart"]')!;
@@ -972,7 +972,7 @@ describe('DOM Binding — Ecommerce Events', () => {
 
   it('pushes purchase with transaction_id from data-dl-transaction-id', () => {
     createDataLayerDOM([
-      { event: 'purchase', attrs: { 'data-dl-item-id': 'RX-3', 'data-dl-price': '100', 'data-dl-transaction-id': 'TXN-DOM-1' } }
+      { event: 'purchase', attrs: { 'data-dl-item-id': 'RX-3', 'data-dl-item-price': '100', 'data-dl-transaction-id': 'TXN-DOM-1' } }
     ]);
 
     const btn = document.querySelector('[data-dl-event="purchase"]')!;
@@ -989,7 +989,7 @@ describe('DOM Binding — Ecommerce Events', () => {
     const container = document.createElement('div');
     container.setAttribute('data-dl-item-id', 'RX-CONTAINER');
     container.setAttribute('data-dl-item-name', 'Container Med');
-    container.setAttribute('data-dl-price', '55');
+    container.setAttribute('data-dl-item-price', '55');
 
     const btn = document.createElement('button');
     btn.setAttribute('data-dl-event', 'add_to_cart');
@@ -1378,7 +1378,7 @@ describe('Auto view_item on page load', () => {
     el.setAttribute('data-dl-view-item', '');
     el.setAttribute('data-dl-item-id', 'SKU-100');
     el.setAttribute('data-dl-item-name', 'Test Drug');
-    el.setAttribute('data-dl-price', '25.99');
+    el.setAttribute('data-dl-item-price', '25.99');
     document.body.appendChild(el);
 
     const before = window.dataLayer.length;
@@ -1416,7 +1416,7 @@ describe('Auto view_item on page load', () => {
       el.setAttribute('data-dl-view-item', '');
       el.setAttribute('data-dl-item-id', item.id);
       el.setAttribute('data-dl-item-name', item.name);
-      el.setAttribute('data-dl-price', item.price);
+      el.setAttribute('data-dl-item-price', item.price);
       document.body.appendChild(el);
     });
 
