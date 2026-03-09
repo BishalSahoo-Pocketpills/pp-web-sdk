@@ -1373,8 +1373,9 @@ describe('Auto view_item on page load', () => {
     expect(typeof window.ppLib.datalayer.scanViewItems).toBe('function');
   });
 
-  it('auto-fires view_item when item elements exist in DOM', () => {
+  it('auto-fires view_item when data-dl-view-item elements exist in DOM', () => {
     const el = document.createElement('div');
+    el.setAttribute('data-dl-view-item', '');
     el.setAttribute('data-dl-item-id', 'SKU-100');
     el.setAttribute('data-dl-item-name', 'Test Drug');
     el.setAttribute('data-dl-price', '25.99');
@@ -1393,8 +1394,12 @@ describe('Auto view_item on page load', () => {
     expect(event.ecommerce.items[0].price).toBe(25.99);
   });
 
-  it('does not fire view_item when no item elements exist', () => {
-    // No item elements in DOM
+  it('does not fire view_item when no data-dl-view-item elements exist', () => {
+    // No view-item elements in DOM (even if item-id exists without view-item marker)
+    const el = document.createElement('div');
+    el.setAttribute('data-dl-item-id', 'SKU-CART');
+    document.body.appendChild(el);
+
     const before = window.dataLayer.length;
     window.ppLib.datalayer.scanViewItems();
     expect(window.dataLayer.length).toBe(before);
@@ -1408,6 +1413,7 @@ describe('Auto view_item on page load', () => {
     ];
     items.forEach(item => {
       const el = document.createElement('div');
+      el.setAttribute('data-dl-view-item', '');
       el.setAttribute('data-dl-item-id', item.id);
       el.setAttribute('data-dl-item-name', item.name);
       el.setAttribute('data-dl-price', item.price);
@@ -1429,6 +1435,7 @@ describe('Auto view_item on page load', () => {
 
   it('matches elements by data-dl-item-name only', () => {
     const el = document.createElement('div');
+    el.setAttribute('data-dl-view-item', '');
     el.setAttribute('data-dl-item-name', 'Name-Only Drug');
     document.body.appendChild(el);
 
@@ -1440,10 +1447,10 @@ describe('Auto view_item on page load', () => {
     expect(event.ecommerce.items[0].item_name).toBe('Name-Only Drug');
   });
 
-  it('skips elements with neither item_id nor item_name values', () => {
-    // Element has the attribute but empty value
+  it('skips view-item elements with neither item_id nor item_name values', () => {
+    // Element has data-dl-view-item but no item data
     const el = document.createElement('div');
-    el.setAttribute('data-dl-item-id', '');
+    el.setAttribute('data-dl-view-item', '');
     document.body.appendChild(el);
 
     const before = window.dataLayer.length;

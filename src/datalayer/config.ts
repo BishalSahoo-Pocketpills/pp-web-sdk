@@ -38,7 +38,8 @@ export function createDataLayerConfig(): DataLayerConfig {
       discount: 'data-dl-discount',
       coupon: 'data-dl-coupon',
       currency: 'data-dl-currency',
-      transactionId: 'data-dl-transaction-id'
+      transactionId: 'data-dl-transaction-id',
+      viewItem: 'data-dl-view-item'
     },
     debounceMs: 300,
     navigationDelay: 200,

@@ -192,7 +192,7 @@ export function createDomBinder(
 
   function scanViewItems(): void {
     try {
-      var selector = '[' + CONFIG.attributes.itemId + '], [' + CONFIG.attributes.itemName + ']';
+      var selector = '[' + CONFIG.attributes.viewItem + ']';
       var elements = doc.querySelectorAll(selector);
       if (elements.length === 0) {
         ppLib.log('verbose', '[ppDataLayer] No item elements found for auto view_item');

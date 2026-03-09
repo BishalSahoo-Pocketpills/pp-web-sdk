@@ -20,6 +20,7 @@ export interface DataLayerAttributes {
   coupon: string;
   currency: string;
   transactionId: string;
+  viewItem: string;
 }
 
 export interface DataLayerConfig {
