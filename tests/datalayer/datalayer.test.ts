@@ -53,12 +53,17 @@ describe('IIFE Bootstrap', () => {
     expect(window.ppLib.datalayer).toBeDefined();
   });
 
-  it('auto-fires pageview event on module load', () => {
+  it('auto-fires pageview event on module load', async () => {
     createMockDataLayer();
     loadWithCommon('datalayer');
 
+    // Auto-pageview waits for async user data hashing
+    await vi.waitFor(() => {
+      const events = window.dataLayer.filter((e: any) => e.event === 'pageview');
+      expect(events.length).toBe(1);
+    });
+
     const events = window.dataLayer.filter((e: any) => e.event === 'pageview');
-    expect(events.length).toBe(1);
     expect(events[0].platform).toBe('web');
     expect(events[0].user).toBeDefined();
     expect(events[0].page).toBeDefined();
@@ -246,9 +251,8 @@ describe('logged_in Derivation', () => {
     expect(event.user.logged_in).toBe(true);
   });
 
-  it('logged_in = false when userId missing', () => {
+  it('logged_in = false when userId missing and appAuth not true', () => {
     setCookie('patientId', '99');
-    setCookie('app_is_authenticated', 'true');
 
     window.ppLib.datalayer.push('test_event');
 
@@ -256,9 +260,17 @@ describe('logged_in Derivation', () => {
     expect(event.user.logged_in).toBe(false);
   });
 
-  it('logged_in = false when patientId missing', () => {
+  it('logged_in = true when only appAuth is true (no userId/patientId)', () => {
+    setCookie('app_is_authenticated', 'true');
+
+    window.ppLib.datalayer.push('test_event');
+
+    const event = window.dataLayer[window.dataLayer.length - 1];
+    expect(event.user.logged_in).toBe(true);
+  });
+
+  it('logged_in = false when patientId missing and appAuth not true', () => {
     setCookie('userId', '42');
-    setCookie('app_is_authenticated', 'true');
 
     window.ppLib.datalayer.push('test_event');
 
@@ -266,7 +278,7 @@ describe('logged_in Derivation', () => {
     expect(event.user.logged_in).toBe(false);
   });
 
-  it('logged_in = false when appAuth is not "true"', () => {
+  it('logged_in = true when userId and patientId exist regardless of appAuth', () => {
     setCookie('userId', '42');
     setCookie('patientId', '99');
     setCookie('app_is_authenticated', 'false');
@@ -274,7 +286,7 @@ describe('logged_in Derivation', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user.logged_in).toBe(false);
+    expect(event.user.logged_in).toBe(true);
   });
 });
 

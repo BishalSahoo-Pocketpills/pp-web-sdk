@@ -37,8 +37,8 @@ import { createDomBinder } from './dom';
   const eventPusher = createEventPusher(win, ppLib, CONFIG, userBuilder, userDataManager, pageBuilder, itemBuilder);
   const domBinder = createDomBinder(win, doc, ppLib, CONFIG, eventPusher, itemBuilder);
 
-  // Fire-and-forget: auto-populate user data from cookies
-  userDataManager.setUserData({
+  // Auto-populate user data from cookies (async SHA-256 hashing)
+  var userDataReady = userDataManager.setUserData({
     email: ppLib.getCookie(CONFIG.cookieNames.email) || '',
     phone: ppLib.getCookie(CONFIG.cookieNames.phone) || '',
     first_name: ppLib.getCookie(CONFIG.cookieNames.firstName) || '',
@@ -67,20 +67,24 @@ import { createDomBinder } from './dom';
     };
   }
 
+  function pushAutoPageview(): void {
+    domBinder.init();
+    eventPusher.pushEvent('pageview', { platform: CONFIG.defaults.platform });
+  }
+
   // =====================================================
   // AUTO-INIT DOM BINDING + AUTO-PAGEVIEW
+  // Wait for user data hashing before pushing events
   // =====================================================
 
   /*! v8 ignore start */
   if (doc.readyState === 'loading') {
     doc.addEventListener('DOMContentLoaded', function() {
-      domBinder.init();
-      eventPusher.pushEvent('pageview', { platform: CONFIG.defaults.platform });
+      userDataReady.then(pushAutoPageview);
     });
   } else {
   /*! v8 ignore stop */
-    domBinder.init();
-    eventPusher.pushEvent('pageview', { platform: CONFIG.defaults.platform });
+    userDataReady.then(pushAutoPageview);
   }
 
   // AUTO-VIEW_ITEM: fire when item elements exist in DOM
@@ -89,7 +93,7 @@ import { createDomBinder } from './dom';
   /*! v8 ignore start */
   if (CONFIG.autoViewItem) {
     if (doc.readyState === 'complete') {
-      domBinder.scanViewItems();
+      userDataReady.then(function() { domBinder.scanViewItems(); });
     } else {
       win.addEventListener('load', function() { domBinder.scanViewItems(); });
     }
@@ -156,8 +160,8 @@ import { createDomBinder } from './dom';
     },
 
     signupComplete: function(data: { method: string; pp_user_id?: string; pp_patient_id?: string }) {
-      userBuilder.setUser(buildAuthOverride(data));
       /*! v8 ignore start */
+      userBuilder.setUser(buildAuthOverride(data));
       eventPusher.pushEvent('signup_complete', { method: data.method });
       /*! v8 ignore stop */
     },
