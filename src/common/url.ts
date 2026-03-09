@@ -18,7 +18,7 @@ export function createGetQueryParam(): (url: string, findParam: string) => strin
       });
 
       if (!param) return '';
-      return decodeURIComponent(params[param]);
+      return params[param];
     } catch (e) {
       return '';
     }

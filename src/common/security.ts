@@ -16,7 +16,7 @@ export function createSecurity(
         const sanitized = str
           .replace(/[<>'"]/g, '')
           .replace(/javascript:/gi, '')
-          .replace(/on\w+\s*=/gi, '')
+          .replace(/\bon(abort|blur|change|click|close|contextmenu|copy|cut|dblclick|drag|dragend|dragenter|dragleave|dragover|dragstart|drop|error|focus|focusin|focusout|hashchange|input|invalid|keydown|keypress|keyup|load|message|mousedown|mouseenter|mouseleave|mousemove|mouseout|mouseover|mouseup|paste|pointerdown|pointerenter|pointerleave|pointermove|pointerout|pointerover|pointerup|reset|resize|scroll|select|submit|touchcancel|touchend|touchmove|touchstart|unload|wheel)\s*=/gi, '')
           .replace(/[\x00-\x1F\x7F]/g, '')
           .replace(/data:text\/html/gi, '')
           .substring(0, config.security.maxParamLength);
@@ -92,7 +92,7 @@ export function createSecurity(
         const dangerousPatterns = [
           /<script/i,
           /javascript:/i,
-          /on\w+=/i,
+          /\bon(abort|blur|change|click|close|contextmenu|copy|cut|dblclick|drag|dragend|dragenter|dragleave|dragover|dragstart|drop|error|focus|focusin|focusout|hashchange|input|invalid|keydown|keypress|keyup|load|message|mousedown|mouseenter|mouseleave|mousemove|mouseout|mouseover|mouseup|paste|pointerdown|pointerenter|pointerleave|pointermove|pointerout|pointerover|pointerup|reset|resize|scroll|select|submit|touchcancel|touchend|touchmove|touchstart|unload|wheel)=/i,
           /eval\(/i,
           /expression\(/i,
           /data:text\/html/i

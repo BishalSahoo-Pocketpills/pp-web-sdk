@@ -627,6 +627,21 @@ describe('event-source module', () => {
         window.ppLib.eventSource.trackElement(document.querySelector('[data-event-source]'));
       }).not.toThrow();
     });
+
+    it('rejects GTM push when validateData returns false', () => {
+      const dataLayer = createMockDataLayer();
+      createEventSourceDOM([{ source: 'validate_test', text: 'Go' }]);
+
+      const origValidateData = window.ppLib.Security.validateData;
+      window.ppLib.Security.validateData = () => false;
+
+      const el = document.querySelector('[data-event-source]');
+      const before = dataLayer.length;
+      window.ppLib.eventSource.trackElement(el);
+      expect(dataLayer.length).toBe(before);
+
+      window.ppLib.Security.validateData = origValidateData;
+    });
   });
 
   // ---------------------------------------------------------------------------

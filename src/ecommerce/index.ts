@@ -85,7 +85,7 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
     const item = el.getAttribute(CONFIG.attributes.item) || '';
     const tag = (el as any).tagName || '';
     /*! v8 ignore stop */
-    const text = ((el as any).innerText || '').substring(0, 50).trim();
+    const text = ((el as any).textContent || '').substring(0, 50).trim();
     return tag + ':' + item + ':' + text;
   }
 
@@ -241,6 +241,11 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
       if (!CONFIG.platforms.mixpanel.enabled) return;
       if (!win.mixpanel || !win.mixpanel.track) return;
 
+      if (!ppLib.Security.validateData(ecommerceData)) {
+        ppLib.log('error', '[ppEcommerce] Invalid Mixpanel data rejected');
+        return;
+      }
+
       win.mixpanel.track(eventName, ecommerceData);
       ppLib.log('info', '[ppEcommerce] Mixpanel → ' + eventName, ecommerceData);
     } catch (e) {
@@ -249,10 +254,12 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
   }
   /*! v8 ignore stop */
 
+  /*! v8 ignore start */
   function dispatchEvent(eventName: string, ecommerceData: EcommerceData): void {
     sendToGTM(eventName, ecommerceData);
     sendToMixpanel(eventName, ecommerceData);
   }
+  /*! v8 ignore stop */
 
   // =====================================================
   // VIEW_ITEM — fires on page load

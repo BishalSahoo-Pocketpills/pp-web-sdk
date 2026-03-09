@@ -137,8 +137,19 @@ describe('Configuration', () => {
     expect(config.api.applicationId).toBe('abc');
   });
 
-  it('isReady returns true (no external SDK needed)', () => {
+  it('isReady returns false before init is called', () => {
     loadWithCommon('voucherify');
+    expect(window.ppLib.voucherify!.isReady()).toBe(false);
+  });
+
+  it('isReady returns true after init is called', () => {
+    loadWithCommon('voucherify');
+    window.ppLib.voucherify!.configure({
+      api: { applicationId: 'test-id' } as any,
+      consent: { required: false } as any,
+      pricing: { autoFetch: false } as any
+    });
+    window.ppLib.voucherify!.init();
     expect(window.ppLib.voucherify!.isReady()).toBe(true);
   });
 });

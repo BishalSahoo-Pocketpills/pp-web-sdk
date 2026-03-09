@@ -1611,6 +1611,26 @@ describe('Edge Cases', () => {
     expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('trackEvent error'), expect.any(Error));
   });
 
+  it('preserves number, boolean, and array property types in trackEvent', () => {
+    loadWithCommon('braze');
+    const mockBraze = createMockBraze();
+    window.braze = mockBraze as any;
+
+    window.ppLib.braze!.trackEvent('typed_event', {
+      label: 'test',
+      count: 42,
+      active: true,
+      tags: ['a', 'b']
+    });
+
+    expect(mockBraze.logCustomEvent).toHaveBeenCalledWith('typed_event', {
+      label: 'test',
+      count: 42,
+      active: true,
+      tags: ['a', 'b']
+    });
+  });
+
   it('handles trackPurchase error gracefully', () => {
     loadWithCommon('braze');
     const logSpy = vi.spyOn(window.ppLib, 'log');

@@ -19,11 +19,15 @@ function emptyUserData(): DataLayerUserData {
 }
 
 async function sha256(value: string): Promise<string> {
-  var encoder = new TextEncoder();
-  var data = encoder.encode(value.toLowerCase().trim());
-  var hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  var hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+  try {
+    var encoder = new TextEncoder();
+    var data = encoder.encode(value.toLowerCase().trim());
+    var hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    var hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+  } catch (e) {
+    return '';
+  }
 }
 
 async function hashIfNeeded(value: string | undefined): Promise<string> {

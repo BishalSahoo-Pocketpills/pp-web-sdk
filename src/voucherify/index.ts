@@ -64,6 +64,8 @@ import { createPricingEngine } from './pricing';
   // INITIALIZATION
   // =====================================================
 
+  var initialized = false;
+
   function init(): void {
     /*! v8 ignore start */
     if (!CONFIG.api.applicationId && !CONFIG.cache.enabled) {
@@ -91,6 +93,8 @@ import { createPricingEngine } from './pricing';
         pricingEngine.fetchPricing();
       }
     }
+
+    initialized = true;
   }
 
   // =====================================================
@@ -177,7 +181,7 @@ import { createPricingEngine } from './pricing';
     },
 
     isReady: function() {
-      return true;
+      return initialized;
     },
 
     getConfig: function() {

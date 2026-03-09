@@ -141,13 +141,18 @@ import { createPurchaseHandler } from './purchases';
         if (!sanitized) return;
         /*! v8 ignore stop */
 
-        var sanitizedProps: Record<string, string> | undefined;
+        var sanitizedProps: Record<string, any> | undefined;
         /*! v8 ignore start */
         if (properties && typeof properties === 'object') {
           sanitizedProps = {};
           var keys = Object.keys(properties);
           for (var i = 0; i < keys.length; i++) {
-            sanitizedProps[keys[i]] = ppLib.Security.sanitize(String(properties[keys[i]]));
+            var val = properties[keys[i]];
+            if (typeof val === 'string') {
+              sanitizedProps[keys[i]] = ppLib.Security.sanitize(val);
+            } else {
+              sanitizedProps[keys[i]] = val;
+            }
           }
         }
 

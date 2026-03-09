@@ -610,6 +610,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
     Mixpanel: {
       ready: false,
       _checking: false,
+      _intervalId: null as ReturnType<typeof setInterval> | null,
       queue: [] as any[],
 
       send: function(data: any): void {
@@ -661,13 +662,14 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
           const maxRetries = SafeUtils.get(CONFIG, 'platforms.mixpanel.maxRetries', 50);
           const retryInterval = SafeUtils.get(CONFIG, 'platforms.mixpanel.retryInterval', 100);
 
-          const check = setInterval(function() {
+          self._intervalId = setInterval(function() {
             attempts++;
 
             /*! v8 ignore start */
             if (attempts >= maxRetries) {
             /*! v8 ignore stop */
-              clearInterval(check);
+              clearInterval(self._intervalId!);
+              self._intervalId = null;
               self._checking = false;
               self.queue.length = 0;
               Utils.log('verbose', 'Mixpanel not available, clearing queued events');
@@ -676,7 +678,8 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
 
             /*! v8 ignore start */
             if (win.mixpanel && win.mixpanel.register) {
-              clearInterval(check);
+              clearInterval(self._intervalId!);
+              self._intervalId = null;
               self._checking = false;
               self.ready = true;
             /*! v8 ignore stop */
@@ -695,7 +698,19 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
           this._checking = false;
           Utils.log('error', 'Mixpanel check ready error', e);
         }
+      },
+
+      /*! v8 ignore start */
+      destroy: function(): void {
+        if (this._intervalId) {
+          clearInterval(this._intervalId);
+          this._intervalId = null;
+        }
+        this._checking = false;
+        this.ready = false;
+        this.queue.length = 0;
       }
+      /*! v8 ignore stop */
     },
 
     register: function(name: string, handler: (data: any) => void): void {

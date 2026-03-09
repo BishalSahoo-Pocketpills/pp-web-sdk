@@ -3265,3 +3265,48 @@ describe('Additional coverage paths', () => {
     restoreLocation();
   });
 });
+
+// =========================================================================
+// Mixpanel.destroy()
+// =========================================================================
+describe('Mixpanel.destroy()', () => {
+  it('clears interval, resets state, and empties queue', () => {
+    vi.useFakeTimers();
+    window.requestIdleCallback = vi.fn((cb: any) => cb());
+    loadWithDebug();
+    const platforms = window.ppAnalyticsDebug.platforms;
+
+    // Set up a polling interval by triggering checkReady
+    platforms.Mixpanel.ready = false;
+    platforms.Mixpanel._checking = false;
+    platforms.Mixpanel.queue = [{ type: 'track', eventName: 'E1', properties: {} }];
+    platforms.Mixpanel.checkReady();
+
+    expect(platforms.Mixpanel._checking).toBe(true);
+    expect(platforms.Mixpanel._intervalId).not.toBeNull();
+
+    // Destroy should clear everything
+    platforms.Mixpanel.destroy();
+
+    expect(platforms.Mixpanel._intervalId).toBeNull();
+    expect(platforms.Mixpanel._checking).toBe(false);
+    expect(platforms.Mixpanel.ready).toBe(false);
+    expect(platforms.Mixpanel.queue.length).toBe(0);
+
+    vi.useRealTimers();
+  });
+
+  it('destroy() is safe to call when no interval is active', () => {
+    window.requestIdleCallback = vi.fn((cb: any) => cb());
+    loadWithDebug();
+    const platforms = window.ppAnalyticsDebug.platforms;
+
+    // Clear any auto-started interval first
+    platforms.Mixpanel.destroy();
+
+    // Now call destroy again when _intervalId is already null
+    expect(() => platforms.Mixpanel.destroy()).not.toThrow();
+    expect(platforms.Mixpanel._intervalId).toBeNull();
+    expect(platforms.Mixpanel.ready).toBe(false);
+  });
+});

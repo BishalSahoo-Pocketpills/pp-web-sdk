@@ -35,7 +35,10 @@ export function createEventPusher(
 
     merge(enriched, extra || {});
 
-    ppLib.Security.validateData(enriched);
+    if (!ppLib.Security.validateData(enriched)) {
+      ppLib.log('error', '[ppDataLayer] Invalid event data rejected for ' + eventName);
+      return;
+    }
     dl.push(enriched);
     ppLib.log('info', '[ppDataLayer] push → ' + eventName, enriched);
   }

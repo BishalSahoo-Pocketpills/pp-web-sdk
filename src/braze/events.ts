@@ -35,7 +35,7 @@ export function createEventHandler(
     /*! v8 ignore start */
     var tag = (el as any).tagName || '';
     /*! v8 ignore stop */
-    var text = ((el as any).innerText || '').substring(0, 50).trim();
+    var text = ((el as any).textContent || '').substring(0, 50).trim();
     return tag + ':' + eventName + ':' + text;
   }
 

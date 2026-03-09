@@ -34,7 +34,7 @@ export function createStorage(
 
     set(key: string, value: any, persistent?: boolean): boolean {
       try {
-        if (!safeUtils.exists(key) || !value) return false;
+        if (!safeUtils.exists(key) || value === null || value === undefined) return false;
 
         const storageType = persistent ? 'localStorage' : 'sessionStorage';
 

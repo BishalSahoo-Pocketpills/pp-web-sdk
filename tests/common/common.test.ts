@@ -689,6 +689,11 @@ describe('ppLib.getQueryParam()', () => {
     expect(result).toBe('hello world');
   });
 
+  it('should not double-decode percent-encoded values (%2520 → %20, not space)', () => {
+    const result = ppLib.getQueryParam('https://example.com?msg=hello%2520world', 'msg');
+    expect(result).toBe('hello%20world');
+  });
+
   it('should handle query-string-only URL', () => {
     const result = ppLib.getQueryParam('?key=value', 'key');
     expect(result).toBe('value');
@@ -728,6 +733,22 @@ describe('Security.sanitize()', () => {
 
   it('should remove on-event handlers', () => {
     expect(ppLib.Security.sanitize('onerror=alert(1)')).toBe('alert(1)');
+  });
+
+  it('should preserve "donation=" (not a JS event handler)', () => {
+    expect(ppLib.Security.sanitize('donation=100')).toBe('donation=100');
+  });
+
+  it('should preserve "onion=" (not a JS event handler)', () => {
+    expect(ppLib.Security.sanitize('onion=rings')).toBe('onion=rings');
+  });
+
+  it('should preserve "condition=" (not a JS event handler)', () => {
+    expect(ppLib.Security.sanitize('condition=good')).toBe('condition=good');
+  });
+
+  it('should still strip "onclick=" (real event handler)', () => {
+    expect(ppLib.Security.sanitize('onclick=alert(1)')).toBe('alert(1)');
   });
 
   it('should remove control characters', () => {
@@ -1023,6 +1044,18 @@ describe('Security.validateData()', () => {
     expect(ppLib.Security.validateData({ attr: 'onclick=alert(1)' })).toBe(false);
   });
 
+  it('should allow "donation=" in data (not a JS event handler)', () => {
+    expect(ppLib.Security.validateData({ field: 'donation=100' })).toBe(true);
+  });
+
+  it('should allow "onion=" in data (not a JS event handler)', () => {
+    expect(ppLib.Security.validateData({ field: 'onion=rings' })).toBe(true);
+  });
+
+  it('should allow "condition=" in data (not a JS event handler)', () => {
+    expect(ppLib.Security.validateData({ field: 'condition=good' })).toBe(true);
+  });
+
   it('should detect eval( pattern', () => {
     expect(ppLib.Security.validateData({ code: 'eval(something)' })).toBe(false);
   });
@@ -1191,6 +1224,28 @@ describe('Storage.set()', () => {
 
   it('should return false for null value', () => {
     expect(ppLib.Storage.set('key', null)).toBe(false);
+  });
+
+  it('should return false for undefined value', () => {
+    expect(ppLib.Storage.set('key', undefined)).toBe(false);
+  });
+
+  it('should store falsy value 0', () => {
+    vi.spyOn(ppLib.Security, 'validateData').mockReturnValue(true);
+    vi.spyOn(ppLib.Security.json, 'stringify').mockReturnValue('0');
+    expect(ppLib.Storage.set('zero', 0)).toBe(true);
+  });
+
+  it('should store falsy value false', () => {
+    vi.spyOn(ppLib.Security, 'validateData').mockReturnValue(true);
+    vi.spyOn(ppLib.Security.json, 'stringify').mockReturnValue('false');
+    expect(ppLib.Storage.set('bool', false)).toBe(true);
+  });
+
+  it('should store falsy value empty string', () => {
+    vi.spyOn(ppLib.Security, 'validateData').mockReturnValue(true);
+    vi.spyOn(ppLib.Security.json, 'stringify').mockReturnValue('""');
+    expect(ppLib.Storage.set('empty', '')).toBe(true);
   });
 
   it('should return false when storage is unavailable', () => {

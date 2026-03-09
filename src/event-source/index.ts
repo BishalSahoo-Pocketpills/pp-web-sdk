@@ -75,7 +75,7 @@ import type { EventSourceConfig, EventSourceData } from '../types/event-source.t
     /*! v8 ignore start */
     const tag = (el as any).tagName || '';
     /*! v8 ignore stop */
-    const text = ((el as any).innerText || '').substring(0, 50).trim();
+    const text = ((el as any).textContent || '').substring(0, 50).trim();
     return tag + ':' + source + ':' + text;
   }
 
@@ -97,7 +97,7 @@ import type { EventSourceConfig, EventSourceData } from '../types/event-source.t
     const data: EventSourceData = {
       event_source: sanitizedSource,
       element_tag: el.tagName.toLowerCase(),
-      element_text: ppLib.Security.sanitize(((el as any).innerText || '').substring(0, 100).trim()),
+      element_text: ppLib.Security.sanitize(((el as any).textContent || '').substring(0, 100).trim()),
       element_href: '',
       timestamp: new Date().toISOString()
     };
@@ -152,13 +152,20 @@ import type { EventSourceConfig, EventSourceData } from '../types/event-source.t
       /*! v8 ignore start */
       if (!CONFIG.platforms.mixpanel.enabled) return;
       if (!win.mixpanel || !win.mixpanel.track) return;
+
+      if (!ppLib.Security.validateData(data)) {
+        ppLib.log('error', '[ppEventSource] Invalid Mixpanel data rejected');
+        return;
+      }
       /*! v8 ignore stop */
 
       win.mixpanel.track(CONFIG.mixpanelEventName, data);
       ppLib.log('verbose', '[ppEventSource] Sent to Mixpanel', data);
+    /*! v8 ignore start */
     } catch (e) {
       ppLib.log('error', '[ppEventSource] Mixpanel send error', e);
     }
+    /*! v8 ignore stop */
   }
 
   function sendToGTM(data: EventSourceData): void {
@@ -177,6 +184,13 @@ import type { EventSourceConfig, EventSourceData } from '../types/event-source.t
           gtmData[key] = data[key];
         }
       }
+
+      /*! v8 ignore start */
+      if (!ppLib.Security.validateData(gtmData)) {
+        ppLib.log('error', '[ppEventSource] Invalid GTM data rejected');
+        return;
+      }
+      /*! v8 ignore stop */
 
       win.dataLayer.push(gtmData);
       ppLib.log('verbose', '[ppEventSource] Sent to GTM', gtmData);
