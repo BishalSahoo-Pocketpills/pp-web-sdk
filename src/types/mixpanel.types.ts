@@ -5,6 +5,7 @@ export interface MixpanelCookieNames {
 }
 
 export interface MixpanelConfig {
+  enabled: boolean;
   token: string;
   projectName: string;
   crossSubdomainCookie: boolean;

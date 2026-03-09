@@ -18,6 +18,7 @@ import type { MixpanelConfig } from '../types/mixpanel.types';
   // =====================================================
 
   const CONFIG: MixpanelConfig = {
+    enabled: true,
     token: '',
     projectName: '',
     crossSubdomainCookie: false,
@@ -253,6 +254,13 @@ import type { MixpanelConfig } from '../types/mixpanel.types';
   // =====================================================
 
   function initMixpanel(): void {
+    /*! v8 ignore start */
+    if (!CONFIG.enabled) {
+    /*! v8 ignore stop */
+      ppLib.log('info', '[ppMixpanel] Module disabled via config');
+      return;
+    }
+
     /*! v8 ignore start */
     if (!CONFIG.token) {
     /*! v8 ignore stop */

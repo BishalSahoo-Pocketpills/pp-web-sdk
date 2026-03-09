@@ -141,6 +141,48 @@ describe('CONFIG defaults', () => {
       experiments: 'exp',
     });
   });
+
+  it('has enabled defaulting to true', () => {
+    expect(window.ppLib.mixpanel.getConfig().enabled).toBe(true);
+  });
+});
+
+// =========================================================================
+// 2b. enabled flag
+// =========================================================================
+describe('enabled flag', () => {
+  afterEach(() => {
+    teardownScriptEnv();
+  });
+
+  it('skips initialization when enabled is false', () => {
+    loadWithCommon('mixpanel');
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+
+    window.ppLib.mixpanel.configure({ enabled: false, token: 'test-token' });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    expect(logSpy).toHaveBeenCalledWith('info', '[ppMixpanel] Module disabled via config');
+    // mixpanel.init should NOT have been called (no _i entries)
+    expect(window.mixpanel?._i).toBeUndefined();
+  });
+
+  it('proceeds with initialization after re-enabling', () => {
+    loadWithCommon('mixpanel');
+
+    window.ppLib.mixpanel.configure({ enabled: false, token: 'test-token' });
+    window.ppLib.mixpanel.init();
+
+    // Re-enable and init again
+    window.ppLib.mixpanel.configure({ enabled: true });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    expect(window.mixpanel._i).toBeDefined();
+    expect(window.mixpanel._i.length).toBe(1);
+    expect(window.mixpanel._i[0][0]).toBe('test-token');
+  });
 });
 
 // =========================================================================
