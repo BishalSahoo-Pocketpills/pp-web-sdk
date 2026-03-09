@@ -1,6 +1,6 @@
 {
   "name": "pp-web-sdk",
-  "version": "2.4.4",
+  "version": "2.5.0",
   "description": "Modular web SDK for analytics, attribution, login detection, event tracking, and more",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.build.json",
