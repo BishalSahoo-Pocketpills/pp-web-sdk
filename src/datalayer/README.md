@@ -323,14 +323,10 @@ window.dataLayer.push({
       item_name: 'Aspirin',
       item_brand: 'Pocketpills',
       item_category: null,
-      item_category2: null,
-      item_category3: null,
-      item_category4: null,
       price: 12.99,
       quantity: 2,
       discount: 0,
-      coupon: null,
-      currency: 'CAD'
+      coupon: null
     }],
     value: 25.98,
     currency: 'CAD'
@@ -354,14 +350,10 @@ Input items are flexible — missing fields default to `null`, `0`, or config de
 | `item_name` | `null` |
 | `item_brand` | `'Pocketpills'` (config) |
 | `item_category` | `null` |
-| `item_category2` | `null` |
-| `item_category3` | `null` |
-| `item_category4` | `null` |
 | `price` | `0` (parses strings) |
 | `quantity` | `1` |
 | `discount` | `0` (parses strings) |
 | `coupon` | `null` |
-| `currency` | `'CAD'` (config) |
 
 ### Value Calculation
 

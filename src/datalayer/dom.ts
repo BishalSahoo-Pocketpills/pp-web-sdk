@@ -61,7 +61,6 @@ export function createDomBinder(
     var quantity = readAttr(el, CONFIG.attributes.quantity);
     var discount = readAttr(el, CONFIG.attributes.discount);
     var coupon = readAttr(el, CONFIG.attributes.coupon);
-    var currency = readAttr(el, CONFIG.attributes.currency);
 
     if (itemId) item.item_id = itemId;
     if (itemName) item.item_name = itemName;
@@ -71,7 +70,6 @@ export function createDomBinder(
     if (quantity) item.quantity = parseInt(quantity, 10) || 1;
     if (discount) item.discount = discount;
     if (coupon) item.coupon = coupon;
-    if (currency) item.currency = currency;
 
     return item;
   }

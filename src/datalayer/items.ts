@@ -17,14 +17,10 @@ export function createItemBuilder(
       item_name: input.item_name || null,
       item_brand: input.item_brand || CONFIG.defaults.itemBrand,
       item_category: input.item_category || null,
-      item_category2: input.item_category2 || null,
-      item_category3: input.item_category3 || null,
-      item_category4: input.item_category4 || null,
       price: price,
       quantity: input.quantity || 1,
       discount: discount,
-      coupon: input.coupon || null,
-      currency: input.currency || CONFIG.defaults.currency
+      coupon: input.coupon || null
     };
   }
 

@@ -86,14 +86,10 @@ export interface DataLayerItem {
   item_name: string | null;
   item_brand: string;
   item_category: string | null;
-  item_category2: string | null;
-  item_category3: string | null;
-  item_category4: string | null;
   price: number;
   quantity: number;
   discount: number;
   coupon: string | null;
-  currency: string;
 }
 
 export interface DataLayerItemInput {
@@ -101,14 +97,10 @@ export interface DataLayerItemInput {
   item_name?: string;
   item_brand?: string;
   item_category?: string;
-  item_category2?: string;
-  item_category3?: string;
-  item_category4?: string;
   price?: number | string;
   quantity?: number;
   discount?: number | string;
   coupon?: string;
-  currency?: string;
 }
 
 // =====================================================

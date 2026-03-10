@@ -568,14 +568,10 @@ describe('Item Builder', () => {
     expect(item.item_name).toBe('Aspirin');
     expect(item.item_brand).toBe('Pocketpills');
     expect(item.item_category).toBeNull();
-    expect(item.item_category2).toBeNull();
-    expect(item.item_category3).toBeNull();
-    expect(item.item_category4).toBeNull();
     expect(item.price).toBe(0);
     expect(item.quantity).toBe(1);
     expect(item.discount).toBe(0);
     expect(item.coupon).toBeNull();
-    expect(item.currency).toBe('CAD');
   });
 
   it('parses string price and discount', () => {
@@ -596,13 +592,12 @@ describe('Item Builder', () => {
     expect(item.discount).toBe(0);
   });
 
-  it('uses custom item_brand and currency from input', () => {
-    window.ppLib.datalayer.viewItem([{ item_brand: 'CustomBrand', currency: 'USD' }]);
+  it('uses custom item_brand from input', () => {
+    window.ppLib.datalayer.viewItem([{ item_brand: 'CustomBrand' }]);
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     const item = event.ecommerce.items[0];
     expect(item.item_brand).toBe('CustomBrand');
-    expect(item.currency).toBe('USD');
   });
 
   it('calculates value correctly for single item', () => {
