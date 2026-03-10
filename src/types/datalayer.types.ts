@@ -82,14 +82,14 @@ export interface DataLayerPage {
 // =====================================================
 
 export interface DataLayerItem {
-  item_id: string | null;
-  item_name: string | null;
+  item_id: string;
+  item_name: string;
   item_brand: string;
-  item_category: string | null;
-  price: number;
+  item_category?: string;
+  price: string;
   quantity: number;
-  discount: number;
-  coupon: string | null;
+  discount: string;
+  coupon: string;
 }
 
 export interface DataLayerItemInput {

@@ -6,30 +6,31 @@ export function createItemBuilder(
   CONFIG: DataLayerConfig
 ) {
   function normalizeItem(input: DataLayerItemInput): DataLayerItem {
-    var price = typeof input.price === 'string' ? parseFloat(input.price) : (input.price || 0);
-    var discount = typeof input.discount === 'string' ? parseFloat(input.discount) : (input.discount || 0);
-
-    if (isNaN(price)) price = 0;
-    if (isNaN(discount)) discount = 0;
-
-    return {
-      item_id: input.item_id || null,
-      item_name: input.item_name || null,
+    var item: DataLayerItem = {
+      item_id: input.item_id || '',
+      item_name: input.item_name || '',
       item_brand: input.item_brand || CONFIG.defaults.itemBrand,
-      item_category: input.item_category || null,
-      price: price,
+      price: String(input.price != null ? input.price : ''),
       quantity: input.quantity || 1,
-      discount: discount,
-      coupon: input.coupon || null
+      discount: String(input.discount != null ? input.discount : ''),
+      coupon: input.coupon || ''
     };
+
+    if (input.item_category) {
+      item.item_category = input.item_category;
+    }
+
+    return item;
   }
 
-  function calculateValue(items: DataLayerItem[]): number {
+  function calculateValue(items: DataLayerItem[]): string {
     var total = 0;
     for (var i = 0; i < items.length; i++) {
-      total += items[i].price * items[i].quantity - items[i].discount;
+      var price = parseFloat(items[i].price) || 0;
+      var discount = parseFloat(items[i].discount) || 0;
+      total += price * items[i].quantity - discount;
     }
-    return Math.round(total * 100) / 100;
+    return String(Math.round(total * 100) / 100);
   }
 
   return { normalizeItem: normalizeItem, calculateValue: calculateValue };

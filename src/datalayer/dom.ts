@@ -15,7 +15,7 @@ export function createDomBinder(
   ppLib: PPLib,
   CONFIG: DataLayerConfig,
   eventPusher: { pushEvent: (name: string, extra?: Record<string, any>) => void; pushEcommerceEvent: (name: string, items: DataLayerItemInput[], extra?: Record<string, any>) => void },
-  itemBuilder: { normalizeItem: (input: DataLayerItemInput) => any; calculateValue: (items: any[]) => number }
+  itemBuilder: { normalizeItem: (input: DataLayerItemInput) => any; calculateValue: (items: any[]) => string }
 ) {
 
   var lastEventMap: Record<string, number> = {};
