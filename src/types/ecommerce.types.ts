@@ -3,6 +3,7 @@ export interface EcommerceDefaults {
   category: string;
   currency: string;
   quantity: number;
+  platform: string;
 }
 
 export interface EcommerceAttributes {

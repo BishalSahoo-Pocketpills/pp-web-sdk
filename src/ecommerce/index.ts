@@ -23,7 +23,8 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
       brand: 'PocketPills',
       category: 'Telehealth',
       currency: 'CAD',
-      quantity: 1
+      quantity: 1,
+      platform: 'web'
     },
 
     // Data attribute names
@@ -215,6 +216,7 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
 
       var payload: Record<string, any> = {
         event: eventName,
+        platform: CONFIG.defaults.platform,
         ecommerce: ecommerceData
       };
 

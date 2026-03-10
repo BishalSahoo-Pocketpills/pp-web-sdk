@@ -220,6 +220,11 @@ describe('CONFIG defaults', () => {
     expect(config.debounceMs).toBe(300);
   });
 
+  it('has correct default platform', () => {
+    const config = window.ppLib.ecommerce.getConfig();
+    expect(config.defaults.platform).toBe('web');
+  });
+
   it('has correct platform defaults', () => {
     const config = window.ppLib.ecommerce.getConfig();
     expect(config.platforms.mixpanel.enabled).toBe(true);
@@ -716,6 +721,19 @@ describe('buildEcommerceData() — tested via trackItem and trackViewItem', () =
 
     const event = dataLayer.find(d => d.event === 'add_to_cart');
     expect(event.ecommerce.currency).toBe('CAD');
+  });
+
+  it('includes platform in GTM payload', () => {
+    const dataLayer = createMockDataLayer();
+
+    window.ppLib.ecommerce.trackItem({
+      item_id: 'test',
+      item_name: 'Test',
+      price: 10,
+    });
+
+    const event = dataLayer.find(d => d.event === 'add_to_cart');
+    expect(event.platform).toBe('web');
   });
 
   it('handles NaN price gracefully (excluded from total)', () => {
