@@ -66,6 +66,10 @@ export function createPricingEngine(
         var discount = redeemable.result && redeemable.result.discount;
         if (!discount) continue;
 
+        // UNIT discounts with ADD_MISSING_ITEMS add a free product (e.g. shipping),
+        // they don't reduce the current product's price
+        if (discount.type === 'UNIT' && discount.effect === 'ADD_MISSING_ITEMS') continue;
+
         var discountAmount = 0;
         var discountType: PricingResult['discountType'] = 'NONE';
 

@@ -1003,6 +1003,39 @@ describe('Pricing — Unit Discount', () => {
     expect(results[0].discountAmount).toBe(30);
     expect(results[0].discountType).toBe('UNIT');
   });
+
+  it('skips UNIT discount with ADD_MISSING_ITEMS effect (e.g. free shipping)', async () => {
+    loadWithCommon('voucherify');
+    setupDOM();
+
+    const response = {
+      redeemables: {
+        data: [
+          {
+            id: 'FREE-SHIPPING',
+            result: { discount: { type: 'UNIT', effect: 'ADD_MISSING_ITEMS', unit_off: 1, unit_type: 'prod_shipping' } }
+          },
+          {
+            id: 'promo-15',
+            result: { discount: { type: 'PERCENT', percent_off: 15 } }
+          }
+        ]
+      }
+    };
+    window.fetch = mockFetch(response);
+
+    window.ppLib.voucherify!.configure({
+      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      pricing: { autoFetch: false } as any
+    });
+
+    const results = await window.ppLib.voucherify!.fetchPricing();
+
+    // Should use the 15% discount, not the UNIT/free-shipping
+    expect(results[0].discountType).toBe('PERCENT');
+    expect(results[0].discountedPrice).toBe(51); // 60 - 15% = 51
+    expect(results[0].discountLabel).toBe('15% OFF');
+  });
 });
 
 // =========================================================================
