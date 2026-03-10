@@ -849,6 +849,45 @@ describe('Pricing — Percent Discount', () => {
 });
 
 // =========================================================================
+// 9b. PRICING — Nested redeemables.data format (real Voucherify response)
+// =========================================================================
+describe('Pricing — Nested redeemables.data response format', () => {
+  it('parses redeemables from nested { redeemables: { data: [...] } } structure', async () => {
+    loadWithCommon('voucherify');
+    setupDOM();
+
+    // Real Voucherify response wraps redeemables in { object: "list", data: [...] }
+    const response = {
+      redeemables: {
+        object: 'list',
+        data_ref: 'data',
+        data: [{
+          id: 'promo_tier_1',
+          object: 'promotion_tier',
+          result: { discount: { type: 'PERCENT', percent_off: 15 } }
+        }]
+      },
+      total: 1,
+      has_more: false
+    };
+    window.fetch = mockFetch(response);
+
+    window.ppLib.voucherify!.configure({
+      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      pricing: { autoFetch: false } as any
+    });
+
+    const results = await window.ppLib.voucherify!.fetchPricing();
+
+    // weight-loss: 60 - 15% = 51
+    expect(results[0].discountedPrice).toBe(51);
+    expect(results[0].discountAmount).toBe(9);
+    expect(results[0].discountType).toBe('PERCENT');
+    expect(results[0].discountLabel).toBe('15% OFF');
+  });
+});
+
+// =========================================================================
 // 10. PRICING — AMOUNT DISCOUNT
 // =========================================================================
 describe('Pricing — Amount Discount', () => {

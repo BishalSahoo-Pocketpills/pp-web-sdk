@@ -49,7 +49,8 @@ export function createPricingEngine(
     response: any
   ): PricingResult[] {
     var results: PricingResult[] = [];
-    var redeemables = (response && response.qualifications) || (response && response.redeemables) || [];
+    var redeemablesRaw = (response && response.qualifications) || (response && response.redeemables) || [];
+    var redeemables = Array.isArray(redeemablesRaw) ? redeemablesRaw : (redeemablesRaw.data || []);
 
     for (var i = 0; i < productIds.length; i++) {
       var productId = productIds[i];
