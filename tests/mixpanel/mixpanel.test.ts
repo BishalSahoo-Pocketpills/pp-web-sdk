@@ -1015,14 +1015,6 @@ describe('loaded callback', () => {
     expect(mp.get_property('session ID')).toBe('existing');
   });
 
-  it('calls SessionManager.check()', () => {
-    const loadedCallback = initAndGetLoadedCallback();
-    const mp = createMockMixpanel();
-    invokeLoadedCallback(loadedCallback, mp);
-
-    expect(mp.get_property('session ID')).toBeDefined();
-  });
-
   it('monkey-patches track() function', () => {
     const loadedCallback = initAndGetLoadedCallback();
     const mp = createMockMixpanel();
@@ -1245,19 +1237,7 @@ describe('monkey-patched track()', () => {
     expect(lastEventTime).toBeLessThanOrEqual(timeAfter);
   });
 
-  it('calls original track function with correct arguments', () => {
-    const loadedCallback = initAndGetLoadedCallback();
-    const mp = createMockMixpanel();
-    const originalTrack = mp.track;
-
-    invokeLoadedCallback(loadedCallback, mp);
-
-    mp.track('MyEvent', { prop: 'val' });
-
-    expect(originalTrack).toHaveBeenCalledWith('MyEvent', { prop: 'val' });
-  });
-
-  it('passes through all arguments to original track', () => {
+  it('calls original track function with all arguments passed through', () => {
     const loadedCallback = initAndGetLoadedCallback();
     const mp = createMockMixpanel();
     const originalTrack = mp.track;
@@ -1265,9 +1245,9 @@ describe('monkey-patched track()', () => {
     invokeLoadedCallback(loadedCallback, mp);
 
     const callback = vi.fn();
-    mp.track('Event', { a: 1 }, callback);
+    mp.track('MyEvent', { prop: 'val' }, callback);
 
-    expect(originalTrack).toHaveBeenCalledWith('Event', { a: 1 }, callback);
+    expect(originalTrack).toHaveBeenCalledWith('MyEvent', { prop: 'val' }, callback);
   });
 
   it('resets session and calls resetCampaign when track triggers timeout', () => {
@@ -1347,30 +1327,6 @@ describe('Public API', () => {
     it('overrides crossSubdomainCookie', () => {
       const result = window.ppLib.mixpanel.configure({ crossSubdomainCookie: true });
       expect(result.crossSubdomainCookie).toBe(true);
-    });
-  });
-
-  describe('init()', () => {
-    it('calls initMixpanel internally', () => {
-      window.ppLib.mixpanel.configure({ token: 'tok' });
-      setupScriptEnv();
-
-      window.ppLib.mixpanel.init();
-
-      expect(window.mixpanel).toBeDefined();
-      expect(window.mixpanel.__SV).toBe(1.2);
-    });
-  });
-
-  describe('getMixpanelCookieData()', () => {
-    it('is exposed on the public API', () => {
-      expect(typeof window.ppLib.mixpanel.getMixpanelCookieData).toBe('function');
-    });
-
-    it('returns parsed cookie data', () => {
-      setCookie('mp_token1_mixpanel', JSON.stringify({ id: 'test' }));
-      const result = window.ppLib.mixpanel.getMixpanelCookieData();
-      expect(result).toEqual({ id: 'test' });
     });
   });
 

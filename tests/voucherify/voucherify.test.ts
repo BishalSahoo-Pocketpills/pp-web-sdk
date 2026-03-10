@@ -714,6 +714,7 @@ describe('Context Builder', () => {
     expect(body.order.items).toHaveLength(2);
     expect(body.order.items[0].source_id).toBe('weight-loss');
     expect(body.order.items[0].product_id).toBe('weight-loss');
+    expect(body.order.items[0].related_object).toBe('product');
     expect(body.order.items[0].quantity).toBe(1);
     expect(body.order.items[1].source_id).toBe('hair-loss');
   });

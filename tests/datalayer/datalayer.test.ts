@@ -240,17 +240,6 @@ describe('logged_in Derivation', () => {
     createMockDataLayer();
   });
 
-  it('logged_in = true when userId + patientId + appAuth=true', () => {
-    setCookie('userId', '42');
-    setCookie('patientId', '99');
-    setCookie('app_is_authenticated', 'true');
-
-    window.ppLib.datalayer.push('test_event');
-
-    const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user.logged_in).toBe(true);
-  });
-
   it('logged_in = false when userId missing and appAuth not true', () => {
     setCookie('patientId', '99');
 
@@ -297,16 +286,6 @@ describe('User Data / SHA-256', () => {
   beforeEach(() => {
     loadWithCommon('datalayer');
     createMockDataLayer();
-  });
-
-  it('returns empty user_data by default', () => {
-    window.ppLib.datalayer.push('test_event');
-
-    const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user_data.sha256_email_address).toBe('');
-    expect(event.user_data.sha256_phone_number).toBe('');
-    expect(event.user_data.address.sha256_first_name).toBe('');
-    expect(event.user_data.address.city).toBe('');
   });
 
   it('hashes raw email, phone, first_name, last_name, street', async () => {

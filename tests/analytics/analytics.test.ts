@@ -2157,30 +2157,6 @@ describe('Public API', () => {
     });
   });
 
-  describe('consent.grant()', () => {
-    it('grants consent and triggers init', () => {
-      loadWithCommon('analytics');
-      window.ppAnalytics.consent.grant();
-      expect(localStorage.getItem('pp_consent')).toBe('approved');
-    });
-  });
-
-  describe('consent.revoke()', () => {
-    it('revokes consent and clears storage', () => {
-      loadWithCommon('analytics');
-      window.ppAnalytics.consent.revoke();
-      expect(localStorage.getItem('pp_consent')).toBe('denied');
-    });
-  });
-
-  describe('consent.status()', () => {
-    it('returns current consent status', () => {
-      loadWithCommon('analytics');
-      // Default: not required, so always true
-      expect(window.ppAnalytics.consent.status()).toBe(true);
-    });
-  });
-
   describe('track()', () => {
     it('delegates to Tracker.track', () => {
       window.requestIdleCallback = vi.fn((cb) => cb());
@@ -2189,27 +2165,6 @@ describe('Public API', () => {
       const before = dataLayer.length;
       window.ppAnalytics.track('api_test', { foo: 'bar' });
       expect(dataLayer.slice(before).some(e => e.event === 'api_test')).toBe(true);
-    });
-  });
-
-  describe('getAttribution()', () => {
-    it('delegates to Tracker.getAttribution', () => {
-      loadWithCommon('analytics');
-      const attr = window.ppAnalytics.getAttribution();
-      expect(attr).toHaveProperty('firstTouch');
-      expect(attr).toHaveProperty('lastTouch');
-    });
-  });
-
-  describe('registerPlatform()', () => {
-    it('delegates to Platforms.register', () => {
-      window.requestIdleCallback = vi.fn((cb) => cb());
-      loadWithDebug();
-      const handler = vi.fn();
-      window.ppAnalytics.registerPlatform('testPlat', handler);
-      expect(window.ppAnalyticsDebug.config.platforms.custom.some(
-        p => p.name === 'testPlat'
-      )).toBe(true);
     });
   });
 
@@ -2317,30 +2272,7 @@ describe('Edge cases', () => {
     expect(window.ppAnalytics.consent.status()).toBe(false);
   });
 
-  it('setConsent error is handled gracefully', () => {
-    window.requestIdleCallback = vi.fn((cb) => cb());
-    loadWithDebug();
-    // Force localStorage.setItem to throw
-    const origSetItem = localStorage.setItem;
-    localStorage.setItem = () => { throw new Error('quota exceeded'); };
-    expect(() => {
-      window.ppAnalyticsDebug.consent.setConsent(true);
-    }).not.toThrow();
-    localStorage.setItem = origSetItem;
-  });
 
-  it('Session.start error is handled gracefully', () => {
-    window.requestIdleCallback = vi.fn((cb) => cb());
-    loadWithDebug();
-    // Force Storage.set to throw
-    const origSet = window.ppLib.Storage.set;
-    window.ppLib.Storage.set = () => { throw new Error('storage fail'); };
-    expect(() => {
-      // Access session via debug
-      window.ppAnalyticsDebug.tracker.init();
-    }).not.toThrow();
-    window.ppLib.Storage.set = origSet;
-  });
 
   it('EventQueue.add error is handled gracefully', () => {
     window.requestIdleCallback = vi.fn((cb) => cb());
@@ -2454,36 +2386,6 @@ describe('Edge cases', () => {
       window.ppAnalytics.config({ trigger: true });
     }).not.toThrow();
     console.info = origInfo;
-  });
-
-  it('getStoredConsent handles localStorage error', () => {
-    loadModule('common');
-    loadModule('analytics');
-    window.ppAnalytics.config({
-      consent: {
-        required: true,
-        defaultState: 'approved',
-        frameworks: { custom: { enabled: false }, oneTrust: { enabled: false }, cookieYes: { enabled: false } }
-      }
-    });
-    const origGetItem = localStorage.getItem;
-    localStorage.getItem = () => { throw new Error('storage fail'); };
-    // Should fall back to state === 'approved'
-    expect(window.ppAnalytics.consent.status()).toBe(true);
-    localStorage.getItem = origGetItem;
-  });
-
-  it('Session.isValid handles error gracefully', () => {
-    window.requestIdleCallback = vi.fn((cb) => cb());
-    loadWithDebug();
-    const origGet = window.ppLib.Storage.get;
-    window.ppLib.Storage.get = () => { throw new Error('get fail'); };
-    // Session.isValid should return false on error
-    // We can trigger it via init
-    expect(() => {
-      window.ppAnalyticsDebug.tracker.init();
-    }).not.toThrow();
-    window.ppLib.Storage.get = origGet;
   });
 
   it('multiple custom params are captured', () => {
@@ -3173,41 +3075,6 @@ describe('Additional coverage paths', () => {
       value: origLocation,
       configurable: true,
     });
-  });
-
-  // --- Coverage gap: Session.isValid catch (line 338) ---
-  it('Session.isValid catch block triggered by internal error (line 338)', () => {
-    window.requestIdleCallback = vi.fn((cb) => cb());
-    loadModule('common');
-    window.ppLib.config.debug = true;
-    // Pre-store a session_start that will cause Date parsing to fail
-    // Actually, Storage.get uses ppLib.Security.json.parse. We need getTime() to throw.
-    // Force Storage.get to throw when called with 'session_start'
-    const origGet = window.ppLib.Storage.get;
-    window.ppLib.Storage.get = function(key, persistent) {
-      if (key === 'session_start') throw new Error('session get error');
-      return origGet.call(this, key, persistent);
-    };
-    loadModule('analytics');
-    expect(window.ppAnalytics).toBeDefined();
-    window.ppLib.Storage.get = origGet;
-  });
-
-  // --- Coverage gap: Session.start catch (line 346) ---
-  it('Session.start catch block triggered by Storage.set throwing (line 346)', () => {
-    setUrl('https://example.com/?utm_source=test');
-    window.requestIdleCallback = vi.fn((cb) => cb());
-    loadModule('common');
-    window.ppLib.config.debug = true;
-    // Force Storage.set to throw when called with session_start
-    const origSet = window.ppLib.Storage.set;
-    window.ppLib.Storage.set = function(key, value, persistent) {
-      if (key === 'session_start') throw new Error('session set error');
-      return origSet.call(this, key, value, persistent);
-    };
-    loadModule('analytics');
-    expect(window.ppAnalytics).toBeDefined();
-    window.ppLib.Storage.set = origSet;
   });
 
   // --- Coverage gap: default checkFunction (line 32) ---

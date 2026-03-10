@@ -44,6 +44,7 @@ export function createContextBuilder(
       items.push({
         source_id: sanitizedId,
         product_id: sanitizedId,
+        related_object: 'product',
         quantity: 1
       });
     }

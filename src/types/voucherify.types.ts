@@ -47,6 +47,7 @@ export interface OrderItem {
   product_id?: string;
   sku_id?: string;
   source_id?: string;
+  related_object?: 'product' | 'sku';
   quantity?: number;
   price?: number;
 }

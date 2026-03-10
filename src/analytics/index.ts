@@ -437,11 +437,10 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
         if (this.queue.length >= maxSize) {
         /*! v8 ignore stop */
           Utils.log('warn', 'Event queue full, dropping event');
-          return;
+        } else {
+          this.queue.push(event);
+          this.scheduleProcessing();
         }
-
-        this.queue.push(event);
-        this.scheduleProcessing();
       } catch (e) {
         Utils.log('error', 'Queue add error', e);
       }

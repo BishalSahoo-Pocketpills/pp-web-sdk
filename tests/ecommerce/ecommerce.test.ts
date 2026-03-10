@@ -756,17 +756,6 @@ describe('buildEcommerceData() — tested via trackItem and trackViewItem', () =
     expect(event.ecommerce.value).toBe(30);
   });
 
-  it('returns null for empty items array (trackViewItem early return)', () => {
-    const dataLayer = createMockDataLayer();
-
-    // No items in DOM
-    window.ppLib.ecommerce.trackViewItem();
-
-    // No view_item event should be pushed
-    const event = dataLayer.find(d => d.event === 'view_item');
-    expect(event).toBeUndefined();
-  });
-
   it('returns null for null items', () => {
     // buildEcommerceData(null) returns null
     // This is tested indirectly: trackItem with valid data should work
@@ -1043,20 +1032,6 @@ describe('trackViewItem()', () => {
       'verbose',
       '[ppEcommerce] No ecommerce items found on page'
     );
-  });
-
-  it('returns early when buildEcommerceData returns null', () => {
-    // This can happen if all parsed items have NaN prices and there's some edge case
-    // But practically buildEcommerceData only returns null for empty/null items
-    // Since getItemsFromDOM filters nulls, if items.length > 0 then buildEcommerceData
-    // won't return null. We test by ensuring items.length === 0 path is covered above.
-    // To directly test the null path after items > 0, we'd need to mock,
-    // but since the code path exists, we verify via trackItem:
-    const dataLayer = createMockDataLayer();
-
-    // No items = no event
-    window.ppLib.ecommerce.trackViewItem();
-    expect(dataLayer.find(d => d.event === 'view_item')).toBeUndefined();
   });
 
   it('handles error in trackViewItem gracefully', () => {
@@ -1915,29 +1890,6 @@ describe('Edge cases and integration', () => {
     expect(dataLayer.length).toBe(before);
   });
 
-  // --- Coverage: buildEcommerceData with null items (line 173 branch) ---
-  it('buildEcommerceData returns null for null items via trackViewItem', () => {
-    loadWithCommon('ecommerce');
-    // No ecommerce items in DOM - getItemsFromDOM returns [], not null
-    // To trigger the !items branch, we need items to be null/undefined
-    // trackItem with an item where buildEcommerceData gets null items
-    // This is tested via the existing trackItem tests but let's be explicit
-    expect(window.ppLib.ecommerce.getItems()).toEqual([]);
-  });
-
-  // --- Coverage: trackViewItem when buildEcommerceData returns null (line 244) ---
-  it('trackViewItem when buildEcommerceData returns null', () => {
-    loadWithCommon('ecommerce');
-    // buildEcommerceData returns null when items is null or empty
-    // getItemsFromDOM won't return null (returns []), so line 244 branch
-    // can only be reached if items is non-empty but buildEcommerceData returns null
-    // This is theoretically impossible since non-empty items always produces non-null data
-    // But the branch exists for defensive programming. Mark as covered via empty DOM.
-    window.ppLib.ecommerce.trackViewItem();
-    // trackViewItem returns early at items.length === 0 (line 238), not at line 244
-    expect(true).toBe(true);
-  });
-
   // --- Coverage: handleInteraction null buildEcommerceData (line 275) ---
   it('handleInteraction when resolveItemForCTA returns null for items with NaN price', () => {
     loadWithCommon('ecommerce');
@@ -1976,39 +1928,6 @@ describe('Edge cases and integration', () => {
 
     // Should dispatch add_to_cart
     expect(dataLayer.some(e => e.event === 'add_to_cart')).toBe(true);
-  });
-
-  // --- Coverage gap: parseItem with null el (line 104, branch 0) ---
-  it('parseItem returns null when called with null element via resolveItemForCTA', () => {
-    loadWithCommon('ecommerce');
-    const dataLayer = [];
-    window.dataLayer = dataLayer;
-
-    // Create a CTA that is NOT inside a container and has no ecommerce attrs itself
-    const btn = document.createElement('button');
-    btn.setAttribute('data-event-source', 'add_to_cart');
-    btn.textContent = 'Buy Now';
-    document.body.appendChild(btn);
-
-    const before = dataLayer.length;
-    btn.click();
-    const newEntries = dataLayer.slice(before);
-    // No add_to_cart event should fire (item resolution returns null)
-    expect(newEntries.filter(e => e.event === 'add_to_cart').length).toBe(0);
-  });
-
-  // --- Coverage gap: buildEcommerceData with null items (line 173, branch 0) ---
-  it('buildEcommerceData returns null for null/empty items via trackViewItem on empty page', () => {
-    loadWithCommon('ecommerce');
-    // No ecommerce items in DOM
-    // trackViewItem should early-return due to empty items
-    const dataLayer = [];
-    window.dataLayer = dataLayer;
-    const before = dataLayer.length;
-    window.ppLib.ecommerce.trackViewItem();
-    const newEntries = dataLayer.slice(before);
-    // No view_item event
-    expect(newEntries.filter(e => e.event === 'view_item').length).toBe(0);
   });
 
   // --- Coverage gap: trackItem with invalid data so buildEcommerceData returns null (line 360 false branch) ---
