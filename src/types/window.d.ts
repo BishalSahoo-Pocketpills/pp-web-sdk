@@ -17,6 +17,11 @@ declare global {
     braze: any;
     OnetrustActiveGroups: string;
     requestIdleCallback: ((callback: IdleRequestCallback, options?: IdleRequestOptions) => number) | undefined;
+    _vwo_exp: Record<string, any>;
+    _vwo_exp_ids: string[];
+    _vis_opt_queue: Array<() => void>;
+    _vwo_code: any;
+    _vis_opt_set_combination: (variationId: number, campaignId: number) => void;
   }
 
   const __PP_SDK_VERSION__: string;

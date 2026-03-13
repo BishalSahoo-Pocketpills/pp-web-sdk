@@ -63,4 +63,5 @@ export interface PPLib {
   braze?: import('./braze.types').BrazeAPI;
   voucherify?: import('./voucherify.types').VoucherifyAPI;
   datalayer?: import('./datalayer.types').DataLayerAPI;
+  vwo?: import('./vwo.types').VWOAPI;
 }

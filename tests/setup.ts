@@ -30,6 +30,11 @@ beforeEach(() => {
   delete window.mixpanel;
   delete window.braze;
   delete window.OnetrustActiveGroups;
+  delete window._vwo_exp;
+  delete window._vwo_exp_ids;
+  delete window._vis_opt_queue;
+  delete window._vwo_code;
+  delete window._vis_opt_set_combination;
 
   // Clear all storage
   localStorage.clear();
