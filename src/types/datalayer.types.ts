@@ -37,6 +37,7 @@ export interface DataLayerConfig {
     region: string;
     postalCode: string;
     country: string;
+    previousUser: string;
   };
   defaults: { itemBrand: string; currency: string; platform: string };
   attributes: DataLayerAttributes;

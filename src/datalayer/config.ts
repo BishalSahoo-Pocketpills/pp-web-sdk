@@ -14,7 +14,8 @@ export function createDataLayerConfig(): DataLayerConfig {
       city: 'city',
       region: 'region',
       postalCode: 'postalCode',
-      country: 'country'
+      country: 'country',
+      previousUser: 'previousUser'
     },
     defaults: {
       itemBrand: 'Pocketpills',

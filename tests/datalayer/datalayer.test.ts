@@ -119,7 +119,8 @@ describe('Configuration', () => {
       city: 'city',
       region: 'region',
       postalCode: 'postalCode',
-      country: 'country'
+      country: 'country',
+      previousUser: 'previousUser'
     });
     expect(config.defaults).toEqual({ itemBrand: 'Pocketpills', currency: 'CAD', platform: 'web' });
   });
@@ -435,10 +436,13 @@ describe('User Data / SHA-256', () => {
 // 4a. COOKIE AUTO-POPULATE
 // =========================================================================
 describe('Cookie Auto-populate', () => {
-  it('hashes all PII cookies into user_data', async () => {
-    setCookie('email', 'alice@example.com');
-    setCookie('phone', '+15551234567');
-    setCookie('firstName', 'Alice');
+  it('extracts email, phone, firstName from previousUser JSON cookie', async () => {
+    setCookie('previousUser', encodeURIComponent(JSON.stringify({
+      firstName: 'Alice',
+      phone: '+15551234567',
+      email: 'alice@example.com',
+      loginRec: 'Dashboard'
+    })));
     setCookie('lastName', 'Smith');
     setCookie('street', '123 Main St');
     setCookie('city', 'Toronto');
@@ -466,7 +470,46 @@ describe('Cookie Auto-populate', () => {
     expect(event.user_data.address.country).toBe('CA');
   });
 
-  it('returns empty strings when cookies are not set', () => {
+  it('falls back to firstName cookie when previousUser has no firstName', async () => {
+    setCookie('previousUser', encodeURIComponent(JSON.stringify({
+      email: 'test@example.com',
+      phone: '5551234567'
+    })));
+    setCookie('firstName', 'Fallback');
+
+    loadWithCommon('datalayer');
+    createMockDataLayer();
+
+    await new Promise(r => setTimeout(r, 50));
+
+    window.ppLib.datalayer.push('test_event');
+
+    const event = window.dataLayer[window.dataLayer.length - 1];
+    expect(event.user_data.sha256_email_address).toBe(await sha256hex('test@example.com'));
+    expect(event.user_data.sha256_phone_number).toBe(await sha256hex('5551234567'));
+    expect(event.user_data.address.sha256_first_name).toBe(await sha256hex('Fallback'));
+  });
+
+  it('handles malformed previousUser cookie gracefully', async () => {
+    setCookie('previousUser', 'not-valid-json');
+    setCookie('firstName', 'Safe');
+
+    loadWithCommon('datalayer');
+    createMockDataLayer();
+
+    await new Promise(r => setTimeout(r, 50));
+
+    window.ppLib.datalayer.push('test_event');
+
+    const event = window.dataLayer[window.dataLayer.length - 1];
+    // email/phone empty since previousUser failed to parse
+    expect(event.user_data.sha256_email_address).toBe('');
+    expect(event.user_data.sha256_phone_number).toBe('');
+    // firstName falls back to individual cookie
+    expect(event.user_data.address.sha256_first_name).toBe(await sha256hex('Safe'));
+  });
+
+  it('returns empty strings when no cookies are set', () => {
     loadWithCommon('datalayer');
     createMockDataLayer();
 
@@ -484,9 +527,11 @@ describe('Cookie Auto-populate', () => {
     expect(event.user_data.address.country).toBe('');
   });
 
-  it('manual setUserData overrides cookie defaults', async () => {
-    setCookie('email', 'alice@example.com');
-    setCookie('firstName', 'Alice');
+  it('manual setUserData overrides previousUser cookie defaults', async () => {
+    setCookie('previousUser', encodeURIComponent(JSON.stringify({
+      email: 'alice@example.com',
+      firstName: 'Alice'
+    })));
     setCookie('lastName', 'Smith');
 
     loadWithCommon('datalayer');

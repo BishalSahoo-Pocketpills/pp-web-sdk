@@ -37,11 +37,24 @@ import { createDomBinder } from './dom';
   const eventPusher = createEventPusher(win, ppLib, CONFIG, userBuilder, userDataManager, pageBuilder, itemBuilder);
   const domBinder = createDomBinder(win, doc, ppLib, CONFIG, eventPusher, itemBuilder);
 
+  // Parse previousUser JSON cookie for email, phone, firstName
+  var prevUser: Record<string, string> = {};
+  try {
+    var prevRaw = ppLib.getCookie(CONFIG.cookieNames.previousUser) || '';
+    /*! v8 ignore start */
+    if (prevRaw) {
+      prevUser = JSON.parse(decodeURIComponent(prevRaw));
+    }
+  } catch (e) {
+    ppLib.log('error', '[ppDataLayer] Failed to parse previousUser cookie', e);
+  }
+  /*! v8 ignore stop */
+
   // Auto-populate user data from cookies (async SHA-256 hashing)
   var userDataReady = userDataManager.setUserData({
-    email: ppLib.getCookie(CONFIG.cookieNames.email) || '',
-    phone: ppLib.getCookie(CONFIG.cookieNames.phone) || '',
-    first_name: ppLib.getCookie(CONFIG.cookieNames.firstName) || '',
+    email: prevUser.email || '',
+    phone: prevUser.phone || '',
+    first_name: prevUser.firstName || ppLib.getCookie(CONFIG.cookieNames.firstName) || '',
     last_name: ppLib.getCookie(CONFIG.cookieNames.lastName) || '',
     street: ppLib.getCookie(CONFIG.cookieNames.street) || '',
     city: ppLib.getCookie(CONFIG.cookieNames.city) || '',
