@@ -99,13 +99,25 @@ import { createDomBinder } from './dom';
   }
 
   // Read cookies + push pageview + scanViewItems after window.load
-  // Use setTimeout(0) to yield to other scripts that set cookies,
-  // then read cookies and push events. Works regardless of readyState.
   function onReady(): void {
     readCookieUserData().then(function() {
       eventPusher.pushEvent('pageview', { platform: CONFIG.defaults.platform });
       CONFIG.autoViewItem && domBinder.scanViewItems();
+
+      // If previousUser cookie wasn't available yet, poll for it
+      var ud = userDataManager.getUserData();
+      !ud.sha256_email_address && !ud.sha256_phone_number && pollPreviousUser(20);
     });
+  }
+
+  // Poll for previousUser cookie (set by late-loading scripts)
+  function pollPreviousUser(remaining: number): void {
+    remaining > 0 && win.setTimeout(function() {
+      var raw = ppLib.getCookie(CONFIG.cookieNames.previousUser) || '';
+      raw
+        ? (readCookieUserData(), ppLib.log('info', '[ppDataLayer] previousUser cookie found after polling'))
+        : pollPreviousUser(remaining - 1);
+    }, 500);
   }
 
   if (doc.readyState === 'complete') {

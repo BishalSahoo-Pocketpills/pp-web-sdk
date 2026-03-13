@@ -554,6 +554,68 @@ describe('Cookie Auto-populate', () => {
     expect(event.user_data.address.sha256_first_name).toBe(await sha256hex('Bob'));
     expect(event.user_data.address.sha256_last_name).toBe(await sha256hex('Jones'));
   });
+
+  it('polls for previousUser cookie when not available at init', async () => {
+    // Load without previousUser cookie — email/phone will be empty
+    loadWithCommon('datalayer');
+    createMockDataLayer();
+
+    await new Promise(r => setTimeout(r, 50));
+
+    // Verify email is empty initially
+    window.ppLib.datalayer.push('before_cookie');
+    const before = window.dataLayer[window.dataLayer.length - 1];
+    expect(before.user_data.sha256_email_address).toBe('');
+
+    // Now set the previousUser cookie (simulating a late-loading script)
+    setCookie('previousUser', encodeURIComponent(JSON.stringify({
+      email: 'late@example.com',
+      phone: '5559876543'
+    })));
+
+    // Wait for polling interval (500ms) + hashing
+    await new Promise(r => setTimeout(r, 700));
+
+    // Subsequent event should now have the hashed data
+    window.ppLib.datalayer.push('after_cookie');
+    const after = window.dataLayer[window.dataLayer.length - 1];
+    expect(after.user_data.sha256_email_address).toBe(await sha256hex('late@example.com'));
+    expect(after.user_data.sha256_phone_number).toBe(await sha256hex('5559876543'));
+  });
+
+  it('stops polling when remaining attempts exhausted', async () => {
+    // Configure polling with just 1 attempt so it exhausts quickly
+    loadWithCommon('datalayer');
+    createMockDataLayer();
+
+    // Wait for onReady — no previousUser cookie, so polling starts (20 attempts)
+    await new Promise(r => setTimeout(r, 50));
+
+    // email/phone still empty — cookie never appeared
+    window.ppLib.datalayer.push('still_empty');
+    const event = window.dataLayer[window.dataLayer.length - 1];
+    expect(event.user_data.sha256_email_address).toBe('');
+    expect(event.user_data.sha256_phone_number).toBe('');
+  });
+
+  it('skips polling when email/phone are already available', async () => {
+    // Set previousUser cookie BEFORE loading — email/phone available immediately
+    setCookie('previousUser', encodeURIComponent(JSON.stringify({
+      email: 'already@example.com',
+      phone: '5551112222'
+    })));
+
+    loadWithCommon('datalayer');
+    createMockDataLayer();
+
+    // Wait for onReady chain to complete
+    await new Promise(r => setTimeout(r, 50));
+
+    window.ppLib.datalayer.push('test_event');
+    const event = window.dataLayer[window.dataLayer.length - 1];
+    expect(event.user_data.sha256_email_address).toBe(await sha256hex('already@example.com'));
+    expect(event.user_data.sha256_phone_number).toBe(await sha256hex('5551112222'));
+  });
 });
 
 // =========================================================================
