@@ -82,38 +82,40 @@ import { createDomBinder } from './dom';
     };
   }
 
-  function pushAutoPageview(): void {
-    domBinder.init();
-    eventPusher.pushEvent('pageview', { platform: CONFIG.defaults.platform });
-  }
-
   // =====================================================
-  // AUTO-INIT DOM BINDING + AUTO-PAGEVIEW
-  // Wait for user data hashing before pushing events
+  // AUTO-INIT: DOM binding early, events after window.load
+  // Cookies set by client-side JS (e.g. previousUser) may not
+  // be available until all scripts have executed, so we defer
+  // cookie reading + event pushing to the load event.
   // =====================================================
 
+  // Bind DOM click/touch listeners early (DOMContentLoaded)
   /*! v8 ignore start */
   if (doc.readyState === 'loading') {
-    doc.addEventListener('DOMContentLoaded', function() {
-      readCookieUserData().then(pushAutoPageview);
+    doc.addEventListener('DOMContentLoaded', function() { domBinder.init(); });
+  } else {
+  /*! v8 ignore stop */
+    domBinder.init();
+  }
+
+  // Read cookies + push pageview + scanViewItems after window.load
+  /*! v8 ignore start */
+  if (doc.readyState === 'complete') {
+    readCookieUserData().then(function() {
+      eventPusher.pushEvent('pageview', { platform: CONFIG.defaults.platform });
+      if (CONFIG.autoViewItem) domBinder.scanViewItems();
     });
   } else {
   /*! v8 ignore stop */
-    readCookieUserData().then(pushAutoPageview);
+    win.addEventListener('load', function() {
+      readCookieUserData().then(function() {
+        eventPusher.pushEvent('pageview', { platform: CONFIG.defaults.platform });
+        /*! v8 ignore start */
+        if (CONFIG.autoViewItem) domBinder.scanViewItems();
+        /*! v8 ignore stop */
+      });
+    });
   }
-
-  // AUTO-VIEW_ITEM: fire when item elements exist in DOM
-  // Both branches (complete vs addEventListener) are tested via manual scanViewItems() calls,
-  // but V8 cannot cover both readyState paths or the autoViewItem=false path in a single IIFE load.
-  /*! v8 ignore start */
-  if (CONFIG.autoViewItem) {
-    if (doc.readyState === 'complete') {
-      readCookieUserData().then(function() { domBinder.scanViewItems(); });
-    } else {
-      win.addEventListener('load', function() { domBinder.scanViewItems(); });
-    }
-  }
-  /*! v8 ignore stop */
 
   // =====================================================
   // PUBLIC API
