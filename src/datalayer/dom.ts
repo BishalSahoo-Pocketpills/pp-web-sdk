@@ -23,7 +23,6 @@ export function createDomBinder(
 
   function isDuplicate(key: string): boolean {
     var now = Date.now();
-    /*! v8 ignore start */
     if (++debounceWriteCount >= 100) {
       debounceWriteCount = 0;
       for (var k in lastEventMap) {
@@ -33,7 +32,6 @@ export function createDomBinder(
       }
     }
     if (lastEventMap[key] && (now - lastEventMap[key]) < CONFIG.debounceMs) {
-    /*! v8 ignore stop */
       return true;
     }
     lastEventMap[key] = now;
@@ -125,18 +123,14 @@ export function createDomBinder(
   function handleInteraction(e: Event): void {
     try {
       var target = e.target as Element;
-      /*! v8 ignore start */
-      if (!target || !target.closest) return;
-      /*! v8 ignore stop */
-
+        if (!target || !target.closest) return;
+  
       var el = target.closest('[' + CONFIG.attributes.event + ']');
       if (!el) return;
 
       var elId = getElementId(el);
-      /*! v8 ignore start */
-      if (isDuplicate(elId)) return;
-      /*! v8 ignore stop */
-
+        if (isDuplicate(elId)) return;
+  
       var eventName = ppLib.Security.sanitize(readAttr(el, CONFIG.attributes.event));
       if (!eventName) return;
 

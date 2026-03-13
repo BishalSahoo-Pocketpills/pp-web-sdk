@@ -37,20 +37,16 @@ import { createDomBinder } from './dom';
   const eventPusher = createEventPusher(win, ppLib, CONFIG, userBuilder, userDataManager, pageBuilder, itemBuilder);
   const domBinder = createDomBinder(win, doc, ppLib, CONFIG, eventPusher, itemBuilder);
 
-  // Deferred cookie reading — called after DOMContentLoaded so cookies
+  // Deferred cookie reading — called after window.load so cookies
   // set by other scripts (e.g. previousUser) are available.
   function readCookieUserData(): Promise<void> {
     var prevUser: Record<string, string> = {};
     try {
       var prevRaw = ppLib.getCookie(CONFIG.cookieNames.previousUser) || '';
-      /*! v8 ignore start */
-      if (prevRaw) {
-        prevUser = JSON.parse(decodeURIComponent(prevRaw));
-      }
+      prevUser = prevRaw ? JSON.parse(decodeURIComponent(prevRaw)) : {};
     } catch (e) {
       ppLib.log('error', '[ppDataLayer] Failed to parse previousUser cookie', e);
     }
-    /*! v8 ignore stop */
 
     return userDataManager.setUserData({
       email: prevUser.email || '',
@@ -82,6 +78,12 @@ import { createDomBinder } from './dom';
     };
   }
 
+  function coreEvent(eventName: string): (data: Record<string, any>) => void {
+    return function(data: Record<string, any>) {
+      eventPusher.pushEvent(eventName, data);
+    };
+  }
+
   // =====================================================
   // AUTO-INIT: DOM binding early, events after window.load
   // Cookies set by client-side JS (e.g. previousUser) may not
@@ -90,11 +92,9 @@ import { createDomBinder } from './dom';
   // =====================================================
 
   // Bind DOM click/touch listeners early (DOMContentLoaded)
-  /*! v8 ignore start */
   if (doc.readyState === 'loading') {
     doc.addEventListener('DOMContentLoaded', function() { domBinder.init(); });
   } else {
-  /*! v8 ignore stop */
     domBinder.init();
   }
 
@@ -104,17 +104,13 @@ import { createDomBinder } from './dom';
   function onReady(): void {
     readCookieUserData().then(function() {
       eventPusher.pushEvent('pageview', { platform: CONFIG.defaults.platform });
-      /*! v8 ignore start */
-      if (CONFIG.autoViewItem) domBinder.scanViewItems();
-      /*! v8 ignore stop */
+      CONFIG.autoViewItem && domBinder.scanViewItems();
     });
   }
 
-  /*! v8 ignore start */
   if (doc.readyState === 'complete') {
     win.setTimeout(onReady, 0);
   } else {
-  /*! v8 ignore stop */
     win.addEventListener('load', function() { win.setTimeout(onReady, 0); });
   }
 
@@ -154,41 +150,28 @@ import { createDomBinder } from './dom';
 
     // ---- Core events ----
 
-    /*! v8 ignore start */
     pageview: function(data?: Record<string, any>) {
       var extra: Record<string, any> = { platform: CONFIG.defaults.platform };
       ppLib.extend(extra, data || {});
       eventPusher.pushEvent('pageview', extra);
     },
-    /*! v8 ignore stop */
 
-    loginView: function(data: { method: string }) {
-      eventPusher.pushEvent('login_view', data);
-    },
+    loginView: coreEvent('login_view'),
 
     loginSuccess: function(data: { method: string; pp_user_id?: string; pp_patient_id?: string }) {
       userBuilder.setUser(buildAuthOverride(data));
       eventPusher.pushEvent('login_success', { method: data.method });
     },
 
-    signupView: function(data: { method: string; signup_flow?: string }) {
-      eventPusher.pushEvent('signup_view', data);
-    },
-
-    signupStart: function(data: { method: string }) {
-      eventPusher.pushEvent('signup_start', data);
-    },
+    signupView: coreEvent('signup_view'),
+    signupStart: coreEvent('signup_start'),
 
     signupComplete: function(data: { method: string; pp_user_id?: string; pp_patient_id?: string }) {
-      /*! v8 ignore start */
       userBuilder.setUser(buildAuthOverride(data));
       eventPusher.pushEvent('signup_complete', { method: data.method });
-      /*! v8 ignore stop */
     },
 
-    search: function(data: { search_term: string; results_count?: number; search_type?: string }) {
-      eventPusher.pushEvent('search', data);
-    },
+    search: coreEvent('search'),
 
     // ---- Ecommerce events ----
 
@@ -217,16 +200,11 @@ import { createDomBinder } from './dom';
   } // end initModule
 
   // Safe load: wait for ppLib if not yet available.
-  // Both paths are tested (loadWithCommon vs loadModule-then-common),
-  // but V8 cannot attribute coverage through vm.runInThisContext() across
-  // separate IIFE loads. This is the only v8 ignore in the module.
-  /*! v8 ignore start */
   if (win.ppLib && win.ppLib._isReady) {
     initModule(win.ppLib);
   } else {
     win.ppLibReady = win.ppLibReady || [];
     win.ppLibReady.push(initModule);
   }
-  /*! v8 ignore stop */
 
 })(window, document);
