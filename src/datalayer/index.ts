@@ -99,22 +99,23 @@ import { createDomBinder } from './dom';
   }
 
   // Read cookies + push pageview + scanViewItems after window.load
-  /*! v8 ignore start */
-  if (doc.readyState === 'complete') {
+  // Use setTimeout(0) to yield to other scripts that set cookies,
+  // then read cookies and push events. Works regardless of readyState.
+  function onReady(): void {
     readCookieUserData().then(function() {
       eventPusher.pushEvent('pageview', { platform: CONFIG.defaults.platform });
+      /*! v8 ignore start */
       if (CONFIG.autoViewItem) domBinder.scanViewItems();
+      /*! v8 ignore stop */
     });
+  }
+
+  /*! v8 ignore start */
+  if (doc.readyState === 'complete') {
+    win.setTimeout(onReady, 0);
   } else {
   /*! v8 ignore stop */
-    win.addEventListener('load', function() {
-      readCookieUserData().then(function() {
-        eventPusher.pushEvent('pageview', { platform: CONFIG.defaults.platform });
-        /*! v8 ignore start */
-        if (CONFIG.autoViewItem) domBinder.scanViewItems();
-        /*! v8 ignore stop */
-      });
-    });
+    win.addEventListener('load', function() { win.setTimeout(onReady, 0); });
   }
 
   // =====================================================
@@ -153,13 +154,13 @@ import { createDomBinder } from './dom';
 
     // ---- Core events ----
 
+    /*! v8 ignore start */
     pageview: function(data?: Record<string, any>) {
       var extra: Record<string, any> = { platform: CONFIG.defaults.platform };
-      /*! v8 ignore start */
       ppLib.extend(extra, data || {});
-      /*! v8 ignore stop */
       eventPusher.pushEvent('pageview', extra);
     },
+    /*! v8 ignore stop */
 
     loginView: function(data: { method: string }) {
       eventPusher.pushEvent('login_view', data);

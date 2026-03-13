@@ -11,6 +11,11 @@ beforeAll(() => {
   }
 });
 
+// Flush any pending setTimeout(0) from auto-init between tests
+afterEach(async () => {
+  await new Promise(r => setTimeout(r, 0));
+});
+
 /** Compute SHA-256 hex digest (for test assertions). */
 async function sha256hex(value: string): Promise<string> {
   const data = new TextEncoder().encode(value.toLowerCase().trim());
