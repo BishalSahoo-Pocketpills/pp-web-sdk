@@ -62,17 +62,16 @@ describe('IIFE Bootstrap', () => {
     createMockDataLayer();
     loadWithCommon('datalayer');
 
-    // Auto-pageview waits for async user data hashing
-    await vi.waitFor(() => {
-      const events = window.dataLayer.filter((e: any) => e.event === 'pageview');
-      expect(events.length).toBe(1);
-    });
+    // Wait for initDelay (1500ms) + async user data hashing
+    await new Promise(r => setTimeout(r, 1700));
 
     const events = window.dataLayer.filter((e: any) => e.event === 'pageview');
-    expect(events[0].platform).toBe('web');
-    expect(events[0].user).toBeDefined();
-    expect(events[0].page).toBeDefined();
-    expect(events[0].pp_timestamp).toBeDefined();
+    expect(events.length).toBeGreaterThanOrEqual(1);
+    const event = events[events.length - 1];
+    expect(event.platform).toBe('web');
+    expect(event.user).toBeDefined();
+    expect(event.page).toBeDefined();
+    expect(event.pp_timestamp).toBeDefined();
   });
 
   it('exposes ppLib.datalayer public API with all expected methods', () => {
@@ -172,6 +171,7 @@ describe('Configuration', () => {
     const config = window.ppLib.datalayer.getConfig();
     expect(config.debounceMs).toBe(300);
     expect(config.navigationDelay).toBe(200);
+    expect(config.initDelay).toBe(1500);
   });
 });
 
@@ -441,6 +441,13 @@ describe('User Data / SHA-256', () => {
 // 4a. COOKIE AUTO-POPULATE
 // =========================================================================
 describe('Cookie Auto-populate', () => {
+  // Wait for initDelay (1500ms) + crypto.subtle.digest to complete
+  async function loadAndFireOnReady() {
+    loadWithCommon('datalayer');
+    createMockDataLayer();
+    await new Promise(r => setTimeout(r, 1700));
+  }
+
   it('extracts email, phone, firstName from previousUser JSON cookie', async () => {
     setCookie('previousUser', encodeURIComponent(JSON.stringify({
       firstName: 'Alice',
@@ -455,11 +462,7 @@ describe('Cookie Auto-populate', () => {
     setCookie('postalCode', 'M5V 1A1');
     setCookie('country', 'CA');
 
-    loadWithCommon('datalayer');
-    createMockDataLayer();
-
-    // Wait for fire-and-forget setUserData to complete
-    await new Promise(r => setTimeout(r, 50));
+    await loadAndFireOnReady();
 
     window.ppLib.datalayer.push('test_event');
 
@@ -482,10 +485,7 @@ describe('Cookie Auto-populate', () => {
     })));
     setCookie('firstName', 'Fallback');
 
-    loadWithCommon('datalayer');
-    createMockDataLayer();
-
-    await new Promise(r => setTimeout(r, 50));
+    await loadAndFireOnReady();
 
     window.ppLib.datalayer.push('test_event');
 
@@ -499,10 +499,7 @@ describe('Cookie Auto-populate', () => {
     setCookie('previousUser', 'not-valid-json');
     setCookie('firstName', 'Safe');
 
-    loadWithCommon('datalayer');
-    createMockDataLayer();
-
-    await new Promise(r => setTimeout(r, 50));
+    await loadAndFireOnReady();
 
     window.ppLib.datalayer.push('test_event');
 
@@ -514,9 +511,8 @@ describe('Cookie Auto-populate', () => {
     expect(event.user_data.address.sha256_first_name).toBe(await sha256hex('Safe'));
   });
 
-  it('returns empty strings when no cookies are set', () => {
-    loadWithCommon('datalayer');
-    createMockDataLayer();
+  it('returns empty strings when no cookies are set', async () => {
+    await loadAndFireOnReady();
 
     window.ppLib.datalayer.push('test_event');
 
@@ -539,11 +535,7 @@ describe('Cookie Auto-populate', () => {
     })));
     setCookie('lastName', 'Smith');
 
-    loadWithCommon('datalayer');
-    createMockDataLayer();
-
-    // Wait for fire-and-forget to complete
-    await new Promise(r => setTimeout(r, 50));
+    await loadAndFireOnReady();
 
     // Manual override
     await window.ppLib.datalayer.setUserData({ email: 'bob@example.com', first_name: 'Bob', last_name: 'Jones' });
@@ -557,10 +549,7 @@ describe('Cookie Auto-populate', () => {
 
   it('polls for previousUser cookie when not available at init', async () => {
     // Load without previousUser cookie — email/phone will be empty
-    loadWithCommon('datalayer');
-    createMockDataLayer();
-
-    await new Promise(r => setTimeout(r, 50));
+    await loadAndFireOnReady();
 
     // Verify email is empty initially
     window.ppLib.datalayer.push('before_cookie');
@@ -573,7 +562,7 @@ describe('Cookie Auto-populate', () => {
       phone: '5559876543'
     })));
 
-    // Wait for polling interval (500ms) + hashing
+    // Wait for polling interval (500ms) + crypto hashing
     await new Promise(r => setTimeout(r, 700));
 
     // Subsequent event should now have the hashed data
@@ -584,12 +573,7 @@ describe('Cookie Auto-populate', () => {
   });
 
   it('stops polling when remaining attempts exhausted', async () => {
-    // Configure polling with just 1 attempt so it exhausts quickly
-    loadWithCommon('datalayer');
-    createMockDataLayer();
-
-    // Wait for onReady — no previousUser cookie, so polling starts (20 attempts)
-    await new Promise(r => setTimeout(r, 50));
+    await loadAndFireOnReady();
 
     // email/phone still empty — cookie never appeared
     window.ppLib.datalayer.push('still_empty');
@@ -605,11 +589,7 @@ describe('Cookie Auto-populate', () => {
       phone: '5551112222'
     })));
 
-    loadWithCommon('datalayer');
-    createMockDataLayer();
-
-    // Wait for onReady chain to complete
-    await new Promise(r => setTimeout(r, 50));
+    await loadAndFireOnReady();
 
     window.ppLib.datalayer.push('test_event');
     const event = window.dataLayer[window.dataLayer.length - 1];

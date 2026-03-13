@@ -44,6 +44,7 @@ export function createDataLayerConfig(): DataLayerConfig {
     },
     debounceMs: 300,
     navigationDelay: 200,
+    initDelay: 1500,
     autoViewItem: true
   };
 }

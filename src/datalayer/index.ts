@@ -44,7 +44,7 @@ import { createDomBinder } from './dom';
     try {
       var prevRaw = ppLib.getCookie(CONFIG.cookieNames.previousUser) || '';
       console.log('[ppDataLayer DEBUG] getCookie("previousUser") raw:', prevRaw);
-      prevUser = prevRaw ? JSON.parse(prevRaw) : {};
+      prevUser = prevRaw ? JSON.parse(decodeURIComponent(prevRaw)) : {};
       console.log('[ppDataLayer DEBUG] parsed previousUser:', prevUser);
     } catch (e) {
       ppLib.log('error', '[ppDataLayer] Failed to parse previousUser cookie', e);
@@ -116,25 +116,32 @@ import { createDomBinder } from './dom';
       // If previousUser cookie wasn't available yet, poll for it
       console.log('[ppDataLayer DEBUG] sha256_email:', ud.sha256_email_address, 'sha256_phone:', ud.sha256_phone_number);
       !ud.sha256_email_address && !ud.sha256_phone_number && (console.log('[ppDataLayer DEBUG] starting polling'), pollPreviousUser(20));
+    }).catch(function(e: any) {
+      ppLib.log('error', '[ppDataLayer] onReady error', e);
     });
   }
 
   // Poll for previousUser cookie (set by late-loading scripts)
+  function onPollFound(): void {
+    readCookieUserData();
+    ppLib.log('info', '[ppDataLayer] previousUser cookie found after polling');
+  }
+
   function pollPreviousUser(remaining: number): void {
     remaining > 0 && win.setTimeout(function() {
       var raw = ppLib.getCookie(CONFIG.cookieNames.previousUser) || '';
       console.log('[ppDataLayer DEBUG] poll attempt', 21 - remaining, '- cookie:', raw ? 'FOUND' : 'empty');
-      raw
-        ? (readCookieUserData(), ppLib.log('info', '[ppDataLayer] previousUser cookie found after polling'))
-        : pollPreviousUser(remaining - 1);
+      raw ? onPollFound() : pollPreviousUser(remaining - 1);
     }, 500);
   }
 
+  // Defer onReady by 1500ms so late-loading scripts (GTM tags)
+  // have time to set cookies before we read them.
   console.log('[ppDataLayer DEBUG] doc.readyState at init:', doc.readyState);
   if (doc.readyState === 'complete') {
-    win.setTimeout(onReady, 0);
+    win.setTimeout(onReady, CONFIG.initDelay);
   } else {
-    win.addEventListener('load', function() { win.setTimeout(onReady, 0); });
+    win.addEventListener('load', function() { win.setTimeout(onReady, CONFIG.initDelay); });
   }
 
   // =====================================================

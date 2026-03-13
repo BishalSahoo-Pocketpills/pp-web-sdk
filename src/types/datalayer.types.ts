@@ -43,6 +43,7 @@ export interface DataLayerConfig {
   attributes: DataLayerAttributes;
   debounceMs: number;
   navigationDelay: number;
+  initDelay: number;
   autoViewItem: boolean;
 }
 
