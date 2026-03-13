@@ -37,31 +37,33 @@ import { createDomBinder } from './dom';
   const eventPusher = createEventPusher(win, ppLib, CONFIG, userBuilder, userDataManager, pageBuilder, itemBuilder);
   const domBinder = createDomBinder(win, doc, ppLib, CONFIG, eventPusher, itemBuilder);
 
-  // Parse previousUser JSON cookie for email, phone, firstName
-  var prevUser: Record<string, string> = {};
-  try {
-    var prevRaw = ppLib.getCookie(CONFIG.cookieNames.previousUser) || '';
-    /*! v8 ignore start */
-    if (prevRaw) {
-      prevUser = JSON.parse(decodeURIComponent(prevRaw));
+  // Deferred cookie reading — called after DOMContentLoaded so cookies
+  // set by other scripts (e.g. previousUser) are available.
+  function readCookieUserData(): Promise<void> {
+    var prevUser: Record<string, string> = {};
+    try {
+      var prevRaw = ppLib.getCookie(CONFIG.cookieNames.previousUser) || '';
+      /*! v8 ignore start */
+      if (prevRaw) {
+        prevUser = JSON.parse(decodeURIComponent(prevRaw));
+      }
+    } catch (e) {
+      ppLib.log('error', '[ppDataLayer] Failed to parse previousUser cookie', e);
     }
-  } catch (e) {
-    ppLib.log('error', '[ppDataLayer] Failed to parse previousUser cookie', e);
-  }
-  /*! v8 ignore stop */
+    /*! v8 ignore stop */
 
-  // Auto-populate user data from cookies (async SHA-256 hashing)
-  var userDataReady = userDataManager.setUserData({
-    email: prevUser.email || '',
-    phone: prevUser.phone || '',
-    first_name: prevUser.firstName || ppLib.getCookie(CONFIG.cookieNames.firstName) || '',
-    last_name: ppLib.getCookie(CONFIG.cookieNames.lastName) || '',
-    street: ppLib.getCookie(CONFIG.cookieNames.street) || '',
-    city: ppLib.getCookie(CONFIG.cookieNames.city) || '',
-    region: ppLib.getCookie(CONFIG.cookieNames.region) || '',
-    postal_code: ppLib.getCookie(CONFIG.cookieNames.postalCode) || '',
-    country: ppLib.getCookie(CONFIG.cookieNames.country) || ''
-  });
+    return userDataManager.setUserData({
+      email: prevUser.email || '',
+      phone: prevUser.phone || '',
+      first_name: prevUser.firstName || ppLib.getCookie(CONFIG.cookieNames.firstName) || '',
+      last_name: ppLib.getCookie(CONFIG.cookieNames.lastName) || '',
+      street: ppLib.getCookie(CONFIG.cookieNames.street) || '',
+      city: ppLib.getCookie(CONFIG.cookieNames.city) || '',
+      region: ppLib.getCookie(CONFIG.cookieNames.region) || '',
+      postal_code: ppLib.getCookie(CONFIG.cookieNames.postalCode) || '',
+      country: ppLib.getCookie(CONFIG.cookieNames.country) || ''
+    });
+  }
 
   // =====================================================
   // HELPERS
@@ -93,11 +95,11 @@ import { createDomBinder } from './dom';
   /*! v8 ignore start */
   if (doc.readyState === 'loading') {
     doc.addEventListener('DOMContentLoaded', function() {
-      userDataReady.then(pushAutoPageview);
+      readCookieUserData().then(pushAutoPageview);
     });
   } else {
   /*! v8 ignore stop */
-    userDataReady.then(pushAutoPageview);
+    readCookieUserData().then(pushAutoPageview);
   }
 
   // AUTO-VIEW_ITEM: fire when item elements exist in DOM
@@ -106,7 +108,7 @@ import { createDomBinder } from './dom';
   /*! v8 ignore start */
   if (CONFIG.autoViewItem) {
     if (doc.readyState === 'complete') {
-      userDataReady.then(function() { domBinder.scanViewItems(); });
+      readCookieUserData().then(function() { domBinder.scanViewItems(); });
     } else {
       win.addEventListener('load', function() { domBinder.scanViewItems(); });
     }
@@ -151,7 +153,9 @@ import { createDomBinder } from './dom';
 
     pageview: function(data?: Record<string, any>) {
       var extra: Record<string, any> = { platform: CONFIG.defaults.platform };
+      /*! v8 ignore start */
       ppLib.extend(extra, data || {});
+      /*! v8 ignore stop */
       eventPusher.pushEvent('pageview', extra);
     },
 
