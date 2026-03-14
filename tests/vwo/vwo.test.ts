@@ -148,7 +148,7 @@ describe('init() guards', () => {
     window.ppLib.vwo!.configure({ enabled: false });
     window.ppLib.vwo!.init();
 
-    const scripts = document.querySelectorAll('script[src*="visualwebsiteoptimizer"]');
+    const scripts = document.querySelectorAll('script[src*="vwo.com"]');
     expect(scripts.length).toBe(0);
   });
 
@@ -156,7 +156,7 @@ describe('init() guards', () => {
     loadWithCommon('vwo');
     window.ppLib.vwo!.init();
 
-    const scripts = document.querySelectorAll('script[src*="visualwebsiteoptimizer"]');
+    const scripts = document.querySelectorAll('script[src*="vwo.com"]');
     expect(scripts.length).toBe(0);
   });
 });
@@ -169,7 +169,7 @@ describe('SmartCode injection', () => {
     // Clean VWO artifacts from document.head (setup.ts only clears body)
     const oldStyle = document.getElementById('vwo-anti-fouc');
     if (oldStyle) oldStyle.remove();
-    document.querySelectorAll('script[src*="visualwebsiteoptimizer"]').forEach(s => s.remove());
+    document.querySelectorAll('script[src*="vwo.com"]').forEach(s => s.remove());
 
     loadWithCommon('vwo');
     window.ppLib.vwo!.configure({ accountId: '654321' });
@@ -187,7 +187,7 @@ describe('SmartCode injection', () => {
     window.ppLib.vwo!.init();
 
     const scripts = document.querySelectorAll('script');
-    const vwoScript = Array.from(scripts).find(s => s.src.includes('visualwebsiteoptimizer'));
+    const vwoScript = Array.from(scripts).find(s => s.src.includes('vwo.com'));
     expect(vwoScript).toBeDefined();
     expect(vwoScript!.src).toContain('a=654321');
   });
@@ -227,7 +227,7 @@ describe('SmartCode injection', () => {
     window.ppLib.vwo!.init();
 
     const scripts = document.querySelectorAll('script');
-    const vwoScript = Array.from(scripts).find(s => s.src.includes('visualwebsiteoptimizer'));
+    const vwoScript = Array.from(scripts).find(s => s.src.includes('vwo.com'));
     expect(vwoScript!.src).toContain('f=1');
   });
 
@@ -235,7 +235,7 @@ describe('SmartCode injection', () => {
     window.ppLib.vwo!.init();
 
     const scripts = document.querySelectorAll('script');
-    const vwoScript = Array.from(scripts).find(s => s.src.includes('visualwebsiteoptimizer'));
+    const vwoScript = Array.from(scripts).find(s => s.src.includes('vwo.com'));
     expect(vwoScript!.src).not.toContain('f=1');
   });
 
@@ -243,7 +243,7 @@ describe('SmartCode injection', () => {
     window.ppLib.vwo!.init();
 
     const scripts = document.querySelectorAll('script');
-    const vwoScript = Array.from(scripts).find(s => s.src.includes('visualwebsiteoptimizer'));
+    const vwoScript = Array.from(scripts).find(s => s.src.includes('vwo.com'));
     expect(vwoScript!.async).toBe(true);
   });
 
@@ -794,7 +794,7 @@ describe('DOM auto-tracking — Click', () => {
     // Clean VWO artifacts from document.head
     const oldStyle = document.getElementById('vwo-anti-fouc');
     if (oldStyle) oldStyle.remove();
-    document.querySelectorAll('script[src*="visualwebsiteoptimizer"]').forEach(s => s.remove());
+    document.querySelectorAll('script[src*="vwo.com"]').forEach(s => s.remove());
 
     loadWithCommon('vwo');
     window.ppLib.vwo!.configure({ accountId: '123' });
@@ -920,7 +920,7 @@ describe('DOM auto-tracking — Form submit', () => {
   beforeEach(() => {
     const oldStyle = document.getElementById('vwo-anti-fouc');
     if (oldStyle) oldStyle.remove();
-    document.querySelectorAll('script[src*="visualwebsiteoptimizer"]').forEach(s => s.remove());
+    document.querySelectorAll('script[src*="vwo.com"]').forEach(s => s.remove());
 
     loadWithCommon('vwo');
     window.ppLib.vwo!.configure({ accountId: '123' });
@@ -988,7 +988,7 @@ describe('DOM auto-tracking — View', () => {
   beforeEach(() => {
     const oldStyle = document.getElementById('vwo-anti-fouc');
     if (oldStyle) oldStyle.remove();
-    document.querySelectorAll('script[src*="visualwebsiteoptimizer"]').forEach(s => s.remove());
+    document.querySelectorAll('script[src*="vwo.com"]').forEach(s => s.remove());
 
     observedElements = [];
     ioConstructorArgs = { callback: null, options: null };
@@ -1130,7 +1130,7 @@ describe('Debounce map pruning', () => {
   beforeEach(() => {
     const oldStyle = document.getElementById('vwo-anti-fouc');
     if (oldStyle) oldStyle.remove();
-    document.querySelectorAll('script[src*="visualwebsiteoptimizer"]').forEach(s => s.remove());
+    document.querySelectorAll('script[src*="vwo.com"]').forEach(s => s.remove());
 
     loadWithCommon('vwo');
     window.ppLib.vwo!.configure({ accountId: '123' });
@@ -1256,7 +1256,7 @@ describe('Init orchestration', () => {
     // 2. SmartCode should be injected
     expect(window._vwo_code).toBeDefined();
     const scripts = document.querySelectorAll('script');
-    const vwoScript = Array.from(scripts).find(s => s.src.includes('visualwebsiteoptimizer'));
+    const vwoScript = Array.from(scripts).find(s => s.src.includes('vwo.com'));
     expect(vwoScript).toBeDefined();
 
     // 3. Execute queue: forced variation + tracking
@@ -1298,7 +1298,7 @@ describe('Init orchestration', () => {
     window.ppLib.vwo!.init();
 
     const scripts = document.querySelectorAll('script');
-    const vwoScript = Array.from(scripts).find(s => s.src.includes('visualwebsiteoptimizer'));
+    const vwoScript = Array.from(scripts).find(s => s.src.includes('vwo.com'));
     expect(vwoScript!.src).toContain('u=');
   });
 
@@ -1308,7 +1308,7 @@ describe('Init orchestration', () => {
     window.ppLib.vwo!.init();
 
     const scripts = document.querySelectorAll('script');
-    const vwoScript = Array.from(scripts).find(s => s.src.includes('visualwebsiteoptimizer'));
+    const vwoScript = Array.from(scripts).find(s => s.src.includes('vwo.com'));
     expect(vwoScript!.src).toContain('r=');
   });
 
