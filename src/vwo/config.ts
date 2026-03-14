@@ -10,6 +10,12 @@ export function createVWOConfig(): VWOConfig {
     hideElement: 'body',
     queryParam: 'vwo',
     sessionStorageKey: 'pp_vwo_force',
-    trackToDataLayer: true
+    trackToDataLayer: true,
+    attributes: {
+      goal: 'data-vwo-goal',
+      revenue: 'data-vwo-revenue',
+      trigger: 'data-vwo-trigger'
+    },
+    debounceMs: 300
   };
 }

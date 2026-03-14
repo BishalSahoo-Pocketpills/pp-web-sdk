@@ -22,6 +22,7 @@ declare global {
     _vis_opt_queue: Array<() => void>;
     _vwo_code: any;
     _vis_opt_set_combination: (variationId: number, campaignId: number) => void;
+    VWO: any[];
   }
 
   const __PP_SDK_VERSION__: string;

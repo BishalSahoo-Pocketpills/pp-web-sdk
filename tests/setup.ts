@@ -35,6 +35,7 @@ beforeEach(() => {
   delete window._vis_opt_queue;
   delete window._vwo_code;
   delete window._vis_opt_set_combination;
+  delete window.VWO;
 
   // Clear all storage
   localStorage.clear();

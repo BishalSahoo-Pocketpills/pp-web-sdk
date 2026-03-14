@@ -29,7 +29,8 @@ import type { EventSourceConfig, EventSourceData } from '../types/event-source.t
     // Platforms to send events to
     platforms: {
       mixpanel: { enabled: true },
-      gtm: { enabled: true }
+      gtm: { enabled: true },
+      vwo: { enabled: false }
     },
 
     // GTM event name for tracked clicks
@@ -39,7 +40,11 @@ import type { EventSourceConfig, EventSourceData } from '../types/event-source.t
     mixpanelEventName: 'Element Click',
 
     // Include page context in event properties
-    includePageContext: true
+    includePageContext: true,
+
+    // VWO goal tracking attributes
+    vwoGoalAttribute: 'data-vwo-goal',
+    vwoRevenueAttribute: 'data-vwo-revenue'
   };
 
   // =====================================================
@@ -62,9 +67,9 @@ import type { EventSourceConfig, EventSourceData } from '../types/event-source.t
       }
     }
     if (lastEventMap[elementId] && (now - lastEventMap[elementId]) < CONFIG.debounceMs) {
-    /*! v8 ignore stop */
       return true;
     }
+    /*! v8 ignore stop */
     lastEventMap[elementId] = now;
     return false;
   }
@@ -129,6 +134,20 @@ import type { EventSourceConfig, EventSourceData } from '../types/event-source.t
     if (value) {
     /*! v8 ignore stop */
       data.event_value = ppLib.Security.sanitize(value);
+    }
+
+    // VWO goal attributes
+    var vwoGoal = el.getAttribute(CONFIG.vwoGoalAttribute);
+    /*! v8 ignore start */
+    if (vwoGoal) {
+    /*! v8 ignore stop */
+      data.vwo_goal_id = ppLib.Security.sanitize(vwoGoal);
+    }
+    var vwoRevenue = el.getAttribute(CONFIG.vwoRevenueAttribute);
+    /*! v8 ignore start */
+    if (vwoRevenue) {
+    /*! v8 ignore stop */
+      data.vwo_revenue = ppLib.Security.sanitize(vwoRevenue);
     }
 
     // Page context
@@ -199,9 +218,42 @@ import type { EventSourceConfig, EventSourceData } from '../types/event-source.t
     }
   }
 
+  function sendToVWO(data: EventSourceData): void {
+    try {
+      /*! v8 ignore start */
+      if (!CONFIG.platforms.vwo.enabled) return;
+      if (!data.vwo_goal_id) return;
+      /*! v8 ignore stop */
+
+      var goalId = parseInt(data.vwo_goal_id, 10);
+      if (isNaN(goalId)) return;
+
+      /*! v8 ignore start */
+      if (!ppLib.vwo || !ppLib.vwo.trackGoal) {
+        ppLib.log('warn', '[ppEventSource] VWO module not available');
+        return;
+      }
+      /*! v8 ignore stop */
+
+      var revenue: number | undefined;
+      /*! v8 ignore start */
+      if (data.vwo_revenue) {
+        revenue = parseFloat(data.vwo_revenue);
+        if (isNaN(revenue)) revenue = undefined;
+      }
+      /*! v8 ignore stop */
+
+      ppLib.vwo.trackGoal(goalId, revenue);
+      ppLib.log('verbose', '[ppEventSource] Sent to VWO — goal: ' + goalId);
+    } catch (e) {
+      ppLib.log('error', '[ppEventSource] VWO send error', e);
+    }
+  }
+
   function dispatchEvent(data: EventSourceData): void {
     sendToMixpanel(data);
     sendToGTM(data);
+    sendToVWO(data);
   }
 
   // =====================================================
@@ -219,8 +271,8 @@ import type { EventSourceConfig, EventSourceData } from '../types/event-source.t
       /*! v8 ignore stop */
 
       // Debounce to prevent duplicate click + touchend
-      const elId = getElementId(el);
       /*! v8 ignore start */
+      const elId = getElementId(el);
       if (isDuplicate(elId)) return;
       /*! v8 ignore stop */
 

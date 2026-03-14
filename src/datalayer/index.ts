@@ -43,12 +43,12 @@ import { createDomBinder } from './dom';
     var prevUser: Record<string, string> = {};
     try {
       var prevRaw = ppLib.getCookie(CONFIG.cookieNames.previousUser) || '';
-      console.log('[ppDataLayer DEBUG] getCookie("previousUser") raw:', prevRaw);
+      // console.log('[ppDataLayer DEBUG] getCookie("previousUser") raw:', prevRaw);
       prevUser = prevRaw ? JSON.parse(decodeURIComponent(prevRaw)) : {};
-      console.log('[ppDataLayer DEBUG] parsed previousUser:', prevUser);
+      // console.log('[ppDataLayer DEBUG] parsed previousUser:', prevUser);
     } catch (e) {
       ppLib.log('error', '[ppDataLayer] Failed to parse previousUser cookie', e);
-      console.log('[ppDataLayer DEBUG] parse error:', e);
+      // console.log('[ppDataLayer DEBUG] parse error:', e);
     }
 
     var userData = {
@@ -62,7 +62,7 @@ import { createDomBinder } from './dom';
       postal_code: ppLib.getCookie(CONFIG.cookieNames.postalCode) || '',
       country: ppLib.getCookie(CONFIG.cookieNames.country) || ''
     };
-    console.log('[ppDataLayer DEBUG] calling setUserData with:', userData);
+    // console.log('[ppDataLayer DEBUG] calling setUserData with:', userData);
 
     return userDataManager.setUserData(userData);
   }
@@ -106,16 +106,16 @@ import { createDomBinder } from './dom';
 
   // Read cookies + push pageview + scanViewItems after window.load
   function onReady(): void {
-    console.log('[ppDataLayer DEBUG] onReady fired, doc.readyState:', doc.readyState);
+    // console.log('[ppDataLayer DEBUG] onReady fired, doc.readyState:', doc.readyState);
     readCookieUserData().then(function() {
       var ud = userDataManager.getUserData();
-      console.log('[ppDataLayer DEBUG] after setUserData, user_data:', JSON.stringify(ud));
+      // console.log('[ppDataLayer DEBUG] after setUserData, user_data:', JSON.stringify(ud));
       eventPusher.pushEvent('pageview', { platform: CONFIG.defaults.platform });
       CONFIG.autoViewItem && domBinder.scanViewItems();
 
       // If previousUser cookie wasn't available yet, poll for it
-      console.log('[ppDataLayer DEBUG] sha256_email:', ud.sha256_email_address, 'sha256_phone:', ud.sha256_phone_number);
-      !ud.sha256_email_address && !ud.sha256_phone_number && (console.log('[ppDataLayer DEBUG] starting polling'), pollPreviousUser(20));
+      // console.log('[ppDataLayer DEBUG] sha256_email:', ud.sha256_email_address, 'sha256_phone:', ud.sha256_phone_number);
+      !ud.sha256_email_address && !ud.sha256_phone_number && pollPreviousUser(20);
     }).catch(function(e: any) {
       ppLib.log('error', '[ppDataLayer] onReady error', e);
     });
@@ -130,14 +130,14 @@ import { createDomBinder } from './dom';
   function pollPreviousUser(remaining: number): void {
     remaining > 0 && win.setTimeout(function() {
       var raw = ppLib.getCookie(CONFIG.cookieNames.previousUser) || '';
-      console.log('[ppDataLayer DEBUG] poll attempt', 21 - remaining, '- cookie:', raw ? 'FOUND' : 'empty');
+      // console.log('[ppDataLayer DEBUG] poll attempt', 21 - remaining, '- cookie:', raw ? 'FOUND' : 'empty');
       raw ? onPollFound() : pollPreviousUser(remaining - 1);
     }, 500);
   }
 
   // Defer onReady by 1500ms so late-loading scripts (GTM tags)
   // have time to set cookies before we read them.
-  console.log('[ppDataLayer DEBUG] doc.readyState at init:', doc.readyState);
+  // console.log('[ppDataLayer DEBUG] doc.readyState at init:', doc.readyState);
   if (doc.readyState === 'complete') {
     win.setTimeout(onReady, CONFIG.initDelay);
   } else {

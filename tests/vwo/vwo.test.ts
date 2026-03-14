@@ -44,6 +44,9 @@ describe('IIFE Bootstrap', () => {
     expect(typeof api.getVariation).toBe('function');
     expect(typeof api.getActiveExperiments).toBe('function');
     expect(typeof api.forceVariation).toBe('function');
+    expect(typeof api.trackGoal).toBe('function');
+    expect(typeof api.bindDOM).toBe('function');
+    expect(typeof api.scanViewGoals).toBe('function');
     expect(typeof api.isFeatureEnabled).toBe('function');
     expect(typeof api.getConfig).toBe('function');
   });
@@ -65,6 +68,10 @@ describe('Config Defaults', () => {
     expect(config.queryParam).toBe('vwo');
     expect(config.sessionStorageKey).toBe('pp_vwo_force');
     expect(config.trackToDataLayer).toBe(true);
+    expect(config.attributes.goal).toBe('data-vwo-goal');
+    expect(config.attributes.revenue).toBe('data-vwo-revenue');
+    expect(config.attributes.trigger).toBe('data-vwo-trigger');
+    expect(config.debounceMs).toBe(300);
   });
 });
 
@@ -689,7 +696,479 @@ describe('forceVariation()', () => {
 });
 
 // =========================================================================
-// 11. isFeatureEnabled()
+// 11. trackGoal()
+// =========================================================================
+describe('trackGoal()', () => {
+  beforeEach(() => {
+    loadWithCommon('vwo');
+  });
+
+  it('pushes goal conversion to VWO queue', () => {
+    window.ppLib.vwo!.trackGoal(200);
+
+    expect(window.VWO).toBeDefined();
+    expect(Array.isArray(window.VWO)).toBe(true);
+    expect(window.VWO.length).toBe(1);
+    expect(window.VWO[0]).toEqual(['track.goalConversion', 200]);
+  });
+
+  it('includes revenue when provided', () => {
+    window.ppLib.vwo!.trackGoal(200, 49.99);
+
+    expect(window.VWO[0]).toEqual(['track.goalConversion', 200, 49.99]);
+  });
+
+  it('omits revenue when not provided', () => {
+    window.ppLib.vwo!.trackGoal(300);
+
+    expect(window.VWO[0]).toEqual(['track.goalConversion', 300]);
+    expect(window.VWO[0].length).toBe(2);
+  });
+
+  it('creates VWO array if it does not exist', () => {
+    delete window.VWO;
+    window.ppLib.vwo!.trackGoal(100);
+
+    expect(window.VWO).toBeDefined();
+    expect(window.VWO.length).toBe(1);
+  });
+
+  it('appends to existing VWO array', () => {
+    window.VWO = [['existing']];
+    window.ppLib.vwo!.trackGoal(100);
+
+    expect(window.VWO.length).toBe(2);
+    expect(window.VWO[1]).toEqual(['track.goalConversion', 100]);
+  });
+
+  it('tracks multiple goals', () => {
+    window.ppLib.vwo!.trackGoal(100);
+    window.ppLib.vwo!.trackGoal(200, 10);
+
+    expect(window.VWO.length).toBe(2);
+    expect(window.VWO[0]).toEqual(['track.goalConversion', 100]);
+    expect(window.VWO[1]).toEqual(['track.goalConversion', 200, 10]);
+  });
+
+  it('logs info message without revenue', () => {
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    window.ppLib.vwo!.trackGoal(200);
+
+    expect(logSpy).toHaveBeenCalledWith('info', expect.stringContaining('Goal tracked: 200'));
+  });
+
+  it('logs info message with revenue', () => {
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    window.ppLib.vwo!.trackGoal(200, 25.5);
+
+    expect(logSpy).toHaveBeenCalledWith('info', expect.stringContaining('revenue: 25.5'));
+  });
+
+  it('handles revenue of 0', () => {
+    window.ppLib.vwo!.trackGoal(100, 0);
+
+    expect(window.VWO[0]).toEqual(['track.goalConversion', 100, 0]);
+  });
+
+  it('handles errors gracefully', () => {
+    Object.defineProperty(window, 'VWO', {
+      get() { throw new Error('access denied'); },
+      set() { throw new Error('access denied'); },
+      configurable: true
+    });
+
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    window.ppLib.vwo!.trackGoal(100);
+
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('trackGoal error'), expect.any(Error));
+
+    delete window.VWO;
+  });
+});
+
+// =========================================================================
+// 12. DOM AUTO-TRACKING — Click
+// =========================================================================
+describe('DOM auto-tracking — Click', () => {
+  beforeEach(() => {
+    // Clean VWO artifacts from document.head
+    const oldStyle = document.getElementById('vwo-anti-fouc');
+    if (oldStyle) oldStyle.remove();
+    document.querySelectorAll('script[src*="visualwebsiteoptimizer"]').forEach(s => s.remove());
+
+    loadWithCommon('vwo');
+    window.ppLib.vwo!.configure({ accountId: '123' });
+  });
+
+  it('tracks goal on click of element with data-vwo-goal', () => {
+    document.body.innerHTML = '<button data-vwo-goal="200">Buy</button>';
+    window.ppLib.vwo!.init();
+
+    const btn = document.querySelector('button')!;
+    btn.click();
+
+    expect(window.VWO).toBeDefined();
+    expect(window.VWO[0]).toEqual(['track.goalConversion', 200]);
+  });
+
+  it('tracks goal with revenue from data-vwo-revenue', () => {
+    document.body.innerHTML = '<button data-vwo-goal="200" data-vwo-revenue="49.99">Buy</button>';
+    window.ppLib.vwo!.init();
+
+    document.querySelector('button')!.click();
+
+    expect(window.VWO[0]).toEqual(['track.goalConversion', 200, 49.99]);
+  });
+
+  it('ignores click on element with data-vwo-trigger="submit"', () => {
+    document.body.innerHTML = '<button data-vwo-goal="200" data-vwo-trigger="submit">Submit</button>';
+    window.ppLib.vwo!.init();
+
+    document.querySelector('button')!.click();
+
+    expect(window.VWO).toBeUndefined();
+  });
+
+  it('ignores click on element with data-vwo-trigger="view"', () => {
+    document.body.innerHTML = '<button data-vwo-goal="200" data-vwo-trigger="view">View</button>';
+    window.ppLib.vwo!.init();
+
+    document.querySelector('button')!.click();
+
+    expect(window.VWO).toBeUndefined();
+  });
+
+  it('tracks click on child element (event delegation)', () => {
+    document.body.innerHTML = '<div data-vwo-goal="300"><span id="child">Click me</span></div>';
+    window.ppLib.vwo!.init();
+
+    document.getElementById('child')!.click();
+
+    expect(window.VWO[0]).toEqual(['track.goalConversion', 300]);
+  });
+
+  it('ignores click on element without data-vwo-goal', () => {
+    document.body.innerHTML = '<button>No goal</button>';
+    window.ppLib.vwo!.init();
+
+    document.querySelector('button')!.click();
+
+    expect(window.VWO).toBeUndefined();
+  });
+
+  it('debounces rapid clicks on the same element', () => {
+    document.body.innerHTML = '<button data-vwo-goal="200">Buy</button>';
+    window.ppLib.vwo!.init();
+
+    const btn = document.querySelector('button')!;
+    btn.click();
+    btn.click();
+    btn.click();
+
+    expect(window.VWO.length).toBe(1);
+  });
+
+  it('tracks separate elements independently', () => {
+    document.body.innerHTML = '<button id="a" data-vwo-goal="100">A</button><button id="b" data-vwo-goal="200">B</button>';
+    window.ppLib.vwo!.init();
+
+    document.getElementById('a')!.click();
+    document.getElementById('b')!.click();
+
+    expect(window.VWO.length).toBe(2);
+    expect(window.VWO[0]).toEqual(['track.goalConversion', 100]);
+    expect(window.VWO[1]).toEqual(['track.goalConversion', 200]);
+  });
+
+  it('ignores invalid revenue value', () => {
+    document.body.innerHTML = '<button data-vwo-goal="200" data-vwo-revenue="abc">Buy</button>';
+    window.ppLib.vwo!.init();
+
+    document.querySelector('button')!.click();
+
+    expect(window.VWO[0]).toEqual(['track.goalConversion', 200]);
+  });
+
+  it('defaults trigger to click when data-vwo-trigger is absent', () => {
+    document.body.innerHTML = '<button data-vwo-goal="200">Buy</button>';
+    window.ppLib.vwo!.init();
+
+    document.querySelector('button')!.click();
+
+    expect(window.VWO.length).toBe(1);
+  });
+
+  it('works with custom attribute names', () => {
+    loadWithCommon('vwo');
+    window.ppLib.vwo!.configure({
+      accountId: '123',
+      attributes: { goal: 'data-goal', revenue: 'data-rev', trigger: 'data-trig' }
+    });
+    document.body.innerHTML = '<button data-goal="500" data-rev="10">Buy</button>';
+    window.ppLib.vwo!.init();
+
+    document.querySelector('button')!.click();
+
+    expect(window.VWO[0]).toEqual(['track.goalConversion', 500, 10]);
+  });
+});
+
+// =========================================================================
+// 13. DOM AUTO-TRACKING — Form submit
+// =========================================================================
+describe('DOM auto-tracking — Form submit', () => {
+  beforeEach(() => {
+    const oldStyle = document.getElementById('vwo-anti-fouc');
+    if (oldStyle) oldStyle.remove();
+    document.querySelectorAll('script[src*="visualwebsiteoptimizer"]').forEach(s => s.remove());
+
+    loadWithCommon('vwo');
+    window.ppLib.vwo!.configure({ accountId: '123' });
+  });
+
+  it('tracks goal on form submit with data-vwo-trigger="submit"', () => {
+    document.body.innerHTML = '<form data-vwo-goal="300" data-vwo-trigger="submit"><input type="text"></form>';
+    window.ppLib.vwo!.init();
+
+    const form = document.querySelector('form')!;
+    form.dispatchEvent(new Event('submit', { bubbles: true }));
+
+    expect(window.VWO).toBeDefined();
+    expect(window.VWO[0]).toEqual(['track.goalConversion', 300]);
+  });
+
+  it('tracks goal with revenue on form submit', () => {
+    document.body.innerHTML = '<form data-vwo-goal="300" data-vwo-trigger="submit" data-vwo-revenue="99.50"><input type="text"></form>';
+    window.ppLib.vwo!.init();
+
+    document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true }));
+
+    expect(window.VWO[0]).toEqual(['track.goalConversion', 300, 99.5]);
+  });
+
+  it('ignores form submit without data-vwo-trigger="submit"', () => {
+    document.body.innerHTML = '<form data-vwo-goal="300"><input type="text"></form>';
+    window.ppLib.vwo!.init();
+
+    document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true }));
+
+    expect(window.VWO).toBeUndefined();
+  });
+
+  it('ignores form without data-vwo-goal', () => {
+    document.body.innerHTML = '<form data-vwo-trigger="submit"><input type="text"></form>';
+    window.ppLib.vwo!.init();
+
+    document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true }));
+
+    expect(window.VWO).toBeUndefined();
+  });
+
+  it('debounces rapid form submits', () => {
+    document.body.innerHTML = '<form data-vwo-goal="300" data-vwo-trigger="submit"><input type="text"></form>';
+    window.ppLib.vwo!.init();
+
+    const form = document.querySelector('form')!;
+    form.dispatchEvent(new Event('submit', { bubbles: true }));
+    form.dispatchEvent(new Event('submit', { bubbles: true }));
+
+    expect(window.VWO.length).toBe(1);
+  });
+});
+
+// =========================================================================
+// 14. DOM AUTO-TRACKING — View (IntersectionObserver)
+// =========================================================================
+describe('DOM auto-tracking — View', () => {
+  let observedElements: Element[];
+  let observerCallback: IntersectionObserverCallback;
+  let mockObserver: { observe: ReturnType<typeof vi.fn>; unobserve: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> };
+  let ioConstructorArgs: { callback: any; options: any };
+
+  beforeEach(() => {
+    const oldStyle = document.getElementById('vwo-anti-fouc');
+    if (oldStyle) oldStyle.remove();
+    document.querySelectorAll('script[src*="visualwebsiteoptimizer"]').forEach(s => s.remove());
+
+    observedElements = [];
+    ioConstructorArgs = { callback: null, options: null };
+    mockObserver = {
+      observe: vi.fn(),
+      unobserve: vi.fn(),
+      disconnect: vi.fn()
+    };
+
+    // Use a class mock so `new IntersectionObserver(cb, opts)` returns a proper instance
+    (window as any).IntersectionObserver = class {
+      observe = vi.fn((el: Element) => { observedElements.push(el); });
+      unobserve = vi.fn();
+      disconnect = vi.fn();
+      constructor(cb: IntersectionObserverCallback, opts?: IntersectionObserverInit) {
+        observerCallback = cb;
+        ioConstructorArgs = { callback: cb, options: opts };
+        mockObserver = this as any;
+      }
+    };
+
+    loadWithCommon('vwo');
+    window.ppLib.vwo!.configure({ accountId: '123' });
+  });
+
+  afterEach(() => {
+    delete (window as any).IntersectionObserver;
+  });
+
+  it('observes elements with data-vwo-trigger="view"', () => {
+    document.body.innerHTML = '<div data-vwo-goal="400" data-vwo-trigger="view">Visible</div>';
+    window.ppLib.vwo!.init();
+
+    expect(mockObserver.observe).toHaveBeenCalledTimes(1);
+    expect(observedElements[0].getAttribute('data-vwo-goal')).toBe('400');
+  });
+
+  it('tracks goal when element becomes visible', () => {
+    document.body.innerHTML = '<div data-vwo-goal="400" data-vwo-trigger="view">Visible</div>';
+    window.ppLib.vwo!.init();
+
+    const el = document.querySelector('[data-vwo-goal]')!;
+    observerCallback([{ isIntersecting: true, target: el } as IntersectionObserverEntry], mockObserver as any);
+
+    expect(window.VWO).toBeDefined();
+    expect(window.VWO[0]).toEqual(['track.goalConversion', 400]);
+  });
+
+  it('unobserves element after tracking', () => {
+    document.body.innerHTML = '<div data-vwo-goal="400" data-vwo-trigger="view">Visible</div>';
+    window.ppLib.vwo!.init();
+
+    const el = document.querySelector('[data-vwo-goal]')!;
+    observerCallback([{ isIntersecting: true, target: el } as IntersectionObserverEntry], mockObserver as any);
+
+    expect(mockObserver.unobserve).toHaveBeenCalledWith(el);
+  });
+
+  it('ignores non-intersecting entries', () => {
+    document.body.innerHTML = '<div data-vwo-goal="400" data-vwo-trigger="view">Visible</div>';
+    window.ppLib.vwo!.init();
+
+    const el = document.querySelector('[data-vwo-goal]')!;
+    observerCallback([{ isIntersecting: false, target: el } as IntersectionObserverEntry], mockObserver as any);
+
+    expect(window.VWO).toBeUndefined();
+    expect(mockObserver.unobserve).not.toHaveBeenCalled();
+  });
+
+  it('does not observe elements without view trigger', () => {
+    document.body.innerHTML = '<div data-vwo-goal="400">No trigger</div>';
+    window.ppLib.vwo!.init();
+
+    expect(mockObserver.observe).not.toHaveBeenCalled();
+  });
+
+  it('observes multiple view-trigger elements', () => {
+    document.body.innerHTML = '<div data-vwo-goal="400" data-vwo-trigger="view">A</div><div data-vwo-goal="500" data-vwo-trigger="view">B</div>';
+    window.ppLib.vwo!.init();
+
+    expect(mockObserver.observe).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses threshold 0.5', () => {
+    document.body.innerHTML = '<div data-vwo-goal="400" data-vwo-trigger="view">Visible</div>';
+    window.ppLib.vwo!.init();
+
+    expect(ioConstructorArgs.options).toEqual({ threshold: 0.5 });
+  });
+
+  it('tracks view goal with revenue', () => {
+    document.body.innerHTML = '<div data-vwo-goal="400" data-vwo-trigger="view" data-vwo-revenue="75">Visible</div>';
+    window.ppLib.vwo!.init();
+
+    const el = document.querySelector('[data-vwo-goal]')!;
+    observerCallback([{ isIntersecting: true, target: el } as IntersectionObserverEntry], mockObserver as any);
+
+    expect(window.VWO[0]).toEqual(['track.goalConversion', 400, 75]);
+  });
+
+  it('scanViewGoals() re-scans DOM for new elements', () => {
+    window.ppLib.vwo!.init();
+    expect(mockObserver.observe).not.toHaveBeenCalled();
+
+    // Add element after init
+    document.body.innerHTML = '<div data-vwo-goal="600" data-vwo-trigger="view">Late</div>';
+    window.ppLib.vwo!.scanViewGoals();
+
+    expect(mockObserver.observe).toHaveBeenCalledTimes(1);
+  });
+
+  it('disconnects previous observer on re-scan', () => {
+    document.body.innerHTML = '<div data-vwo-goal="400" data-vwo-trigger="view">A</div>';
+    window.ppLib.vwo!.init();
+
+    const firstObserver = mockObserver;
+
+    document.body.innerHTML = '<div data-vwo-goal="500" data-vwo-trigger="view">B</div>';
+    window.ppLib.vwo!.scanViewGoals();
+
+    expect(firstObserver.disconnect).toHaveBeenCalled();
+  });
+
+  it('handles missing IntersectionObserver gracefully', () => {
+    delete (window as any).IntersectionObserver;
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+
+    document.body.innerHTML = '<div data-vwo-goal="400" data-vwo-trigger="view">Visible</div>';
+    window.ppLib.vwo!.init();
+
+    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('IntersectionObserver not available'));
+  });
+});
+
+// =========================================================================
+// 15. DEBOUNCE MAP PRUNING
+// =========================================================================
+describe('Debounce map pruning', () => {
+  beforeEach(() => {
+    const oldStyle = document.getElementById('vwo-anti-fouc');
+    if (oldStyle) oldStyle.remove();
+    document.querySelectorAll('script[src*="visualwebsiteoptimizer"]').forEach(s => s.remove());
+
+    loadWithCommon('vwo');
+    window.ppLib.vwo!.configure({ accountId: '123' });
+  });
+
+  it('prunes stale debounce entries after 100 writes', () => {
+    vi.useFakeTimers();
+
+    // Create 100 unique elements to trigger pruning
+    let html = '';
+    for (let i = 0; i < 101; i++) {
+      html += '<button id="btn' + i + '" data-vwo-goal="' + (100 + i) + '">B' + i + '</button>';
+    }
+    document.body.innerHTML = html;
+    window.ppLib.vwo!.init();
+
+    // Click first element at t=0
+    document.getElementById('btn0')!.click();
+    expect(window.VWO.length).toBe(1);
+
+    // Advance past debounce window
+    vi.advanceTimersByTime(400);
+
+    // Click 100 more unique elements to trigger pruning at count=100
+    for (let i = 1; i <= 100; i++) {
+      document.getElementById('btn' + i)!.click();
+    }
+
+    // The first element's debounce entry should be pruned; clicking it again should work
+    document.getElementById('btn0')!.click();
+    expect(window.VWO[window.VWO.length - 1]).toEqual(['track.goalConversion', 100]);
+
+    vi.useRealTimers();
+  });
+});
+
+// =========================================================================
+// 16. isFeatureEnabled()
 // =========================================================================
 describe('isFeatureEnabled()', () => {
   beforeEach(() => {
@@ -732,7 +1211,7 @@ describe('isFeatureEnabled()', () => {
 });
 
 // =========================================================================
-// 12. INIT ORCHESTRATION
+// 17. INIT ORCHESTRATION
 // =========================================================================
 describe('Init orchestration', () => {
   let originalLocation: Location;
@@ -839,10 +1318,37 @@ describe('Init orchestration', () => {
     const config = window.ppLib.vwo!.getConfig();
     expect(config.accountId).toBe('xyz');
   });
+
+  it('auto-enables VWO platform in event-source when event-source is loaded', () => {
+    loadWithCommon('event-source');
+    loadModule('vwo');
+
+    // Verify VWO platform starts disabled in event-source
+    expect(window.ppLib.eventSource!.getConfig().platforms.vwo.enabled).toBe(false);
+
+    window.ppLib.vwo!.configure({ accountId: '999' });
+    window.ppLib.vwo!.init();
+
+    // VWO init should have auto-enabled the VWO platform in event-source
+    expect(window.ppLib.eventSource!.getConfig().platforms.vwo.enabled).toBe(true);
+  });
+
+  it('does not error when event-source is not loaded', () => {
+    loadWithCommon('vwo');
+
+    // Ensure event-source is not loaded
+    delete window.ppLib.eventSource;
+
+    window.ppLib.vwo!.configure({ accountId: '888' });
+
+    expect(() => {
+      window.ppLib.vwo!.init();
+    }).not.toThrow();
+  });
 });
 
 // =========================================================================
-// 13. ERROR HANDLING
+// 18. ERROR HANDLING
 // =========================================================================
 describe('Error handling', () => {
   beforeEach(() => {

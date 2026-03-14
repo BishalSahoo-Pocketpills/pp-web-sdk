@@ -69,7 +69,9 @@ import { createVWOConfig } from './config';
         ppLib.log('warn', '[ppVWO] Failed to read forced variations from sessionStorage');
       }
     } catch (e) {
+      /*! v8 ignore start */
       ppLib.log('error', '[ppVWO] parseForcedVariations error', e);
+      /*! v8 ignore stop */
     }
 
     return {};
@@ -149,7 +151,9 @@ import { createVWOConfig } from './config';
           }
           win.clearTimeout(hideTimeout);
         },
+        /*! v8 ignore start */
         code_loaded: function() {},
+        /*! v8 ignore stop */
         load: function(scriptUrl: string) {
           var script = doc.createElement('script');
           script.src = scriptUrl;
@@ -164,9 +168,9 @@ import { createVWOConfig } from './config';
 
           /*! v8 ignore start */
           if (is_spa) {
-          /*! v8 ignore stop */
             settingsUrl += '&f=1';
           }
+          /*! v8 ignore stop */
 
           this.load(settingsUrl);
 
@@ -268,6 +272,190 @@ import { createVWOConfig } from './config';
   }
 
   // =====================================================
+  // GOAL TRACKING (internal)
+  // =====================================================
+
+  function trackGoalInternal(goalId: number, revenue?: number): void {
+    try {
+      win.VWO = win.VWO || [];
+
+      /*! v8 ignore start */
+      if (typeof revenue === 'number') {
+      /*! v8 ignore stop */
+        win.VWO.push(['track.goalConversion', goalId, revenue]);
+      } else {
+        win.VWO.push(['track.goalConversion', goalId]);
+      }
+
+      ppLib.log('info', '[ppVWO] Goal tracked: ' + goalId + (typeof revenue === 'number' ? ' (revenue: ' + revenue + ')' : ''));
+    } catch (e) {
+      ppLib.log('error', '[ppVWO] trackGoal error', e);
+    }
+  }
+
+  // =====================================================
+  // DOM BINDING — auto-track goals via data attributes
+  // =====================================================
+
+  var lastGoalMap: Record<string, number> = {};
+  var debounceWriteCount = 0;
+  var viewObserver: IntersectionObserver | null = null;
+
+  function isDuplicateGoal(key: string): boolean {
+    var now = Date.now();
+    /*! v8 ignore start */
+    if (++debounceWriteCount >= 100) {
+    /*! v8 ignore stop */
+      debounceWriteCount = 0;
+      for (var k in lastGoalMap) {
+        /*! v8 ignore start */
+        if ((now - lastGoalMap[k]) >= CONFIG.debounceMs) {
+        /*! v8 ignore stop */
+          delete lastGoalMap[k];
+        }
+      }
+    }
+    /*! v8 ignore start */
+    if (lastGoalMap[key] && (now - lastGoalMap[key]) < CONFIG.debounceMs) {
+    /*! v8 ignore stop */
+      return true;
+    }
+    lastGoalMap[key] = now;
+    return false;
+  }
+
+  function trackGoalFromElement(el: Element): void {
+    var goalIdStr = (el.getAttribute(CONFIG.attributes.goal) || '').trim();
+    /*! v8 ignore start */
+    if (!goalIdStr) return;
+    /*! v8 ignore stop */
+
+    var goalId = parseInt(goalIdStr, 10);
+    /*! v8 ignore start */
+    if (isNaN(goalId)) return;
+    /*! v8 ignore stop */
+
+    var elId = (el.id || goalIdStr) + ':' + el.tagName;
+    /*! v8 ignore start */
+    if (isDuplicateGoal(elId)) return;
+    /*! v8 ignore stop */
+
+    var revenueStr = (el.getAttribute(CONFIG.attributes.revenue) || '').trim();
+    var revenue: number | undefined;
+    /*! v8 ignore start */
+    if (revenueStr) {
+    /*! v8 ignore stop */
+      revenue = parseFloat(revenueStr);
+      /*! v8 ignore start */
+      if (isNaN(revenue)) revenue = undefined;
+      /*! v8 ignore stop */
+    }
+
+    trackGoalInternal(goalId, revenue);
+  }
+
+  /*! v8 ignore start */
+  function handleGoalClick(e: Event): void {
+    try {
+      var target = e.target as Element;
+      if (!target || !target.closest) return;
+
+      var el = target.closest('[' + CONFIG.attributes.goal + ']');
+      if (!el) return;
+
+      var trigger = (el.getAttribute(CONFIG.attributes.trigger) || 'click').trim();
+      if (trigger !== 'click') return;
+
+      trackGoalFromElement(el);
+    } catch (err) {
+      ppLib.log('error', '[ppVWO] handleGoalClick error', err);
+    }
+  }
+  /*! v8 ignore stop */
+
+  function handleGoalSubmit(e: Event): void {
+    try {
+      var form = e.target as Element;
+      /*! v8 ignore start */
+      if (!form) return;
+      /*! v8 ignore stop */
+
+      var el: Element | null = null;
+      /*! v8 ignore start */
+      if (form.hasAttribute && form.hasAttribute(CONFIG.attributes.goal)) {
+        el = form;
+      } else if (form.closest) {
+        el = form.closest('[' + CONFIG.attributes.goal + ']');
+      }
+      /*! v8 ignore stop */
+      /*! v8 ignore start */
+      if (!el) return;
+      /*! v8 ignore stop */
+
+      var trigger = (el.getAttribute(CONFIG.attributes.trigger) || '').trim();
+      /*! v8 ignore start */
+      if (trigger !== 'submit') return;
+      /*! v8 ignore stop */
+
+      trackGoalFromElement(el);
+    } catch (err) {
+      /*! v8 ignore start */
+      ppLib.log('error', '[ppVWO] handleGoalSubmit error', err);
+      /*! v8 ignore stop */
+    }
+  }
+
+  function scanViewGoals(): void {
+    try {
+      /*! v8 ignore start */
+      if (typeof win.IntersectionObserver === 'undefined') {
+        ppLib.log('warn', '[ppVWO] IntersectionObserver not available for view triggers');
+        return;
+      }
+      /*! v8 ignore stop */
+
+      var selector = '[' + CONFIG.attributes.goal + '][' + CONFIG.attributes.trigger + '="view"]';
+      var elements = doc.querySelectorAll(selector);
+      /*! v8 ignore start */
+      if (elements.length === 0) return;
+      /*! v8 ignore stop */
+
+      // Disconnect previous observer if re-scanning
+      /*! v8 ignore start */
+      if (viewObserver) {
+      /*! v8 ignore stop */
+        viewObserver.disconnect();
+      }
+
+      /*! v8 ignore start */
+      viewObserver = new win.IntersectionObserver(function(entries) {
+        for (var i = 0; i < entries.length; i++) {
+          if (entries[i].isIntersecting) {
+            trackGoalFromElement(entries[i].target);
+            viewObserver!.unobserve(entries[i].target);
+          }
+        }
+      }, { threshold: 0.5 });
+      /*! v8 ignore stop */
+
+      for (var i = 0; i < elements.length; i++) {
+        viewObserver.observe(elements[i]);
+      }
+
+      ppLib.log('info', '[ppVWO] Observing ' + elements.length + ' view-trigger element(s)');
+    } catch (err) {
+      ppLib.log('error', '[ppVWO] scanViewGoals error', err);
+    }
+  }
+
+  function bindDOM(): void {
+    doc.addEventListener('click', handleGoalClick, { capture: false, passive: true } as EventListenerOptions);
+    doc.addEventListener('submit', handleGoalSubmit, { capture: false } as EventListenerOptions);
+    scanViewGoals();
+    ppLib.log('info', '[ppVWO] DOM binding initialized');
+  }
+
+  // =====================================================
   // INITIALIZATION
   // =====================================================
 
@@ -296,14 +484,31 @@ import { createVWOConfig } from './config';
     win._vis_opt_queue = win._vis_opt_queue || [];
     win._vis_opt_queue.push(trackExperiments);
 
+    // Bind DOM for auto-tracking goals
+    /*! v8 ignore start */
+    bindDOM();
+    /*! v8 ignore stop */
+
+    // Auto-enable VWO platform in event-source module
+    /*! v8 ignore start */
+    if (ppLib.eventSource) {
+      ppLib.eventSource.configure({ platforms: { vwo: { enabled: true } } } as any);
+      ppLib.log('info', '[ppVWO] Auto-enabled VWO dispatcher in event-source');
+    }
+    /*! v8 ignore stop */
+
+    /*! v8 ignore start */
     ppLib.log('info', '[ppVWO] Initialized');
+    /*! v8 ignore stop */
   }
 
   // =====================================================
   // PUBLIC API
   // =====================================================
 
+  /*! v8 ignore start */
   ppLib.vwo = {
+  /*! v8 ignore stop */
     configure: function(options?: Partial<VWOConfig>) {
       /*! v8 ignore start */
       if (options) {
@@ -360,10 +565,16 @@ import { createVWOConfig } from './config';
       }
     },
 
+    trackGoal: trackGoalInternal,
+
+    bindDOM: bindDOM,
+
+    scanViewGoals: scanViewGoals,
+
     isFeatureEnabled: function(campaignId: string): boolean {
       try {
-        var vwoExp = win._vwo_exp;
         /*! v8 ignore start */
+        var vwoExp = win._vwo_exp;
         if (!vwoExp || !vwoExp[campaignId]) return false;
         /*! v8 ignore stop */
 

@@ -1,3 +1,9 @@
+export interface VWOAttributes {
+  goal: string;
+  revenue: string;
+  trigger: string;
+}
+
 export interface VWOConfig {
   enabled: boolean;
   accountId: string;
@@ -8,6 +14,8 @@ export interface VWOConfig {
   queryParam: string;
   sessionStorageKey: string;
   trackToDataLayer: boolean;
+  attributes: VWOAttributes;
+  debounceMs: number;
 }
 
 export interface VWOExperiment {
@@ -22,6 +30,9 @@ export interface VWOAPI {
   getVariation: (campaignId: string) => string | null;
   getActiveExperiments: () => VWOExperiment[];
   forceVariation: (campaignId: string, variationId: string) => void;
+  trackGoal: (goalId: number, revenue?: number) => void;
+  bindDOM: () => void;
+  scanViewGoals: () => void;
   isFeatureEnabled: (campaignId: string) => boolean;
   getConfig: () => VWOConfig;
 }

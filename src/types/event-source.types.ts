@@ -1,6 +1,7 @@
 export interface EventSourcePlatforms {
   mixpanel: { enabled: boolean };
   gtm: { enabled: boolean };
+  vwo: { enabled: boolean };
 }
 
 export interface EventSourceConfig {
@@ -13,6 +14,8 @@ export interface EventSourceConfig {
   gtmEventName: string;
   mixpanelEventName: string;
   includePageContext: boolean;
+  vwoGoalAttribute: string;
+  vwoRevenueAttribute: string;
 }
 
 export interface EventSourceData {
@@ -28,6 +31,8 @@ export interface EventSourceData {
   page_title?: string;
   timestamp: string;
   interaction_type?: string;
+  vwo_goal_id?: string;
+  vwo_revenue?: string;
   [key: string]: string | undefined;
 }
 

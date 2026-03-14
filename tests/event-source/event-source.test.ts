@@ -1344,4 +1344,175 @@ describe('event-source module', () => {
       expect(gtmEntry.baz).toBe('123');
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // VWO DISPATCHER
+  // ---------------------------------------------------------------------------
+
+  describe('VWO dispatcher', () => {
+
+    beforeEach(() => {
+      loadWithCommon('event-source');
+    });
+
+    it('does not send to VWO when platform is disabled (default)', () => {
+      const mockTrackGoal = vi.fn();
+      window.ppLib.vwo = { trackGoal: mockTrackGoal } as any;
+
+      const btn = document.createElement('button');
+      btn.setAttribute('data-event-source', 'vwo_disabled_test');
+      btn.setAttribute('data-vwo-goal', '42');
+      btn.textContent = 'Click';
+      document.body.appendChild(btn);
+
+      window.ppLib.eventSource.trackElement(btn);
+      expect(mockTrackGoal).not.toHaveBeenCalled();
+    });
+
+    it('sends to VWO when enabled and element has data-vwo-goal', () => {
+      const mockTrackGoal = vi.fn();
+      window.ppLib.vwo = { trackGoal: mockTrackGoal } as any;
+      window.ppLib.eventSource.configure({ platforms: { vwo: { enabled: true } } });
+
+      const btn = document.createElement('button');
+      btn.setAttribute('data-event-source', 'vwo_test');
+      btn.setAttribute('data-vwo-goal', '42');
+      btn.textContent = 'Sign Up';
+      document.body.appendChild(btn);
+
+      window.ppLib.eventSource.trackElement(btn);
+      expect(mockTrackGoal).toHaveBeenCalledWith(42, undefined);
+    });
+
+    it('sends with revenue when data-vwo-revenue is present', () => {
+      const mockTrackGoal = vi.fn();
+      window.ppLib.vwo = { trackGoal: mockTrackGoal } as any;
+      window.ppLib.eventSource.configure({ platforms: { vwo: { enabled: true } } });
+
+      const btn = document.createElement('button');
+      btn.setAttribute('data-event-source', 'vwo_revenue_test');
+      btn.setAttribute('data-vwo-goal', '10');
+      btn.setAttribute('data-vwo-revenue', '29.99');
+      btn.textContent = 'Buy';
+      document.body.appendChild(btn);
+
+      window.ppLib.eventSource.trackElement(btn);
+      expect(mockTrackGoal).toHaveBeenCalledWith(10, 29.99);
+    });
+
+    it('does not send when element has no data-vwo-goal attribute', () => {
+      const mockTrackGoal = vi.fn();
+      window.ppLib.vwo = { trackGoal: mockTrackGoal } as any;
+      window.ppLib.eventSource.configure({ platforms: { vwo: { enabled: true } } });
+
+      const btn = document.createElement('button');
+      btn.setAttribute('data-event-source', 'no_vwo_goal');
+      btn.textContent = 'No Goal';
+      document.body.appendChild(btn);
+
+      window.ppLib.eventSource.trackElement(btn);
+      expect(mockTrackGoal).not.toHaveBeenCalled();
+    });
+
+    it('does not send when goal ID is non-numeric', () => {
+      const mockTrackGoal = vi.fn();
+      window.ppLib.vwo = { trackGoal: mockTrackGoal } as any;
+      window.ppLib.eventSource.configure({ platforms: { vwo: { enabled: true } } });
+
+      const btn = document.createElement('button');
+      btn.setAttribute('data-event-source', 'bad_goal');
+      btn.setAttribute('data-vwo-goal', 'not-a-number');
+      btn.textContent = 'Bad';
+      document.body.appendChild(btn);
+
+      window.ppLib.eventSource.trackElement(btn);
+      expect(mockTrackGoal).not.toHaveBeenCalled();
+    });
+
+    it('logs warning when ppLib.vwo is not available', () => {
+      delete window.ppLib.vwo;
+      window.ppLib.eventSource.configure({ platforms: { vwo: { enabled: true } } });
+      const logSpy = vi.spyOn(window.ppLib, 'log');
+
+      const btn = document.createElement('button');
+      btn.setAttribute('data-event-source', 'no_vwo_module');
+      btn.setAttribute('data-vwo-goal', '5');
+      btn.textContent = 'No VWO';
+      document.body.appendChild(btn);
+
+      window.ppLib.eventSource.trackElement(btn);
+      expect(logSpy).toHaveBeenCalledWith('warn', '[ppEventSource] VWO module not available');
+    });
+
+    it('does not send when ppLib.vwo.trackGoal is not available', () => {
+      window.ppLib.vwo = {} as any;
+      window.ppLib.eventSource.configure({ platforms: { vwo: { enabled: true } } });
+      const logSpy = vi.spyOn(window.ppLib, 'log');
+
+      const btn = document.createElement('button');
+      btn.setAttribute('data-event-source', 'no_trackGoal');
+      btn.setAttribute('data-vwo-goal', '7');
+      btn.textContent = 'No trackGoal';
+      document.body.appendChild(btn);
+
+      window.ppLib.eventSource.trackElement(btn);
+      expect(logSpy).toHaveBeenCalledWith('warn', '[ppEventSource] VWO module not available');
+    });
+
+    it('sanitizes goal ID and revenue values', () => {
+      const mockTrackGoal = vi.fn();
+      window.ppLib.vwo = { trackGoal: mockTrackGoal } as any;
+      window.ppLib.eventSource.configure({ platforms: { vwo: { enabled: true } } });
+
+      const btn = document.createElement('button');
+      btn.setAttribute('data-event-source', 'sanitize_vwo');
+      btn.setAttribute('data-vwo-goal', '  99  ');
+      btn.setAttribute('data-vwo-revenue', '  15.50  ');
+      btn.textContent = 'Sanitize';
+      document.body.appendChild(btn);
+
+      window.ppLib.eventSource.trackElement(btn);
+      expect(mockTrackGoal).toHaveBeenCalledWith(99, 15.5);
+    });
+
+    it('treats non-numeric revenue as undefined', () => {
+      const mockTrackGoal = vi.fn();
+      window.ppLib.vwo = { trackGoal: mockTrackGoal } as any;
+      window.ppLib.eventSource.configure({ platforms: { vwo: { enabled: true } } });
+
+      const btn = document.createElement('button');
+      btn.setAttribute('data-event-source', 'bad_revenue');
+      btn.setAttribute('data-vwo-goal', '20');
+      btn.setAttribute('data-vwo-revenue', 'abc');
+      btn.textContent = 'Bad Revenue';
+      document.body.appendChild(btn);
+
+      window.ppLib.eventSource.trackElement(btn);
+      expect(mockTrackGoal).toHaveBeenCalledWith(20, undefined);
+    });
+
+    it('works with trackElement() for manual tracking', () => {
+      const mockTrackGoal = vi.fn();
+      window.ppLib.vwo = { trackGoal: mockTrackGoal } as any;
+      window.ppLib.eventSource.configure({ platforms: { vwo: { enabled: true } } });
+
+      const btn = document.createElement('button');
+      btn.setAttribute('data-event-source', 'manual_vwo');
+      btn.setAttribute('data-vwo-goal', '55');
+      btn.textContent = 'Manual';
+      document.body.appendChild(btn);
+
+      window.ppLib.eventSource.trackElement(btn);
+      expect(mockTrackGoal).toHaveBeenCalledWith(55, undefined);
+    });
+
+    it('works with trackCustom() — no VWO goal, skipped', () => {
+      const mockTrackGoal = vi.fn();
+      window.ppLib.vwo = { trackGoal: mockTrackGoal } as any;
+      window.ppLib.eventSource.configure({ platforms: { vwo: { enabled: true } } });
+
+      window.ppLib.eventSource.trackCustom('custom_no_vwo', { action: 'test' });
+      expect(mockTrackGoal).not.toHaveBeenCalled();
+    });
+  });
 });
