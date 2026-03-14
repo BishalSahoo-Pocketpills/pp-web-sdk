@@ -162,7 +162,7 @@ import { createVWOConfig } from './config';
           doc.head.appendChild(script);
         },
         init: function() {
-          var settingsUrl = 'https://app.vwo.com/j.php?a=' + account_id +
+          var settingsUrl = 'https://dev.visualwebsiteoptimizer.com/j.php?a=' + account_id +
             '&u=' + encodeURIComponent(doc.URL) +
             '&r=' + Math.random();
 
