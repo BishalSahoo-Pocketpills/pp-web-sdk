@@ -167,7 +167,7 @@ describe('init() guards', () => {
 describe('SmartCode injection', () => {
   beforeEach(() => {
     // Clean VWO artifacts from document.head (setup.ts only clears body)
-    const oldStyle = document.getElementById('vwo-anti-fouc');
+    const oldStyle = document.getElementById('_vis_opt_path_hides');
     if (oldStyle) oldStyle.remove();
     document.querySelectorAll('script[src*="visualwebsiteoptimizer.com"]').forEach(s => s.remove());
 
@@ -178,9 +178,9 @@ describe('SmartCode injection', () => {
   it('injects anti-FOUC style element', () => {
     window.ppLib.vwo!.init();
 
-    const style = document.getElementById('vwo-anti-fouc');
+    const style = document.getElementById('_vis_opt_path_hides');
     expect(style).not.toBeNull();
-    expect(style!.textContent).toContain('opacity: 0');
+    expect(style!.textContent).toContain('opacity:0');
   });
 
   it('injects VWO script with correct account ID', () => {
@@ -197,11 +197,17 @@ describe('SmartCode injection', () => {
 
     expect(window._vwo_code).toBeDefined();
     expect(typeof window._vwo_code.finish).toBe('function');
+    expect(typeof window._vwo_code.finished).toBe('function');
     expect(typeof window._vwo_code.load).toBe('function');
     expect(typeof window._vwo_code.init).toBe('function');
     expect(typeof window._vwo_code.library_tolerance).toBe('function');
     expect(typeof window._vwo_code.use_existing_jquery).toBe('function');
     expect(typeof window._vwo_code.code_loaded).toBe('function');
+  });
+
+  it('sets window._vwo_settings_timer', () => {
+    window.ppLib.vwo!.init();
+    expect(window._vwo_settings_timer).toBeDefined();
   });
 
   it('use_existing_jquery returns false', () => {
@@ -218,7 +224,7 @@ describe('SmartCode injection', () => {
     window.ppLib.vwo!.configure({ hideElement: '#content' });
     window.ppLib.vwo!.init();
 
-    const style = document.getElementById('vwo-anti-fouc');
+    const style = document.getElementById('_vis_opt_path_hides');
     expect(style!.textContent).toContain('#content');
   });
 
@@ -231,74 +237,64 @@ describe('SmartCode injection', () => {
     expect(vwoScript!.src).toContain('f=1');
   });
 
-  it('does not add f=1 when isSPA is false', () => {
+  it('includes f=0 when isSPA is false', () => {
     window.ppLib.vwo!.init();
 
     const scripts = document.querySelectorAll('script');
     const vwoScript = Array.from(scripts).find(s => s.src.includes('visualwebsiteoptimizer.com'));
-    expect(vwoScript!.src).not.toContain('f=1');
-  });
-
-  it('script is loaded async', () => {
-    window.ppLib.vwo!.init();
-
-    const scripts = document.querySelectorAll('script');
-    const vwoScript = Array.from(scripts).find(s => s.src.includes('visualwebsiteoptimizer.com'));
-    expect(vwoScript!.async).toBe(true);
+    expect(vwoScript!.src).toContain('f=0');
   });
 
   it('finish() removes anti-FOUC style when not SPA', () => {
     window.ppLib.vwo!.init();
 
-    const styleBefore = document.getElementById('vwo-anti-fouc');
+    const styleBefore = document.getElementById('_vis_opt_path_hides');
     expect(styleBefore).not.toBeNull();
 
     window._vwo_code.finish();
 
-    const styleAfter = document.getElementById('vwo-anti-fouc');
+    const styleAfter = document.getElementById('_vis_opt_path_hides');
     expect(styleAfter).toBeNull();
   });
 
-  it('finish() does not remove anti-FOUC style when SPA', () => {
-    window.ppLib.vwo!.configure({ isSPA: true });
+  it('finish() is idempotent — second call is a no-op', () => {
     window.ppLib.vwo!.init();
 
     window._vwo_code.finish();
+    expect(document.getElementById('_vis_opt_path_hides')).toBeNull();
+    expect(window._vwo_code.finished()).toBe(true);
 
-    const style = document.getElementById('vwo-anti-fouc');
-    expect(style).not.toBeNull();
+    // Second call should not throw
+    window._vwo_code.finish();
+    expect(window._vwo_code.finished()).toBe(true);
   });
 
   it('timeout removes anti-FOUC style if VWO does not load', () => {
     vi.useFakeTimers();
     window.ppLib.vwo!.init();
 
-    const styleBefore = document.getElementById('vwo-anti-fouc');
+    const styleBefore = document.getElementById('_vis_opt_path_hides');
     expect(styleBefore).not.toBeNull();
 
     vi.advanceTimersByTime(2000);
 
-    const styleAfter = document.getElementById('vwo-anti-fouc');
+    const styleAfter = document.getElementById('_vis_opt_path_hides');
     expect(styleAfter).toBeNull();
 
     vi.useRealTimers();
   });
 
-  it('finish() clears the timeout to prevent double removal', () => {
+  it('timeout calls finish() which is safe after manual finish()', () => {
     vi.useFakeTimers();
     window.ppLib.vwo!.init();
 
-    // finish() clears the hide timeout
+    // Manual finish() first
     window._vwo_code.finish();
+    expect(window._vwo_code.finished()).toBe(true);
 
-    const logSpy = vi.spyOn(window.ppLib, 'log');
-
-    // Advancing past settingsTolerance should not warn again
+    // Timeout fires but finish() is idempotent — no error
     vi.advanceTimersByTime(2000);
-
-    // The timeout warn should not fire because finish() cleared it
-    const warnCalls = logSpy.mock.calls.filter(c => c[0] === 'warn' && String(c[1]).includes('timeout'));
-    expect(warnCalls.length).toBe(0);
+    expect(window._vwo_code.finished()).toBe(true);
 
     vi.useRealTimers();
   });
@@ -792,7 +788,7 @@ describe('trackGoal()', () => {
 describe('DOM auto-tracking — Click', () => {
   beforeEach(() => {
     // Clean VWO artifacts from document.head
-    const oldStyle = document.getElementById('vwo-anti-fouc');
+    const oldStyle = document.getElementById('_vis_opt_path_hides');
     if (oldStyle) oldStyle.remove();
     document.querySelectorAll('script[src*="visualwebsiteoptimizer.com"]').forEach(s => s.remove());
 
@@ -918,7 +914,7 @@ describe('DOM auto-tracking — Click', () => {
 // =========================================================================
 describe('DOM auto-tracking — Form submit', () => {
   beforeEach(() => {
-    const oldStyle = document.getElementById('vwo-anti-fouc');
+    const oldStyle = document.getElementById('_vis_opt_path_hides');
     if (oldStyle) oldStyle.remove();
     document.querySelectorAll('script[src*="visualwebsiteoptimizer.com"]').forEach(s => s.remove());
 
@@ -986,7 +982,7 @@ describe('DOM auto-tracking — View', () => {
   let ioConstructorArgs: { callback: any; options: any };
 
   beforeEach(() => {
-    const oldStyle = document.getElementById('vwo-anti-fouc');
+    const oldStyle = document.getElementById('_vis_opt_path_hides');
     if (oldStyle) oldStyle.remove();
     document.querySelectorAll('script[src*="visualwebsiteoptimizer.com"]').forEach(s => s.remove());
 
@@ -1128,7 +1124,7 @@ describe('DOM auto-tracking — View', () => {
 // =========================================================================
 describe('Debounce map pruning', () => {
   beforeEach(() => {
-    const oldStyle = document.getElementById('vwo-anti-fouc');
+    const oldStyle = document.getElementById('_vis_opt_path_hides');
     if (oldStyle) oldStyle.remove();
     document.querySelectorAll('script[src*="visualwebsiteoptimizer.com"]').forEach(s => s.remove());
 

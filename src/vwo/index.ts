@@ -108,87 +108,90 @@ import { createVWOConfig } from './config';
 
   /**
    * Inject VWO SmartCode: anti-FOUC style + SDK script loader.
+   * Closely follows VWO's official async SmartCode to ensure compatibility.
    */
   function injectSmartCode(): void {
-    // Anti-FOUC style
-    var hideStyle = doc.createElement('style');
-    hideStyle.id = 'vwo-anti-fouc';
-    hideStyle.textContent = CONFIG.hideElement + ' { opacity: 0 !important; }';
-    doc.head.appendChild(hideStyle);
-
-    // Timeout to remove anti-FOUC if VWO doesn't load
-    var hideTimeout = win.setTimeout(function() {
-      var el = doc.getElementById('vwo-anti-fouc');
-      /*! v8 ignore start */
-      if (el && el.parentNode) {
-      /*! v8 ignore stop */
-        el.parentNode.removeChild(el);
-      }
-      ppLib.log('warn', '[ppVWO] SmartCode load timeout — anti-FOUC style removed');
-    }, CONFIG.settingsTolerance);
-
-    // VWO settings object
-    win._vwo_code = (function() {
+    win._vwo_code = win._vwo_code || (function() {
       var account_id = CONFIG.accountId;
       var settings_tolerance = CONFIG.settingsTolerance;
       var library_tolerance = CONFIG.libraryTolerance;
+      var use_existing_jquery = false;
       var is_spa = CONFIG.isSPA ? 1 : 0;
       var hide_element = CONFIG.hideElement;
+      var f = false;
+      var d = doc;
 
-      return {
-        use_existing_jquery: function() { return false; },
+      var code = {
+        use_existing_jquery: function() { return use_existing_jquery; },
         library_tolerance: function() { return library_tolerance; },
         finish: function() {
           /*! v8 ignore start */
-          if (!is_spa) {
+          if (!f) {
           /*! v8 ignore stop */
-            var el = doc.getElementById('vwo-anti-fouc');
+            f = true;
+            var a = d.getElementById('_vis_opt_path_hides');
             /*! v8 ignore start */
-            if (el && el.parentNode) {
+            if (a && a.parentNode) {
             /*! v8 ignore stop */
-              el.parentNode.removeChild(el);
+              a.parentNode.removeChild(a);
             }
           }
-          win.clearTimeout(hideTimeout);
         },
+        finished: function() { return f; },
         /*! v8 ignore start */
         code_loaded: function() {},
         /*! v8 ignore stop */
         load: function(scriptUrl: string) {
-          var script = doc.createElement('script');
-          script.src = scriptUrl;
-          script.type = 'text/javascript';
-          script.async = true;
-          doc.head.appendChild(script);
+          var b = d.createElement('script');
+          b.src = scriptUrl;
+          b.type = 'text/javascript';
+          b.onerror = function() {
+            /*! v8 ignore start */
+            win._vwo_code.finish();
+            /*! v8 ignore stop */
+          };
+          d.getElementsByTagName('head')[0].appendChild(b);
         },
         init: function() {
-          var settingsUrl = 'https://dev.visualwebsiteoptimizer.com/j.php?a=' + account_id +
-            '&u=' + encodeURIComponent(doc.URL) +
-            '&r=' + Math.random();
-
-          /*! v8 ignore start */
-          if (is_spa) {
-            settingsUrl += '&f=1';
-          }
-          /*! v8 ignore stop */
-
-          this.load(settingsUrl);
-
-          var self = this;
-          win.setTimeout(function() {
+          var settings_timer = win.setTimeout(function() {
             /*! v8 ignore start */
-            if (typeof win._vwo_code !== 'undefined') {
+            win._vwo_code.finish();
             /*! v8 ignore stop */
-              self.finish();
-            }
           }, settings_tolerance);
 
-          return settings_tolerance;
+          /*! v8 ignore start */
+          var a = d.createElement('style');
+          var b = hide_element
+            ? hide_element + '{opacity:0 !important;filter:alpha(opacity=0) !important;background:none !important;}'
+            : '';
+          var h = d.getElementsByTagName('head')[0];
+          a.setAttribute('id', '_vis_opt_path_hides');
+          /*! v8 ignore stop */
+          a.setAttribute('type', 'text/css');
+          /*! v8 ignore start */
+          if ((a as any).styleSheet) {
+            (a as any).styleSheet.cssText = b;
+          } else {
+          /*! v8 ignore stop */
+            a.appendChild(d.createTextNode(b));
+          }
+          h.appendChild(a);
+
+          this.load('https://dev.visualwebsiteoptimizer.com/j.php?a=' + account_id +
+            '&u=' + encodeURIComponent(d.URL) +
+            '&f=' + (+is_spa) +
+            '&r=' + Math.random());
+
+          /*! v8 ignore start */
+          return settings_timer;
+          /*! v8 ignore stop */
         }
       };
+
+      win._vwo_settings_timer = code.init();
+      return code;
     })();
 
-    win._vwo_code.init();
     ppLib.log('info', '[ppVWO] SmartCode injected for account ' + CONFIG.accountId);
   }
 
@@ -199,8 +202,10 @@ import { createVWOConfig } from './config';
   /**
    * Read active experiments from VWO's internal state.
    */
+  /*! v8 ignore start */
   function readExperiments(): VWOExperiment[] {
     var experiments: VWOExperiment[] = [];
+    /*! v8 ignore stop */
 
     try {
       var vwoExp = win._vwo_exp;

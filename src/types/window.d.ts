@@ -21,6 +21,7 @@ declare global {
     _vwo_exp_ids: string[];
     _vis_opt_queue: Array<() => void>;
     _vwo_code: any;
+    _vwo_settings_timer: any;
     _vis_opt_set_combination: (variationId: number, campaignId: number) => void;
     VWO: any[];
   }
