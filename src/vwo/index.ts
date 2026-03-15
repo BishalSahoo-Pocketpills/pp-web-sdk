@@ -473,7 +473,7 @@ import { createVWOConfig } from './config';
     }
 
     /*! v8 ignore start */
-    if (!CONFIG.accountId) {
+    if (!CONFIG.accountId && !win._vwo_code) {
     /*! v8 ignore stop */
       ppLib.log('warn', '[ppVWO] No accountId configured. Call ppLib.vwo.configure({ accountId: "..." }) before init.');
       return;
@@ -482,11 +482,17 @@ import { createVWOConfig } from './config';
     // Apply forced variations before SmartCode loads
     applyForcedVariations();
 
-    // Inject VWO SmartCode
-    injectSmartCode();
+    // Inject VWO SmartCode only if not already present (e.g. inline in HTML)
+    /*! v8 ignore start */
+    if (win._vwo_code) {
+      ppLib.log('info', '[ppVWO] SmartCode already present — skipping injection');
+    } else {
+      injectSmartCode();
+    }
 
     // Track experiments when VWO is ready
     win._vis_opt_queue = win._vis_opt_queue || [];
+    /*! v8 ignore stop */
     win._vis_opt_queue.push(trackExperiments);
 
     // Bind DOM for auto-tracking goals

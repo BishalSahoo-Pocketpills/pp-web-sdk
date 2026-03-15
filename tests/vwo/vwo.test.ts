@@ -159,6 +159,55 @@ describe('init() guards', () => {
     const scripts = document.querySelectorAll('script[src*="visualwebsiteoptimizer.com"]');
     expect(scripts.length).toBe(0);
   });
+
+  it('skips injection when _vwo_code already exists (inline SmartCode)', () => {
+    loadWithCommon('vwo');
+
+    // Simulate inline SmartCode already present
+    window._vwo_code = {
+      finish: vi.fn(),
+      finished: vi.fn(() => false),
+      init: vi.fn(),
+      load: vi.fn(),
+      library_tolerance: vi.fn(() => 2500),
+      use_existing_jquery: vi.fn(() => false),
+      code_loaded: vi.fn()
+    };
+
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    window.ppLib.vwo!.configure({ accountId: '999' });
+    window.ppLib.vwo!.init();
+
+    expect(logSpy).toHaveBeenCalledWith('info', expect.stringContaining('already present'));
+
+    // Should not inject a second script
+    const scripts = document.querySelectorAll('script[src*="visualwebsiteoptimizer.com"]');
+    expect(scripts.length).toBe(0);
+  });
+
+  it('allows init without accountId when _vwo_code already exists', () => {
+    loadWithCommon('vwo');
+
+    window._vwo_code = {
+      finish: vi.fn(),
+      finished: vi.fn(() => false),
+      init: vi.fn(),
+      load: vi.fn(),
+      library_tolerance: vi.fn(() => 2500),
+      use_existing_jquery: vi.fn(() => false),
+      code_loaded: vi.fn()
+    };
+
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    window.ppLib.vwo!.init();
+
+    // Should NOT warn about missing accountId
+    const warnCalls = logSpy.mock.calls.filter(c => c[0] === 'warn' && String(c[1]).includes('No accountId'));
+    expect(warnCalls.length).toBe(0);
+
+    // Should still initialize
+    expect(logSpy).toHaveBeenCalledWith('info', expect.stringContaining('Initialized'));
+  });
 });
 
 // =========================================================================
