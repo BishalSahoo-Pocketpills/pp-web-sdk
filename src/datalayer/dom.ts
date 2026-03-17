@@ -20,6 +20,7 @@ export function createDomBinder(
 
   var lastEventMap: Record<string, number> = {};
   var debounceWriteCount = 0;
+  var bound = false;
 
   function isDuplicate(key: string): boolean {
     var now = Date.now();
@@ -174,6 +175,8 @@ export function createDomBinder(
 
   function init(): void {
     try {
+      if (bound) return;
+      bound = true;
       doc.addEventListener('click', handleInteraction, { capture: false, passive: false } as EventListenerOptions);
       doc.addEventListener('touchend', handleInteraction, { capture: false, passive: false } as EventListenerOptions);
       ppLib.log('info', '[ppDataLayer] DOM binding initialized');

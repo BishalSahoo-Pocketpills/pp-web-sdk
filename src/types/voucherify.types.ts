@@ -35,12 +35,18 @@ export interface VoucherifyConsentConfig {
   checkFunction: () => boolean;
 }
 
+export interface VoucherifyRetryConfig {
+  maxRetries: number;
+  baseDelay: number;
+}
+
 export interface VoucherifyConfig {
   api: VoucherifyApiConfig;
   cache: VoucherifyCacheConfig;
   pricing: VoucherifyPricingConfig;
   context: VoucherifyContextConfig;
   consent: VoucherifyConsentConfig;
+  retry: VoucherifyRetryConfig;
 }
 
 export interface OrderItem {
@@ -93,6 +99,12 @@ export interface QualificationResult {
   }>;
   total: number;
   hasMore: boolean;
+}
+
+export interface DOMProduct {
+  id: string;
+  basePrice: number;
+  element: Element;
 }
 
 export interface VoucherifyAPI {

@@ -1,5 +1,5 @@
 /**
- * pp-analytics-lib: Ecommerce Tracking Module v1.0.0
+ * pp-analytics-lib: Ecommerce Tracking Module
  * Data-attribute-driven GA4 ecommerce events (view_item, add_to_cart).
  *
  * Requires: common.js (window.ppLib)
@@ -353,12 +353,14 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
     }
   }
 
-  // Auto-initialize on DOM ready
+  // Auto-initialize on DOM ready (bound guard prevents duplicate listeners across reloads)
   /*! v8 ignore start */
   if (doc.readyState === 'loading') {
-    doc.addEventListener('DOMContentLoaded', init);
+    doc.addEventListener('DOMContentLoaded', function() {
+      if (!ppLib._ecomBound) { ppLib._ecomBound = true; init(); }
+    });
   } else {
-    init();
+    if (!ppLib._ecomBound) { ppLib._ecomBound = true; init(); }
   }
   /*! v8 ignore stop */
 
@@ -414,7 +416,7 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
     },
 
     getConfig: function() {
-      return CONFIG;
+      return Object.assign({}, CONFIG);
     }
   };
 

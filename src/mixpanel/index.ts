@@ -1,5 +1,5 @@
 /**
- * pp-analytics-lib: Mixpanel Module v1.0.0
+ * pp-analytics-lib: Mixpanel Module
  * Mixpanel SDK loader, session management, UTM attribution, and identity.
  *
  * Requires: common.js (window.ppLib)
@@ -285,13 +285,16 @@ import type { MixpanelConfig } from '../types/mixpanel.types';
         // Check/set session
         SessionManager.check();
 
-        // Monkey-patch track() to always check session
-        const originalTrack = mp.track;
+        // Monkey-patch track() to always check session.
+        // Uses stored original to prevent wrapper nesting across re-inits.
+        var originalTrack = mp.track._ppOriginal || mp.track;
         mp.track = function() {
           SessionManager.check();
           mp.register({ 'last event time': Date.now() });
           originalTrack.apply(mp, arguments);
         };
+        mp.track._ppOriginal = originalTrack;
+        ppLib._mpTrackPatched = true;
 
         // Register base properties
         const baseProps: Record<string, any> = {
@@ -369,7 +372,7 @@ import type { MixpanelConfig } from '../types/mixpanel.types';
     getMixpanelCookieData: getMixpanelCookieData,
 
     getConfig: function() {
-      return CONFIG;
+      return Object.assign({}, CONFIG);
     }
   };
 

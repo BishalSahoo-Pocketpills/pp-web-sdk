@@ -64,4 +64,8 @@ export interface PPLib {
   voucherify?: import('./voucherify.types').VoucherifyAPI;
   datalayer?: import('./datalayer.types').DataLayerAPI;
   vwo?: import('./vwo.types').VWOAPI;
+  // Internal bound flags (prevent double-binding across script reloads)
+  _ecomBound?: boolean;
+  _esBound?: boolean;
+  _mpTrackPatched?: boolean;
 }

@@ -1,5 +1,5 @@
 /**
- * pp-analytics-lib: Event Source Tracking Module v1.0.0
+ * pp-analytics-lib: Event Source Tracking Module
  * Auto-tracks clicks and taps on interactive elements with data-event-source attribute.
  *
  * Requires: common.js (window.ppLib)
@@ -295,6 +295,9 @@ import type { EventSourceConfig, EventSourceData } from '../types/event-source.t
 
   function init(): void {
     try {
+      // Remove existing listeners for idempotency (same reference — safe across re-init calls)
+      doc.removeEventListener('click', handleInteraction);
+      doc.removeEventListener('touchend', handleInteraction);
       // Use event delegation on document — handles dynamic elements automatically
       doc.addEventListener('click', handleInteraction, { capture: false, passive: true } as EventListenerOptions);
       doc.addEventListener('touchend', handleInteraction, { capture: false, passive: true } as EventListenerOptions);
@@ -305,12 +308,14 @@ import type { EventSourceConfig, EventSourceData } from '../types/event-source.t
     }
   }
 
-  // Auto-initialize on DOM ready
+  // Auto-initialize on DOM ready (bound guard prevents duplicate listeners across reloads)
   /*! v8 ignore start */
   if (doc.readyState === 'loading') {
-    doc.addEventListener('DOMContentLoaded', init);
+    doc.addEventListener('DOMContentLoaded', function() {
+      if (!ppLib._esBound) { ppLib._esBound = true; init(); }
+    });
   } else {
-    init();
+    if (!ppLib._esBound) { ppLib._esBound = true; init(); }
   }
   /*! v8 ignore stop */
 
@@ -394,7 +399,7 @@ import type { EventSourceConfig, EventSourceData } from '../types/event-source.t
     },
 
     getConfig: function() {
-      return CONFIG;
+      return Object.assign({}, CONFIG);
     }
   };
 

@@ -1,5 +1,5 @@
 /**
- * pp-analytics-lib: Braze Module v1.0.0
+ * pp-analytics-lib: Braze Module
  * Data-attribute-driven Braze integration — forms, events, purchases.
  *
  * Requires: common.js (window.ppLib)
@@ -188,7 +188,7 @@ import { createPurchaseHandler } from './purchases';
     },
 
     getConfig: function() {
-      return CONFIG;
+      return Object.assign({}, CONFIG);
     }
   };
 

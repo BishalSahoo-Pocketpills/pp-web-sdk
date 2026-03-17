@@ -1,5 +1,5 @@
 /**
- * pp-analytics-lib: Common Module v1.0.0
+ * pp-analytics-lib: Common Module
  * Shared utilities used by all other modules.
  * Load this FIRST via <script> before any other module.
  *

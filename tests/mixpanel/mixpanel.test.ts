@@ -1201,6 +1201,45 @@ describe('loaded callback', () => {
 
     expect(logSpy).toHaveBeenCalledWith('info', '[ppMixpanel] Initialized successfully');
   });
+
+  it('second loaded callback uses stored original — no wrapper nesting', () => {
+    const loadedCallback = initAndGetLoadedCallback();
+    const mp = createMockMixpanel();
+    const realOriginal = mp.track;
+
+    // First invocation — patches track(), stores _ppOriginal
+    invokeLoadedCallback(loadedCallback, mp);
+    expect(mp.track._ppOriginal).toBe(realOriginal);
+
+    // Second invocation — re-wraps but uses stored _ppOriginal (no nesting)
+    invokeLoadedCallback(loadedCallback, mp);
+    expect(mp.track._ppOriginal).toBe(realOriginal);
+
+    // Calling track() should invoke the original exactly once (not nested)
+    mp.track('test_event');
+    expect(realOriginal).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-init with pre-patched track still uses stored original', () => {
+    loadWithCommon('mixpanel');
+
+    const config = { token: 'test-token-abc', projectName: 'TestProject' };
+    window.ppLib.mixpanel.configure(config);
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    const initArgs = window.mixpanel._i[0];
+    const loadedCallback = initArgs[1].loaded;
+    const mp = createMockMixpanel();
+    const realOriginal = mp.track;
+
+    // Simulate already-patched state with stored original
+    mp.track._ppOriginal = realOriginal;
+
+    invokeLoadedCallback(loadedCallback, mp);
+    // Should use stored _ppOriginal, not wrap a wrapper
+    expect(mp.track._ppOriginal).toBe(realOriginal);
+  });
 });
 
 // =========================================================================

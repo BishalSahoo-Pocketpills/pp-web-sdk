@@ -16,6 +16,7 @@ export function createVWOConfig(): VWOConfig {
       revenue: 'data-vwo-revenue',
       trigger: 'data-vwo-trigger'
     },
-    debounceMs: 300
+    debounceMs: 300,
+    smartCodeUrl: 'https://dev.visualwebsiteoptimizer.com/j.php'
   };
 }

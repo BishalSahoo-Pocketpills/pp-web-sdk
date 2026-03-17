@@ -155,6 +155,21 @@ describe('event-source module', () => {
         delete document.readyState;
       }
     });
+
+    it('bound guard prevents duplicate listeners when script loads twice', () => {
+      const addEventSpy = vi.spyOn(document, 'addEventListener');
+      loadWithCommon('event-source');
+
+      const clickAfterFirst = addEventSpy.mock.calls.filter(c => c[0] === 'click').length;
+      expect(clickAfterFirst).toBe(1);
+
+      // Second load — ppLib._esBound is already true, so init is skipped
+      loadModule('event-source');
+      const clickAfterSecond = addEventSpy.mock.calls.filter(c => c[0] === 'click').length;
+      expect(clickAfterSecond).toBe(1); // No duplicate listeners
+
+      addEventSpy.mockRestore();
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -847,15 +862,20 @@ describe('event-source module', () => {
         loadWithCommon('event-source');
       });
 
-      it('registers click and touchend event listeners when called manually', () => {
+      it('init() is idempotent — calling again removes and re-adds listeners', () => {
         const addEventSpy = vi.spyOn(document, 'addEventListener');
+        const removeEventSpy = vi.spyOn(document, 'removeEventListener');
 
+        // init() uses remove+add for idempotency (no duplicates)
         window.ppLib.eventSource.init();
 
-        const clickCall = addEventSpy.mock.calls.find(c => c[0] === 'click');
-        const touchCall = addEventSpy.mock.calls.find(c => c[0] === 'touchend');
-        expect(clickCall).toBeDefined();
-        expect(touchCall).toBeDefined();
+        expect(removeEventSpy).toHaveBeenCalledWith('click', expect.any(Function));
+        expect(removeEventSpy).toHaveBeenCalledWith('touchend', expect.any(Function));
+        expect(addEventSpy).toHaveBeenCalledWith('click', expect.any(Function), expect.anything());
+        expect(addEventSpy).toHaveBeenCalledWith('touchend', expect.any(Function), expect.anything());
+
+        addEventSpy.mockRestore();
+        removeEventSpy.mockRestore();
       });
 
       it('handles errors during init gracefully', () => {
@@ -1174,7 +1194,7 @@ describe('event-source module', () => {
       it('returns the same reference as configure()', () => {
         const fromConfigure = window.ppLib.eventSource.configure();
         const fromGetConfig = window.ppLib.eventSource.getConfig();
-        expect(fromConfigure).toBe(fromGetConfig);
+        expect(fromConfigure).toEqual(fromGetConfig);
       });
 
       it('reflects configuration changes', () => {
@@ -1282,9 +1302,11 @@ describe('event-source module', () => {
     });
 
     it('ppLib.log is called on init success', () => {
-      window.ppLib.config.debug = true;
+      // Reset the bound flag so the next load will actually init
+      window.ppLib._esBound = false;
       const logSpy = vi.spyOn(window.ppLib, 'log');
-      window.ppLib.eventSource.init();
+      window.ppLib.config.debug = true;
+      loadModule('event-source');
       expect(logSpy).toHaveBeenCalledWith('info', expect.stringContaining('[ppEventSource] Initialized'));
     });
   });

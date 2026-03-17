@@ -106,6 +106,21 @@ describe('Auto-initialization', () => {
     addEventSpy.mockRestore();
   });
 
+  it('bound guard prevents duplicate listeners when script loads twice', () => {
+    const addEventSpy = vi.spyOn(document, 'addEventListener');
+    loadWithCommon('ecommerce');
+
+    const clickAfterFirst = addEventSpy.mock.calls.filter(c => c[0] === 'click').length;
+    expect(clickAfterFirst).toBe(1);
+
+    // Second load — ppLib._ecomBound is already true, so init is skipped
+    loadModule('ecommerce');
+    const clickAfterSecond = addEventSpy.mock.calls.filter(c => c[0] === 'click').length;
+    expect(clickAfterSecond).toBe(1); // No duplicate listeners
+
+    addEventSpy.mockRestore();
+  });
+
   it('defers trackViewItem to window.load when readyState is not "complete"', () => {
     Object.defineProperty(document, 'readyState', {
       value: 'interactive',
@@ -1857,7 +1872,8 @@ describe('Edge cases and integration', () => {
   it('click and touchend handlers use passive:true and capture:false', () => {
     const addEventSpy = vi.spyOn(document, 'addEventListener');
 
-    // Re-load to capture the addEventListener calls
+    // Reset bound flag so the re-load actually inits
+    window.ppLib._ecomBound = false;
     loadWithCommon('ecommerce');
 
     const clickCall = addEventSpy.mock.calls.find(c => c[0] === 'click');

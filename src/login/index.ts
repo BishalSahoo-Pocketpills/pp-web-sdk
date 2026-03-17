@@ -1,5 +1,5 @@
 /**
- * pp-analytics-lib: Login Detection Module v1.0.0
+ * pp-analytics-lib: Login Detection Module
  * Cookie-based auth state detection, body class management, and identity DOM injection.
  *
  * Requires: common.js (window.ppLib)
@@ -124,7 +124,7 @@ import { createInitAuthState } from './auth-state';
     },
 
     getConfig: function(): LoginConfig {
-      return CONFIG;
+      return Object.assign({}, CONFIG);
     }
   };
 

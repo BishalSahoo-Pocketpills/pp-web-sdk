@@ -43,7 +43,7 @@ function qualificationsResponse(redeemables: any[] = []) {
 // =========================================================================
 describe('IIFE Bootstrap', () => {
   it('calls initModule immediately when ppLib._isReady is true', () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     expect(window.ppLib).toBeDefined();
     expect(window.ppLib._isReady).toBe(true);
     expect(window.ppLib.voucherify).toBeDefined();
@@ -53,7 +53,7 @@ describe('IIFE Bootstrap', () => {
     delete window.ppLib;
     delete window.ppLibReady;
 
-    loadModule('voucherify');
+    loadModule('voucherify', { coverable: false });
 
     expect(window.ppLib).toBeUndefined();
     expect(window.ppLibReady).toBeDefined();
@@ -66,7 +66,7 @@ describe('IIFE Bootstrap', () => {
     delete window.ppLib;
     delete window.ppLibReady;
 
-    loadModule('voucherify');
+    loadModule('voucherify', { coverable: false });
     expect(window.ppLibReady!.length).toBe(1);
 
     loadModule('common');
@@ -74,7 +74,7 @@ describe('IIFE Bootstrap', () => {
   });
 
   it('exposes ppLib.voucherify public API with all expected methods', () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const api = window.ppLib.voucherify!;
     expect(typeof api.configure).toBe('function');
     expect(typeof api.init).toBe('function');
@@ -92,7 +92,7 @@ describe('IIFE Bootstrap', () => {
 // =========================================================================
 describe('Configuration', () => {
   it('returns default config when called with no args', () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const config = window.ppLib.voucherify!.configure();
     expect(config.api.applicationId).toBe('');
     expect(config.api.clientSecretKey).toBe('');
@@ -120,7 +120,7 @@ describe('Configuration', () => {
   });
 
   it('merges partial config via configure()', () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const config = window.ppLib.voucherify!.configure({
       api: { applicationId: 'test-app-id', clientSecretKey: 'test-secret' } as any
     });
@@ -129,7 +129,7 @@ describe('Configuration', () => {
   });
 
   it('getConfig returns the config object', () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     window.ppLib.voucherify!.configure({
       api: { applicationId: 'abc' } as any
     });
@@ -138,12 +138,12 @@ describe('Configuration', () => {
   });
 
   it('isReady returns false before init is called', () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     expect(window.ppLib.voucherify!.isReady()).toBe(false);
   });
 
   it('isReady returns true after init is called', () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     window.ppLib.voucherify!.configure({
       api: { applicationId: 'test-id' } as any,
       consent: { required: false } as any,
@@ -159,7 +159,7 @@ describe('Configuration', () => {
 // =========================================================================
 describe('init()', () => {
   it('logs warning when no applicationId and cache not enabled', () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
     window.ppLib.voucherify!.init();
@@ -168,7 +168,7 @@ describe('init()', () => {
   });
 
   it('does not warn when cache.enabled is true even without applicationId', () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const logSpy = vi.spyOn(window.ppLib, 'log');
     window.fetch = mockFetch(qualificationsResponse());
 
@@ -182,7 +182,7 @@ describe('init()', () => {
   });
 
   it('does not init when consent required but not granted (custom mode)', () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
     window.ppLib.voucherify!.configure({
@@ -196,7 +196,7 @@ describe('init()', () => {
   });
 
   it('does not init when consent mode is analytics and ppAnalytics returns false', () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
     (window as any).ppAnalytics = {
@@ -214,7 +214,7 @@ describe('init()', () => {
   });
 
   it('consent analytics mode returns false when ppAnalytics is missing', () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
     delete (window as any).ppAnalytics;
@@ -230,7 +230,7 @@ describe('init()', () => {
   });
 
   it('inits successfully when consent is analytics and ppAnalytics returns true', () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const logSpy = vi.spyOn(window.ppLib, 'log');
     window.fetch = mockFetch(qualificationsResponse());
 
@@ -249,7 +249,7 @@ describe('init()', () => {
   });
 
   it('consent check handles error in ppAnalytics gracefully', () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
     (window as any).ppAnalytics = {
@@ -266,8 +266,38 @@ describe('init()', () => {
     expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('consent check error'), expect.any(Error));
   });
 
+  it('uses custom consent check function when mode is not analytics', () => {
+    loadWithCommon('voucherify', { coverable: false });
+    const customCheck = vi.fn().mockReturnValue(true);
+
+    window.ppLib.voucherify!.configure({
+      api: { applicationId: 'app-id' } as any,
+      consent: { required: true, mode: 'custom' as any, checkFunction: customCheck },
+      pricing: { autoFetch: false } as any
+    });
+    window.ppLib.voucherify!.init();
+
+    expect(customCheck).toHaveBeenCalled();
+  });
+
+  it('custom consent check function returning false prevents init', () => {
+    loadWithCommon('voucherify', { coverable: false });
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    const customCheck = vi.fn().mockReturnValue(false);
+
+    window.ppLib.voucherify!.configure({
+      api: { applicationId: 'app-id' } as any,
+      consent: { required: true, mode: 'custom' as any, checkFunction: customCheck },
+      pricing: { autoFetch: false } as any
+    });
+    window.ppLib.voucherify!.init();
+
+    expect(customCheck).toHaveBeenCalled();
+    expect(logSpy).toHaveBeenCalledWith('info', expect.stringContaining('Consent not granted'));
+  });
+
   it('auto-fetches pricing when autoFetch is true and DOM is ready', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
     const fetchMock = mockFetch(qualificationsResponse());
     window.fetch = fetchMock;
@@ -284,7 +314,7 @@ describe('init()', () => {
   });
 
   it('does not auto-fetch when autoFetch is false', () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
     const fetchMock = mockFetch(qualificationsResponse());
     window.fetch = fetchMock;
@@ -304,7 +334,7 @@ describe('init()', () => {
 // =========================================================================
 describe('API Client — Direct Mode', () => {
   it('sends request to Voucherify API with correct headers', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const fetchMock = mockFetch(qualificationsResponse());
     window.fetch = fetchMock;
 
@@ -330,7 +360,7 @@ describe('API Client — Direct Mode', () => {
   });
 
   it('includes origin header from config or window.location', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const fetchMock = mockFetch(qualificationsResponse());
     window.fetch = fetchMock;
 
@@ -346,7 +376,7 @@ describe('API Client — Direct Mode', () => {
   });
 
   it('handles API error response (non-2xx)', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     window.fetch = mockFetch({}, 400);
 
     window.ppLib.voucherify!.configure({
@@ -360,7 +390,7 @@ describe('API Client — Direct Mode', () => {
   });
 
   it('throws error when applicationId is missing in direct mode', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     window.fetch = mockFetch({});
 
     window.ppLib.voucherify!.configure({
@@ -374,7 +404,7 @@ describe('API Client — Direct Mode', () => {
   });
 
   it('throws error when clientSecretKey is missing in direct mode', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     window.fetch = mockFetch({});
 
     window.ppLib.voucherify!.configure({
@@ -393,7 +423,7 @@ describe('API Client — Direct Mode', () => {
 // =========================================================================
 describe('API Client — Cache Mode', () => {
   it('routes to backend proxy URL when cache.enabled is true', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const fetchMock = mockFetch(qualificationsResponse());
     window.fetch = fetchMock;
 
@@ -414,7 +444,7 @@ describe('API Client — Cache Mode', () => {
   });
 
   it('does not include Voucherify auth headers in cache mode', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const fetchMock = mockFetch(qualificationsResponse());
     window.fetch = fetchMock;
 
@@ -436,7 +466,7 @@ describe('API Client — Cache Mode', () => {
 // =========================================================================
 describe('In-memory Cache', () => {
   it('returns cached response on second call with same params', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const responseData = qualificationsResponse([{ id: 'v1', result: { discount: { type: 'PERCENT', percent_off: 10 } } }]);
     const fetchMock = mockFetch(responseData);
     window.fetch = fetchMock;
@@ -455,7 +485,7 @@ describe('In-memory Cache', () => {
   });
 
   it('does not cache across different request bodies', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const fetchMock = mockFetch(qualificationsResponse());
     window.fetch = fetchMock;
 
@@ -471,7 +501,7 @@ describe('In-memory Cache', () => {
   });
 
   it('clearCache forces refetch', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const fetchMock = mockFetch(qualificationsResponse());
     window.fetch = fetchMock;
 
@@ -490,7 +520,7 @@ describe('In-memory Cache', () => {
   });
 
   it('evicts stale cache entries when cache exceeds 51 entries', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const fetchMock = mockFetch(qualificationsResponse());
     window.fetch = fetchMock;
 
@@ -521,7 +551,7 @@ describe('In-memory Cache', () => {
 // =========================================================================
 describe('Context Builder', () => {
   it('includes customer source_id from cookie in qualifications request', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
     document.cookie = 'userId=customer-123;path=/';
     const fetchMock = mockFetch(qualificationsResponse());
@@ -540,7 +570,7 @@ describe('Context Builder', () => {
   });
 
   it('includes UTM params in customer metadata', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
     document.cookie = 'userId=user-1;path=/';
 
@@ -572,7 +602,7 @@ describe('Context Builder', () => {
   });
 
   it('includes login state in customer metadata when login module present', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
     document.cookie = 'userId=user-1;path=/';
 
@@ -596,7 +626,7 @@ describe('Context Builder', () => {
   });
 
   it('handles anonymous user (no cookie) without customer in request', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
     const fetchMock = mockFetch(qualificationsResponse());
     window.fetch = fetchMock;
@@ -613,7 +643,7 @@ describe('Context Builder', () => {
   });
 
   it('excludes login state when includeLoginState is false', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
     document.cookie = 'userId=user-1;path=/';
 
@@ -641,7 +671,7 @@ describe('Context Builder', () => {
   });
 
   it('excludes UTM params when includeUtmParams is false', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
     document.cookie = 'userId=user-1;path=/';
 
@@ -676,7 +706,7 @@ describe('Context Builder', () => {
   });
 
   it('sends empty metadata when no metadata keys are populated', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
     document.cookie = 'userId=user-no-meta;path=/';
 
@@ -698,7 +728,7 @@ describe('Context Builder', () => {
   });
 
   it('builds order items from product IDs', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
     const fetchMock = mockFetch(qualificationsResponse());
     window.fetch = fetchMock;
@@ -725,7 +755,7 @@ describe('Context Builder', () => {
 // =========================================================================
 describe('DOM Scanning', () => {
   it('scans DOM for product elements by data attribute', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
     const fetchMock = mockFetch(qualificationsResponse());
     window.fetch = fetchMock;
@@ -745,7 +775,7 @@ describe('DOM Scanning', () => {
   });
 
   it('returns empty array when no product elements in DOM', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     document.body.innerHTML = '<div>No products here</div>';
     const fetchMock = mockFetch(qualificationsResponse());
     window.fetch = fetchMock;
@@ -762,7 +792,7 @@ describe('DOM Scanning', () => {
   });
 
   it('accepts explicit product IDs overriding DOM scan', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
     const fetchMock = mockFetch(qualificationsResponse());
     window.fetch = fetchMock;
@@ -782,7 +812,7 @@ describe('DOM Scanning', () => {
   });
 
   it('skips elements without an id (empty attribute) and logs warning', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     document.body.innerHTML = `
       <div data-voucherify-product="" data-voucherify-base-price="10">
         <span data-voucherify-original-price></span>
@@ -813,7 +843,7 @@ describe('DOM Scanning', () => {
 // =========================================================================
 describe('Pricing — Percent Discount', () => {
   it('injects original and discounted prices for percent discount', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
 
     const response = qualificationsResponse([{
@@ -853,7 +883,7 @@ describe('Pricing — Percent Discount', () => {
 // =========================================================================
 describe('Pricing — Nested redeemables.data response format', () => {
   it('parses redeemables from nested { redeemables: { data: [...] } } structure', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
 
     // Real Voucherify response wraps redeemables in { object: "list", data: [...] }
@@ -892,7 +922,7 @@ describe('Pricing — Nested redeemables.data response format', () => {
 // =========================================================================
 describe('Pricing — Amount Discount', () => {
   it('handles amount discount (cents to dollars)', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
 
     const response = qualificationsResponse([{
@@ -922,7 +952,7 @@ describe('Pricing — Amount Discount', () => {
 // =========================================================================
 describe('Pricing — No Discount', () => {
   it('shows base price when no discounts apply', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
     window.fetch = mockFetch(qualificationsResponse());
 
@@ -954,7 +984,7 @@ describe('Pricing — No Discount', () => {
 // =========================================================================
 describe('Pricing — Fixed Discount', () => {
   it('handles fixed discount (final price)', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
 
     const response = qualificationsResponse([{
@@ -982,7 +1012,7 @@ describe('Pricing — Fixed Discount', () => {
 // =========================================================================
 describe('Pricing — Unit Discount', () => {
   it('handles unit discount', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
 
     const response = qualificationsResponse([{
@@ -1005,7 +1035,7 @@ describe('Pricing — Unit Discount', () => {
   });
 
   it('skips UNIT discount with ADD_MISSING_ITEMS effect (e.g. free shipping)', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
 
     const response = {
@@ -1043,7 +1073,7 @@ describe('Pricing — Unit Discount', () => {
 // =========================================================================
 describe('Pricing — Best Discount Selection', () => {
   it('selects best discount when multiple redeemables apply', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
 
     const response = qualificationsResponse([
@@ -1071,7 +1101,7 @@ describe('Pricing — Best Discount Selection', () => {
 // =========================================================================
 describe('Pricing — Error Handling', () => {
   it('returns empty array and logs error on fetch failure', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
     window.fetch = mockFetchReject('Network error');
     const logSpy = vi.spyOn(window.ppLib, 'log');
@@ -1088,7 +1118,7 @@ describe('Pricing — Error Handling', () => {
   });
 
   it('handles response with missing qualifications gracefully', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
     window.fetch = mockFetch({});
 
@@ -1105,7 +1135,7 @@ describe('Pricing — Error Handling', () => {
   });
 
   it('handles redeemables key in response (alternative format)', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
 
     const response = {
@@ -1133,7 +1163,7 @@ describe('Pricing — Error Handling', () => {
 // =========================================================================
 describe('validateVoucher()', () => {
   it('sends correct validation request for a voucher code', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
 
     const validResponse = {
       redeemables: [{
@@ -1166,7 +1196,7 @@ describe('validateVoucher()', () => {
   });
 
   it('returns invalid result for non-applicable voucher', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
 
     const invalidResponse = {
       redeemables: [{
@@ -1190,7 +1220,7 @@ describe('validateVoucher()', () => {
   });
 
   it('handles empty voucher code', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
 
     window.ppLib.voucherify!.configure({
       api: { applicationId: 'app', clientSecretKey: 'key' } as any,
@@ -1204,7 +1234,7 @@ describe('validateVoucher()', () => {
   });
 
   it('includes customer and order context when provided', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const fetchMock = mockFetch({ redeemables: [{ status: 'APPLICABLE', id: 'CODE', result: {} }] });
     window.fetch = fetchMock;
 
@@ -1224,7 +1254,7 @@ describe('validateVoucher()', () => {
   });
 
   it('includes customer only when order is not provided', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const fetchMock = mockFetch({ redeemables: [{ status: 'APPLICABLE', id: 'CODE', result: {} }] });
     window.fetch = fetchMock;
 
@@ -1248,7 +1278,7 @@ describe('validateVoucher()', () => {
 // =========================================================================
 describe('checkQualifications()', () => {
   it('returns mapped qualification result', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
 
     const response = {
       redeemables: [
@@ -1273,7 +1303,7 @@ describe('checkQualifications()', () => {
   });
 
   it('defaults scenario to ALL when no context provided', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     const fetchMock = mockFetch({ redeemables: [], total: 0, has_more: false });
     window.fetch = fetchMock;
 
@@ -1289,7 +1319,7 @@ describe('checkQualifications()', () => {
   });
 
   it('handles response with missing fields and truthy has_more', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     window.fetch = mockFetch({ has_more: true, total: 5 });
 
     window.ppLib.voucherify!.configure({
@@ -1310,7 +1340,7 @@ describe('checkQualifications()', () => {
 // =========================================================================
 describe('Price Formatting', () => {
   it('formats prices using Intl.NumberFormat with configured locale', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
 
     const response = qualificationsResponse([{
@@ -1342,7 +1372,7 @@ describe('Price Formatting', () => {
 // =========================================================================
 describe('DOM Injection Edge Cases', () => {
   it('does not crash when injection target elements are missing', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
 
     // Product element exists but no child injection targets
     document.body.innerHTML = `
@@ -1367,7 +1397,7 @@ describe('DOM Injection Edge Cases', () => {
   });
 
   it('clears discount label when no discount applies', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
 
     // Pre-set label content to verify it gets cleared
@@ -1387,7 +1417,7 @@ describe('DOM Injection Edge Cases', () => {
   });
 
   it('discountedPrice never goes below zero', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
 
     // Discount larger than price
@@ -1413,7 +1443,7 @@ describe('DOM Injection Edge Cases', () => {
 // =========================================================================
 describe('Campaign Name', () => {
   it('includes campaign name from redeemable', async () => {
-    loadWithCommon('voucherify');
+    loadWithCommon('voucherify', { coverable: false });
     setupDOM();
 
     const response = qualificationsResponse([{

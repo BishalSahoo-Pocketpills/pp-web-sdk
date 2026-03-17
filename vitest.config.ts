@@ -1,7 +1,13 @@
 import { defineConfig } from 'vitest/config';
 import path from 'path';
+import { readFileSync } from 'fs';
+
+const pkg = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8'));
 
 export default defineConfig({
+  define: {
+    __PP_SDK_VERSION__: JSON.stringify(pkg.version)
+  },
   test: {
     environment: 'jsdom',
     globals: true,

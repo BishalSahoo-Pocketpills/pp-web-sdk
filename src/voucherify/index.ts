@@ -1,16 +1,12 @@
 /**
- * pp-analytics-lib: Voucherify Module v1.0.0
+ * pp-analytics-lib: Voucherify Module
  * Readonly pricing integration — qualifications, validation, DOM injection.
  *
  * Requires: common.js (window.ppLib)
  * Exposes: window.ppLib.voucherify
  */
 import type { PPLib } from '../types/common.types';
-import type { VoucherifyConfig, ValidationContext, QualificationContext, PricingResult, ValidationResult, QualificationResult } from '../types/voucherify.types';
-import { createVoucherifyConfig } from './config';
-import { createApiClient } from './api-client';
-import { createContextBuilder } from './context';
-import { createPricingEngine } from './pricing';
+import type { VoucherifyConfig, ValidationContext, QualificationContext, PricingResult, ValidationResult, QualificationResult, OrderItem, DOMProduct } from '../types/voucherify.types';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -21,33 +17,406 @@ import { createPricingEngine } from './pricing';
   // CONFIGURATION
   // =====================================================
 
-  const CONFIG: VoucherifyConfig = createVoucherifyConfig();
+  const CONFIG: VoucherifyConfig = {
+    api: {
+      applicationId: '',
+      clientSecretKey: '',
+      baseUrl: 'https://as1.api.voucherify.io',
+      origin: ''
+    },
+    cache: {
+      enabled: false,
+      baseUrl: '/api/voucherify',
+      ttl: 300000
+    },
+    pricing: {
+      autoFetch: true,
+      productAttribute: 'data-voucherify-product',
+      originalPriceAttribute: 'data-voucherify-original-price',
+      discountedPriceAttribute: 'data-voucherify-discounted-price',
+      discountLabelAttribute: 'data-voucherify-discount-label',
+      priceAttribute: 'data-voucherify-base-price',
+      currencySymbol: '$',
+      currency: 'CAD',
+      locale: 'en-CA'
+    },
+    context: {
+      customerSourceIdCookie: 'userId',
+      includeUtmParams: true,
+      includeLoginState: true
+    },
+    consent: {
+      required: false,
+      mode: 'analytics',
+      checkFunction: function() { return true; }
+    },
+    retry: {
+      maxRetries: 2,
+      baseDelay: 500
+    }
+  };
 
   // =====================================================
-  // SUB-MODULES
+  // API CLIENT
   // =====================================================
 
-  const apiClient = createApiClient(win, ppLib, CONFIG);
-  const contextBuilder = createContextBuilder(win, doc, ppLib, CONFIG);
-  const pricingEngine = createPricingEngine(win, doc, ppLib, CONFIG, apiClient, contextBuilder);
+  var memCache: Map<string, { data: any; timestamp: number }> = new Map();
+
+  function getCacheKey(endpoint: string, body: any): string {
+    try {
+      return endpoint + ':' + JSON.stringify(body);
+    /*! v8 ignore start — JSON.stringify circular-ref throw is not reachable in normal usage */
+    } catch (e) {
+      return endpoint + ':' + String(Date.now());
+    }
+    /*! v8 ignore stop */
+  }
+
+  function isCacheValid(key: string): boolean {
+    var entry = memCache.get(key);
+    if (!entry) return false;
+    return (Date.now() - entry.timestamp) < CONFIG.cache.ttl;
+  }
+
+  async function fetchWithRetry(url: string, options: RequestInit): Promise<Response> {
+    var maxRetries = CONFIG.retry.maxRetries;
+    var baseDelay = CONFIG.retry.baseDelay;
+    var lastError: any;
+
+    for (var attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        var response = await win.fetch(url, options);
+        // Do not retry on 4xx client errors
+        if (response.ok || (response.status >= 400 && response.status < 500)) {
+          return response;
+        }
+        // 5xx — retry
+        lastError = new Error('HTTP ' + response.status);
+      } catch (e) {
+        // Network error — retry
+        lastError = e;
+      }
+      if (attempt < maxRetries) {
+        await new Promise(function(resolve) {
+          win.setTimeout(resolve, baseDelay * Math.pow(2, attempt));
+        });
+      }
+    }
+    throw lastError;
+  }
+
+  async function apiRequest(endpoint: string, body: any): Promise<any> {
+    var cacheKey = getCacheKey(endpoint, body);
+
+    if (isCacheValid(cacheKey)) {
+      ppLib.log('info', '[ppVoucherify] Cache hit for ' + endpoint);
+      return memCache.get(cacheKey)!.data;
+    }
+
+    var apiResponse: Response;
+
+    if (CONFIG.cache.enabled) {
+      if (!CONFIG.cache.baseUrl) {
+        throw new Error('Voucherify cache.baseUrl is not configured');
+      }
+      apiResponse = await fetchWithRetry(CONFIG.cache.baseUrl + endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+    } else {
+      if (!CONFIG.api.applicationId || !CONFIG.api.clientSecretKey) {
+        throw new Error('Voucherify API credentials missing: ' +
+          (!CONFIG.api.applicationId ? 'applicationId ' : '') +
+          (!CONFIG.api.clientSecretKey ? 'clientSecretKey' : ''));
+      }
+      /*! v8 ignore start — jsdom location.origin is always http://localhost */
+      var origin = CONFIG.api.origin || win.location.origin;
+      /*! v8 ignore stop */
+      apiResponse = await fetchWithRetry(CONFIG.api.baseUrl + '/client/v1' + endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Client-Application-Id': CONFIG.api.applicationId,
+          'X-Client-Token': CONFIG.api.clientSecretKey,
+          'origin': origin
+        },
+        body: JSON.stringify(body)
+      });
+    }
+
+    if (!apiResponse.ok) {
+      throw new Error('Voucherify ' + endpoint + ': ' + apiResponse.status);
+    }
+
+    var data = await apiResponse.json();
+
+    memCache.set(cacheKey, { data: data, timestamp: Date.now() });
+
+    // Evict stale entries when cache exceeds 50 entries to prevent unbounded growth
+    if (memCache.size > 50) {
+      var pruneTime = Date.now();
+      memCache.forEach(function(entry, key) {
+        if ((pruneTime - entry.timestamp) >= CONFIG.cache.ttl) {
+          memCache.delete(key);
+        }
+      });
+    }
+
+    return data;
+  }
+
+  function apiQualifications(context: any): Promise<any> {
+    return apiRequest('/qualifications', context);
+  }
+
+  function apiValidations(context: any): Promise<any> {
+    return apiRequest('/validations', context);
+  }
+
+  function clearCache(): void {
+    memCache.clear();
+  }
+
+  // =====================================================
+  // CONTEXT BUILDER
+  // =====================================================
+
+  function buildCustomer(): { source_id: string; metadata?: Record<string, any> } | undefined {
+    var sourceId = ppLib.getCookie(CONFIG.context.customerSourceIdCookie);
+    if (!sourceId) return undefined;
+
+    var customer: any = { source_id: ppLib.Security.sanitize(sourceId) };
+    var metadata: Record<string, any> = {};
+
+    if (CONFIG.context.includeLoginState) {
+      metadata.is_logged_in = !!(ppLib.login && ppLib.login.isLoggedIn());
+    }
+
+    if (CONFIG.context.includeUtmParams) {
+      var url = win.location.href;
+      var utmParams = ['utm_source', 'utm_medium', 'utm_campaign'];
+      for (var i = 0; i < utmParams.length; i++) {
+        var val = ppLib.getQueryParam(url, utmParams[i]);
+        if (val) metadata[utmParams[i]] = ppLib.Security.sanitize(val);
+      }
+    }
+
+    customer.metadata = metadata;
+    return customer;
+  }
+
+  function buildOrderItems(productIds: string[]): OrderItem[] {
+    var items: OrderItem[] = [];
+    for (var i = 0; i < productIds.length; i++) {
+      var sanitizedId = ppLib.Security.sanitize(productIds[i]);
+      items.push({
+        source_id: sanitizedId,
+        product_id: sanitizedId,
+        related_object: 'product',
+        quantity: 1
+      });
+    }
+    return items;
+  }
+
+  function getProductsFromDOM(): DOMProduct[] {
+    var attr = CONFIG.pricing.productAttribute;
+    var priceAttr = CONFIG.pricing.priceAttribute;
+    var elements = doc.querySelectorAll('[' + attr + ']');
+    var products: DOMProduct[] = [];
+
+    for (var i = 0; i < elements.length; i++) {
+      var el = elements[i];
+      var id = ppLib.Security.sanitize(el.getAttribute(attr) || '');
+      var price = parseFloat(el.getAttribute(priceAttr) || '0');
+      if (id) {
+        products.push({ id: id, basePrice: price, element: el });
+      } else {
+        ppLib.log('warn', '[ppVoucherify] Element with [' + attr + '] has empty product ID — skipped');
+      }
+    }
+
+    return products;
+  }
+
+  // =====================================================
+  // PRICING ENGINE
+  // =====================================================
+
+  var priceFormatter: Intl.NumberFormat | null = null;
+
+  function getFormatter(): Intl.NumberFormat {
+    if (!priceFormatter) {
+      priceFormatter = new Intl.NumberFormat(CONFIG.pricing.locale, {
+        style: 'currency',
+        currency: CONFIG.pricing.currency
+      });
+    }
+    return priceFormatter;
+  }
+
+  function formatPrice(amount: number): string {
+    try {
+      return getFormatter().format(amount);
+    /*! v8 ignore start — Intl.NumberFormat.format() never throws in jsdom */
+    } catch (e) {
+      return CONFIG.pricing.currencySymbol + amount.toFixed(2);
+    }
+    /*! v8 ignore stop */
+  }
+
+  function buildDiscountLabel(discountType: string, discountAmount: number, basePrice: number): string {
+    if (discountType === 'PERCENT') {
+      var percent = Math.round((discountAmount / basePrice) * 100);
+      return percent + '% OFF';
+    }
+    if (discountType === 'AMOUNT' || discountType === 'FIXED') {
+      return formatPrice(discountAmount) + ' OFF';
+    }
+    return '';
+  }
+
+  function mapQualificationsToResults(
+    productIds: string[],
+    products: DOMProduct[],
+    response: any
+  ): PricingResult[] {
+    var results: PricingResult[] = [];
+    var redeemablesRaw = (response && response.qualifications) || (response && response.redeemables) || [];
+    var redeemables = Array.isArray(redeemablesRaw) ? redeemablesRaw : (redeemablesRaw.data || []);
+
+    for (var i = 0; i < productIds.length; i++) {
+      var productId = productIds[i];
+      var domProduct = products.find(function(p) { return p.id === productId; });
+      var basePrice = domProduct ? domProduct.basePrice : 0;
+      var bestDiscount = 0;
+      var bestType: PricingResult['discountType'] = 'NONE';
+      var applicableVouchers: string[] = [];
+      var campaignName: string | undefined;
+
+      for (var j = 0; j < redeemables.length; j++) {
+        var redeemable = redeemables[j];
+        var discount = redeemable.result && redeemable.result.discount;
+        if (!discount) continue;
+
+        // UNIT discounts with ADD_MISSING_ITEMS add a free product (e.g. shipping),
+        // they don't reduce the current product's price
+        if (discount.type === 'UNIT' && discount.effect === 'ADD_MISSING_ITEMS') continue;
+
+        var discountAmount = 0;
+        var discountType: PricingResult['discountType'] = 'NONE';
+
+        if (discount.type === 'PERCENT') {
+          discountType = 'PERCENT';
+          discountAmount = basePrice * ((discount.percent_off || 0) / 100);
+        } else if (discount.type === 'AMOUNT') {
+          discountType = 'AMOUNT';
+          discountAmount = (discount.amount_off || 0) / 100; // cents to dollars
+        } else if (discount.type === 'FIXED') {
+          discountType = 'FIXED';
+          discountAmount = basePrice - ((discount.fixed_amount || 0) / 100);
+        } else if (discount.type === 'UNIT') {
+          discountType = 'UNIT';
+          discountAmount = (discount.unit_off || 0) * basePrice;
+        }
+
+        if (discountAmount > bestDiscount) {
+          bestDiscount = discountAmount;
+          bestType = discountType;
+          campaignName = redeemable.campaign || redeemable.campaign_name;
+        }
+
+        if (redeemable.id) applicableVouchers.push(redeemable.id);
+      }
+
+      var discountedPrice = Math.max(0, basePrice - bestDiscount);
+      var discountLabel = bestType !== 'NONE' ? buildDiscountLabel(bestType, bestDiscount, basePrice) : '';
+
+      results.push({
+        productId: productId,
+        basePrice: basePrice,
+        discountedPrice: discountedPrice,
+        discountAmount: bestDiscount,
+        discountLabel: discountLabel,
+        discountType: bestType,
+        applicableVouchers: applicableVouchers,
+        campaignName: campaignName
+      });
+    }
+
+    return results;
+  }
+
+  function injectPricing(products: DOMProduct[], pricingResults: PricingResult[]): void {
+    for (var i = 0; i < products.length; i++) {
+      var product = products[i];
+      var result = pricingResults.find(function(r) { return r.productId === product.id; });
+      if (!result) continue;
+
+      var el = product.element;
+
+      // Inject original price
+      var originalEl = el.querySelector('[' + CONFIG.pricing.originalPriceAttribute + ']');
+      if (originalEl) originalEl.textContent = formatPrice(product.basePrice);
+
+      // Inject discounted price
+      var discountedEl = el.querySelector('[' + CONFIG.pricing.discountedPriceAttribute + ']');
+      if (discountedEl) {
+        discountedEl.textContent = result.discountedPrice < product.basePrice
+          ? formatPrice(result.discountedPrice)
+          : formatPrice(product.basePrice);
+      }
+
+      // Inject discount label (optional)
+      var labelEl = el.querySelector('[' + CONFIG.pricing.discountLabelAttribute + ']');
+      if (labelEl) {
+        labelEl.textContent = result.discountLabel || '';
+      }
+    }
+  }
+
+  async function fetchPricing(productIds?: string[]): Promise<PricingResult[]> {
+    try {
+      var products = getProductsFromDOM();
+      var ids = productIds || products.map(function(p) { return p.id; });
+      if (ids.length === 0) return [];
+
+      var customer = buildCustomer();
+      var items = buildOrderItems(ids);
+
+      var body: any = {
+        order: { items: items },
+        scenario: 'ALL'
+      };
+      if (customer) body.customer = customer;
+
+      var response = await apiQualifications(body);
+
+      var results = mapQualificationsToResults(ids, products, response);
+
+      injectPricing(products, results);
+
+      ppLib.log('info', '[ppVoucherify] Pricing fetched for ' + ids.length + ' product(s)');
+
+      return results;
+    } catch (e) {
+      ppLib.log('error', '[ppVoucherify] fetchPricing error', e);
+      return [];
+    }
+  }
 
   // =====================================================
   // CONSENT CHECK
   // =====================================================
 
   function hasConsent(): boolean {
-    /*! v8 ignore start */
     if (!CONFIG.consent.required) return true;
-    /*! v8 ignore stop */
 
-    /*! v8 ignore start */
     if (CONFIG.consent.mode === 'analytics') {
-    /*! v8 ignore stop */
       try {
-        /*! v8 ignore start */
         if (win.ppAnalytics && typeof win.ppAnalytics.consent === 'object' &&
             typeof win.ppAnalytics.consent.status === 'function') {
-        /*! v8 ignore stop */
           return win.ppAnalytics.consent.status();
         }
       } catch (e) {
@@ -67,30 +436,26 @@ import { createPricingEngine } from './pricing';
   var initialized = false;
 
   function init(): void {
-    /*! v8 ignore start */
     if (!CONFIG.api.applicationId && !CONFIG.cache.enabled) {
       ppLib.log('warn', '[ppVoucherify] No applicationId configured and cache not enabled. Call ppLib.voucherify.configure() before init.');
       return;
     }
-    /*! v8 ignore stop */
 
     // Consent gate
-    /*! v8 ignore start */
     if (!hasConsent()) {
       ppLib.log('info', '[ppVoucherify] Consent not granted — module not initialized');
       return;
     }
-    /*! v8 ignore stop */
 
-    /*! v8 ignore start */
+    /*! v8 ignore start — jsdom readyState is always 'complete' */
     if (CONFIG.pricing.autoFetch) {
       if (doc.readyState === 'loading') {
         doc.addEventListener('DOMContentLoaded', function() {
-          pricingEngine.fetchPricing();
+          fetchPricing();
         });
       } else {
       /*! v8 ignore stop */
-        pricingEngine.fetchPricing();
+        fetchPricing();
       }
     }
 
@@ -103,9 +468,7 @@ import { createPricingEngine } from './pricing';
 
   ppLib.voucherify = {
     configure: function(options?: Partial<VoucherifyConfig>) {
-      /*! v8 ignore start */
       if (options) {
-      /*! v8 ignore stop */
         ppLib.extend(CONFIG, options);
       }
       return CONFIG;
@@ -114,15 +477,13 @@ import { createPricingEngine } from './pricing';
     init: init,
 
     fetchPricing: function(productIds?: string[]): Promise<PricingResult[]> {
-      return pricingEngine.fetchPricing(productIds);
+      return fetchPricing(productIds);
     },
 
     validateVoucher: function(code: string, context?: Partial<ValidationContext>): Promise<ValidationResult> {
       try {
         var sanitizedCode = ppLib.Security.sanitize(code);
-        /*! v8 ignore start */
         if (!sanitizedCode) {
-        /*! v8 ignore stop */
           return Promise.resolve({ valid: false, code: code, reason: 'Empty voucher code' });
         }
 
@@ -130,18 +491,14 @@ import { createPricingEngine } from './pricing';
           redeemables: [{ object: 'voucher', id: sanitizedCode }]
         };
 
-        /*! v8 ignore start */
         if (context && context.customer) {
-        /*! v8 ignore stop */
           body.customer = context.customer;
         }
-        /*! v8 ignore start */
         if (context && context.order) {
-        /*! v8 ignore stop */
           body.order = context.order;
         }
 
-        return apiClient.validations(body).then(function(response: any) {
+        return apiValidations(body).then(function(response: any) {
           var redeemable = response.redeemables && response.redeemables[0];
           var result = redeemable && redeemable.result;
 
@@ -165,19 +522,17 @@ import { createPricingEngine } from './pricing';
 
     checkQualifications: function(context?: QualificationContext): Promise<QualificationResult> {
       var body = context || { scenario: 'ALL' };
-      return apiClient.qualifications(body).then(function(response: any) {
-        /*! v8 ignore start */
+      return apiQualifications(body).then(function(response: any) {
         return {
           redeemables: response.redeemables || [],
           total: response.total || 0,
           hasMore: response.has_more || false
         } as QualificationResult;
-        /*! v8 ignore stop */
       });
     },
 
     clearCache: function() {
-      apiClient.clearCache();
+      clearCache();
     },
 
     isReady: function() {
@@ -185,7 +540,7 @@ import { createPricingEngine } from './pricing';
     },
 
     getConfig: function() {
-      return CONFIG;
+      return Object.assign({}, CONFIG);
     }
   };
 

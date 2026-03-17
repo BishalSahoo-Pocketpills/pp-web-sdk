@@ -1,5 +1,5 @@
 /**
- * pp-analytics-lib: Analytics & Attribution Tracker v1.0.0
+ * pp-analytics-lib: Analytics & Attribution Tracker
  * Based on PocketPills Analytics & Attribution Tracker v3.1
  *
  * Requires: common.js (window.ppLib)
@@ -1044,10 +1044,10 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
           cachedParamNames = null;
           Utils.log('info', 'Configuration updated');
         }
-        return CONFIG;
+        return Object.assign({}, CONFIG);
       } catch (e) {
         Utils.log('error', 'Config error', e);
-        return CONFIG;
+        return Object.assign({}, CONFIG);
       }
     },
 

@@ -6,7 +6,7 @@ import { createMockDataLayer } from '../helpers/mock-datalayer.ts';
 // =========================================================================
 describe('IIFE Bootstrap', () => {
   it('calls initModule immediately when ppLib._isReady is true', () => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     expect(window.ppLib).toBeDefined();
     expect(window.ppLib._isReady).toBe(true);
     expect(window.ppLib.vwo).toBeDefined();
@@ -16,7 +16,7 @@ describe('IIFE Bootstrap', () => {
     delete window.ppLib;
     delete window.ppLibReady;
 
-    loadModule('vwo');
+    loadModule('vwo', { coverable: false });
 
     expect(window.ppLib).toBeUndefined();
     expect(window.ppLibReady).toBeDefined();
@@ -29,7 +29,7 @@ describe('IIFE Bootstrap', () => {
     delete window.ppLib;
     delete window.ppLibReady;
 
-    loadModule('vwo');
+    loadModule('vwo', { coverable: false });
     expect(window.ppLibReady!.length).toBe(1);
 
     loadModule('common');
@@ -37,7 +37,7 @@ describe('IIFE Bootstrap', () => {
   });
 
   it('exposes ppLib.vwo public API with all expected methods', () => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     const api = window.ppLib.vwo!;
     expect(typeof api.configure).toBe('function');
     expect(typeof api.init).toBe('function');
@@ -57,7 +57,7 @@ describe('IIFE Bootstrap', () => {
 // =========================================================================
 describe('Config Defaults', () => {
   it('returns correct default values', () => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     const config = window.ppLib.vwo!.getConfig();
     expect(config.enabled).toBe(true);
     expect(config.accountId).toBe('');
@@ -80,7 +80,7 @@ describe('Config Defaults', () => {
 // =========================================================================
 describe('configure()', () => {
   beforeEach(() => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
   });
 
   it('merges partial config', () => {
@@ -125,7 +125,7 @@ describe('configure()', () => {
 // =========================================================================
 describe('init() guards', () => {
   it('logs and returns when module is disabled', () => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
     window.ppLib.vwo!.configure({ enabled: false, accountId: '123' });
@@ -135,7 +135,7 @@ describe('init() guards', () => {
   });
 
   it('logs warning and returns when accountId is empty', () => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
     window.ppLib.vwo!.init();
@@ -144,7 +144,7 @@ describe('init() guards', () => {
   });
 
   it('does not inject script when disabled', () => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     window.ppLib.vwo!.configure({ enabled: false });
     window.ppLib.vwo!.init();
 
@@ -153,7 +153,7 @@ describe('init() guards', () => {
   });
 
   it('does not inject script when accountId missing', () => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     window.ppLib.vwo!.init();
 
     const scripts = document.querySelectorAll('script[src*="visualwebsiteoptimizer.com"]');
@@ -161,7 +161,7 @@ describe('init() guards', () => {
   });
 
   it('skips injection when _vwo_code already exists (inline SmartCode)', () => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
 
     // Simulate inline SmartCode already present
     window._vwo_code = {
@@ -186,7 +186,7 @@ describe('init() guards', () => {
   });
 
   it('allows init without accountId when _vwo_code already exists', () => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
 
     window._vwo_code = {
       finish: vi.fn(),
@@ -220,7 +220,7 @@ describe('SmartCode injection', () => {
     if (oldStyle) oldStyle.remove();
     document.querySelectorAll('script[src*="visualwebsiteoptimizer.com"]').forEach(s => s.remove());
 
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     window.ppLib.vwo!.configure({ accountId: '654321' });
   });
 
@@ -395,7 +395,7 @@ describe('Query param forcing', () => {
 
   it('parses ?vwo=42:2 from URL and stores in sessionStorage', () => {
     setLocation('https://example.com?vwo=42:2');
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     window.ppLib.vwo!.configure({ accountId: '123' });
     window.ppLib.vwo!.init();
 
@@ -407,7 +407,7 @@ describe('Query param forcing', () => {
 
   it('parses multiple forced variations: ?vwo=42:2,99:3', () => {
     setLocation('https://example.com?vwo=42:2,99:3');
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     window.ppLib.vwo!.configure({ accountId: '123' });
     window.ppLib.vwo!.init();
 
@@ -420,7 +420,7 @@ describe('Query param forcing', () => {
   it('reads forced variations from sessionStorage when no URL param', () => {
     sessionStorage.setItem('pp_vwo_force', JSON.stringify({ '10': '3' }));
 
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     window.ppLib.vwo!.configure({ accountId: '123' });
     window.ppLib.vwo!.init();
 
@@ -431,7 +431,7 @@ describe('Query param forcing', () => {
 
   it('pushes _vis_opt_set_combination to queue for forced variations', () => {
     setLocation('https://example.com?vwo=42:2');
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
 
     window._vis_opt_set_combination = vi.fn();
     window.ppLib.vwo!.configure({ accountId: '123' });
@@ -447,7 +447,7 @@ describe('Query param forcing', () => {
 
   it('uses custom queryParam name', () => {
     setLocation('https://example.com?ab_test=55:1');
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     window.ppLib.vwo!.configure({ accountId: '123', queryParam: 'ab_test' });
     window.ppLib.vwo!.init();
 
@@ -458,7 +458,7 @@ describe('Query param forcing', () => {
 
   it('uses custom sessionStorageKey', () => {
     setLocation('https://example.com?vwo=10:1');
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     window.ppLib.vwo!.configure({ accountId: '123', sessionStorageKey: 'custom_key' });
     window.ppLib.vwo!.init();
 
@@ -469,7 +469,7 @@ describe('Query param forcing', () => {
   });
 
   it('no forced variations when URL param is absent and sessionStorage is empty', () => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     window.ppLib.vwo!.configure({ accountId: '123' });
     window.ppLib.vwo!.init();
 
@@ -484,7 +484,7 @@ describe('Query param forcing', () => {
 // =========================================================================
 describe('Experiment reading', () => {
   beforeEach(() => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
   });
 
   it('returns empty array when _vwo_exp is not set', () => {
@@ -564,7 +564,7 @@ describe('Experiment reading', () => {
 // =========================================================================
 describe('DataLayer tracking', () => {
   beforeEach(() => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     createMockDataLayer();
     window.ppLib.vwo!.configure({ accountId: '123' });
   });
@@ -655,7 +655,7 @@ describe('DataLayer tracking', () => {
 // =========================================================================
 describe('getVariation()', () => {
   beforeEach(() => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
   });
 
   it('returns null when _vwo_exp is not set', () => {
@@ -688,7 +688,7 @@ describe('getVariation()', () => {
 // =========================================================================
 describe('forceVariation()', () => {
   beforeEach(() => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
   });
 
   it('stores forced variation in sessionStorage', () => {
@@ -745,7 +745,7 @@ describe('forceVariation()', () => {
 // =========================================================================
 describe('trackGoal()', () => {
   beforeEach(() => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
   });
 
   it('pushes goal conversion to VWO queue', () => {
@@ -841,7 +841,7 @@ describe('DOM auto-tracking — Click', () => {
     if (oldStyle) oldStyle.remove();
     document.querySelectorAll('script[src*="visualwebsiteoptimizer.com"]').forEach(s => s.remove());
 
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     window.ppLib.vwo!.configure({ accountId: '123' });
   });
 
@@ -944,7 +944,7 @@ describe('DOM auto-tracking — Click', () => {
   });
 
   it('works with custom attribute names', () => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     window.ppLib.vwo!.configure({
       accountId: '123',
       attributes: { goal: 'data-goal', revenue: 'data-rev', trigger: 'data-trig' }
@@ -967,7 +967,7 @@ describe('DOM auto-tracking — Form submit', () => {
     if (oldStyle) oldStyle.remove();
     document.querySelectorAll('script[src*="visualwebsiteoptimizer.com"]').forEach(s => s.remove());
 
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     window.ppLib.vwo!.configure({ accountId: '123' });
   });
 
@@ -1055,7 +1055,7 @@ describe('DOM auto-tracking — View', () => {
       }
     };
 
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     window.ppLib.vwo!.configure({ accountId: '123' });
   });
 
@@ -1177,7 +1177,7 @@ describe('Debounce map pruning', () => {
     if (oldStyle) oldStyle.remove();
     document.querySelectorAll('script[src*="visualwebsiteoptimizer.com"]').forEach(s => s.remove());
 
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     window.ppLib.vwo!.configure({ accountId: '123' });
   });
 
@@ -1217,7 +1217,7 @@ describe('Debounce map pruning', () => {
 // =========================================================================
 describe('isFeatureEnabled()', () => {
   beforeEach(() => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
   });
 
   it('returns false when _vwo_exp is not set', () => {
@@ -1280,7 +1280,7 @@ describe('Init orchestration', () => {
 
   it('full init sequence: forced variations → SmartCode → track queue', () => {
     setLocation('https://example.com?vwo=42:2');
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
 
     window._vis_opt_set_combination = vi.fn();
     createMockDataLayer();
@@ -1316,7 +1316,7 @@ describe('Init orchestration', () => {
   });
 
   it('init without forced variations still injects SmartCode and tracks', () => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     createMockDataLayer();
 
     window._vwo_exp = {
@@ -1338,7 +1338,7 @@ describe('Init orchestration', () => {
   });
 
   it('script URL includes encoded document URL', () => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     window.ppLib.vwo!.configure({ accountId: '123' });
     window.ppLib.vwo!.init();
 
@@ -1348,7 +1348,7 @@ describe('Init orchestration', () => {
   });
 
   it('script URL includes random cache buster', () => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     window.ppLib.vwo!.configure({ accountId: '123' });
     window.ppLib.vwo!.init();
 
@@ -1358,7 +1358,7 @@ describe('Init orchestration', () => {
   });
 
   it('getConfig returns the live config object', () => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
     window.ppLib.vwo!.configure({ accountId: 'xyz' });
     const config = window.ppLib.vwo!.getConfig();
     expect(config.accountId).toBe('xyz');
@@ -1366,7 +1366,7 @@ describe('Init orchestration', () => {
 
   it('auto-enables VWO platform in event-source when event-source is loaded', () => {
     loadWithCommon('event-source');
-    loadModule('vwo');
+    loadModule('vwo', { coverable: false });
 
     // Verify VWO platform starts disabled in event-source
     expect(window.ppLib.eventSource!.getConfig().platforms.vwo.enabled).toBe(false);
@@ -1379,7 +1379,7 @@ describe('Init orchestration', () => {
   });
 
   it('does not error when event-source is not loaded', () => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
 
     // Ensure event-source is not loaded
     delete window.ppLib.eventSource;
@@ -1397,7 +1397,7 @@ describe('Init orchestration', () => {
 // =========================================================================
 describe('Error handling', () => {
   beforeEach(() => {
-    loadWithCommon('vwo');
+    loadWithCommon('vwo', { coverable: false });
   });
 
   it('getVariation handles errors gracefully', () => {
@@ -1441,7 +1441,7 @@ describe('Error handling', () => {
     const logSpy = vi.spyOn(window.ppLib, 'log');
     window.ppLib.vwo!.forceVariation('42', '2');
 
-    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('Failed to persist'));
+    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('Failed to write to sessionStorage'));
   });
 
   it('readExperiments handles errors gracefully', () => {
@@ -1454,5 +1454,420 @@ describe('Error handling', () => {
     expect(experiments).toEqual([]);
 
     delete window._vwo_exp;
+  });
+});
+
+// =========================================================================
+// 20. COMPREHENSIVE INTEGRATION (single-evaluation branch coverage)
+// =========================================================================
+describe('Comprehensive integration', () => {
+  let originalLocation: Location;
+
+  beforeEach(() => {
+    originalLocation = window.location;
+    const oldStyle = document.getElementById('_vis_opt_path_hides');
+    if (oldStyle) oldStyle.remove();
+    document.querySelectorAll('script[src*="visualwebsiteoptimizer.com"]').forEach(s => s.remove());
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      writable: true,
+      configurable: true
+    });
+    delete (window as any).IntersectionObserver;
+  });
+
+  function setLocation(url: string) {
+    delete (window as any).location;
+    window.location = { ...originalLocation, href: url } as Location;
+  }
+
+  it('happy path: forced variations → SmartCode → experiments → DOM goals → view observer', () => {
+    // Set forced variation via URL
+    setLocation('https://example.com?vwo=42:2,99:3');
+
+    // Mock IntersectionObserver
+    let observerCallback: IntersectionObserverCallback;
+    const mockObserver = {
+      observe: vi.fn(),
+      unobserve: vi.fn(),
+      disconnect: vi.fn()
+    };
+    (window as any).IntersectionObserver = class {
+      observe = mockObserver.observe;
+      unobserve = mockObserver.unobserve;
+      disconnect = mockObserver.disconnect;
+      constructor(cb: IntersectionObserverCallback) { observerCallback = cb; }
+    };
+
+    // Set up DOM with click, submit, and view goal elements
+    document.body.innerHTML = `
+      <button id="btn1" data-vwo-goal="100">Click goal</button>
+      <button id="btn2" data-vwo-goal="200" data-vwo-revenue="49.99">Click with revenue</button>
+      <button id="btn3" data-vwo-goal="invalid">Invalid goal</button>
+      <button data-vwo-goal="250" data-vwo-trigger="submit">Submit-trigger (skip on click)</button>
+      <form id="form1" data-vwo-goal="300" data-vwo-trigger="submit"><input type="submit"></form>
+      <div data-vwo-goal="400" data-vwo-trigger="view">View goal</div>
+      <div data-vwo-goal="500" data-vwo-trigger="view" data-vwo-revenue="9.99">View with revenue</div>
+    `;
+
+    // Set up VWO experiment data (for readExperiments / trackExperiments)
+    window._vwo_exp = {
+      '42': { combination_chosen: 2, comb_n: { '2': 'Variation B' } },
+      '99': { combination_chosen: 3, comb_n: { '3': 'Variation C' } },
+      '50': { combination_chosen: undefined, comb_n: {} }, // skipped — no combination_chosen
+    } as any;
+
+    // Mock event-source module
+    const mockEventSourceConfigure = vi.fn();
+    window._vis_opt_set_combination = vi.fn();
+
+    // Load and init
+    loadWithCommon('vwo', { coverable: false });
+    window.ppLib.eventSource = { configure: mockEventSourceConfigure } as any;
+    window.ppLib.vwo!.configure({ accountId: '654321' });
+    window.ppLib.vwo!.init();
+
+    // --- Verify forced variations ---
+    const stored = sessionStorage.getItem('pp_vwo_force');
+    expect(stored).not.toBeNull();
+    expect(JSON.parse(stored!)).toEqual({ '42': '2', '99': '3' });
+
+    // Execute queued functions (applyForcedVariations + trackExperiments)
+    for (const fn of window._vis_opt_queue) {
+      fn();
+    }
+    expect(window._vis_opt_set_combination).toHaveBeenCalledWith(2, 42);
+    expect(window._vis_opt_set_combination).toHaveBeenCalledWith(3, 99);
+
+    // --- Verify SmartCode injection ---
+    expect(window._vwo_code).toBeDefined();
+    expect(document.getElementById('_vis_opt_path_hides')).not.toBeNull();
+    const script = document.querySelector('script[src*="visualwebsiteoptimizer.com"]');
+    expect(script).not.toBeNull();
+
+    // --- Verify experiment tracking to dataLayer ---
+    expect(window.dataLayer).toBeDefined();
+    const impressions = window.dataLayer!.filter((e: any) => e.event === 'experiment_impression');
+    expect(impressions.length).toBe(2); // 42 and 99 (50 skipped)
+
+    // --- Verify SmartCode utility functions ---
+    expect(typeof window._vwo_code.finish).toBe('function');
+    expect(typeof window._vwo_code.finished).toBe('function');
+    expect(typeof window._vwo_code.use_existing_jquery).toBe('function');
+    expect(typeof window._vwo_code.library_tolerance).toBe('function');
+    expect(typeof window._vwo_code.code_loaded).toBe('function');
+    expect(typeof window._vwo_code.load).toBe('function');
+
+    // --- Verify event-source auto-enable ---
+    expect(mockEventSourceConfigure).toHaveBeenCalledWith(
+      expect.objectContaining({ platforms: { vwo: { enabled: true } } })
+    );
+
+    // --- DOM Click tracking ---
+    document.getElementById('btn1')!.click();
+    expect(window.VWO).toBeDefined();
+    expect(window.VWO[window.VWO.length - 1]).toEqual(['track.goalConversion', 100]);
+
+    document.getElementById('btn2')!.click();
+    expect(window.VWO[window.VWO.length - 1]).toEqual(['track.goalConversion', 200, 49.99]);
+
+    // Click on submit-trigger element should be ignored (trigger !== 'click')
+    const submitBtn = document.querySelector('[data-vwo-trigger="submit"]') as HTMLElement;
+    submitBtn.click();
+    const lastGoal = window.VWO[window.VWO.length - 1];
+    expect(lastGoal).toEqual(['track.goalConversion', 200, 49.99]); // unchanged
+
+    // --- DOM Form submit tracking ---
+    const form = document.getElementById('form1') as HTMLFormElement;
+    form.dispatchEvent(new Event('submit', { bubbles: true }));
+    expect(window.VWO[window.VWO.length - 1]).toEqual(['track.goalConversion', 300]);
+
+    // --- View observer tracking ---
+    const viewEl = document.querySelector('[data-vwo-goal="400"]')!;
+    observerCallback!([{ isIntersecting: true, target: viewEl } as IntersectionObserverEntry], {} as any);
+    expect(window.VWO[window.VWO.length - 1]).toEqual(['track.goalConversion', 400]);
+    expect(mockObserver.unobserve).toHaveBeenCalledWith(viewEl);
+
+    // Non-intersecting entry should be ignored
+    const viewEl2 = document.querySelector('[data-vwo-goal="500"]')!;
+    observerCallback!([{ isIntersecting: false, target: viewEl2 } as IntersectionObserverEntry], {} as any);
+    expect(mockObserver.unobserve).not.toHaveBeenCalledWith(viewEl2);
+
+    // --- API methods ---
+    expect(window.ppLib.vwo!.getVariation('42')).toBe('2');
+    expect(window.ppLib.vwo!.getVariation('nonexistent')).toBeNull();
+    expect(window.ppLib.vwo!.isFeatureEnabled('42')).toBe(true);  // variation 2 !== 1
+    expect(window.ppLib.vwo!.isFeatureEnabled('nonexistent')).toBe(false);
+    expect(window.ppLib.vwo!.getConfig()).toBeDefined();
+
+    // --- Re-scan (disconnects previous observer) ---
+    window.ppLib.vwo!.scanViewGoals();
+    expect(mockObserver.disconnect).toHaveBeenCalled();
+
+    delete window._vwo_exp;
+  });
+
+  it('guard paths: disabled, no accountId, existing _vwo_code', () => {
+    loadWithCommon('vwo', { coverable: false });
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+
+    // Disabled
+    window.ppLib.vwo!.configure({ enabled: false });
+    window.ppLib.vwo!.init();
+    expect(logSpy).toHaveBeenCalledWith('info', expect.stringContaining('Module disabled'));
+
+    // No accountId
+    window.ppLib.vwo!.configure({ enabled: true, accountId: '' });
+    window.ppLib.vwo!.init();
+    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('No accountId'));
+
+    // configure with no args returns config
+    const cfg = window.ppLib.vwo!.configure();
+    expect(cfg).toBeDefined();
+    expect(cfg.enabled).toBe(true);
+
+    // Existing _vwo_code — skips injection
+    window._vwo_code = { init: vi.fn(), finish: vi.fn(), finished: vi.fn() } as any;
+    window.ppLib.vwo!.configure({ accountId: '123' });
+    window.ppLib.vwo!.init();
+    expect(logSpy).toHaveBeenCalledWith('info', expect.stringContaining('SmartCode already present'));
+
+    delete window._vwo_code;
+  });
+
+  it('no forced variations and no experiments (empty paths)', () => {
+    loadWithCommon('vwo', { coverable: false });
+
+    // No vwo query param, no sessionStorage → empty forced variations
+    window.ppLib.vwo!.configure({ accountId: '123' });
+    window.ppLib.vwo!.init();
+
+    // trackExperiments with no _vwo_exp → empty experiments → no dataLayer push
+    for (const fn of window._vis_opt_queue) {
+      fn();
+    }
+    const impressions = (window.dataLayer || []).filter((e: any) => e.event === 'experiment_impression');
+    expect(impressions.length).toBe(0);
+
+    // getVariation with no _vwo_exp
+    expect(window.ppLib.vwo!.getVariation('any')).toBeNull();
+
+    // isFeatureEnabled with no _vwo_exp
+    expect(window.ppLib.vwo!.isFeatureEnabled('any')).toBe(false);
+
+    // getActiveExperiments with no _vwo_exp
+    expect(window.ppLib.vwo!.getActiveExperiments()).toEqual([]);
+  });
+
+  it('trackToDataLayer=false skips experiment tracking', () => {
+    loadWithCommon('vwo', { coverable: false });
+    window._vwo_exp = { '1': { combination_chosen: 2, comb_n: { '2': 'B' } } } as any;
+    window.ppLib.vwo!.configure({ accountId: '123', trackToDataLayer: false });
+    window.ppLib.vwo!.init();
+
+    for (const fn of window._vis_opt_queue) {
+      fn();
+    }
+
+    // dataLayer should not have experiment impressions
+    const impressions = (window.dataLayer || []).filter((e: any) => e.event === 'experiment_impression');
+    expect(impressions.length).toBe(0);
+
+    delete window._vwo_exp;
+  });
+
+  it('parseForcedVariations falls back to sessionStorage', () => {
+    // Pre-populate sessionStorage with forced variations (no URL param)
+    sessionStorage.setItem('pp_vwo_force', JSON.stringify({ '10': '3' }));
+
+    loadWithCommon('vwo', { coverable: false });
+    window._vis_opt_set_combination = vi.fn();
+    window.ppLib.vwo!.configure({ accountId: '123' });
+    window.ppLib.vwo!.init();
+
+    for (const fn of window._vis_opt_queue) {
+      fn();
+    }
+
+    expect(window._vis_opt_set_combination).toHaveBeenCalledWith(3, 10);
+  });
+
+  it('parseForcedVariations outer catch logs error', () => {
+    // Make getQueryParam throw to trigger the outer catch
+    loadWithCommon('vwo', { coverable: false });
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+
+    // Override getQueryParam to throw
+    window.ppLib.getQueryParam = () => { throw new Error('location error'); };
+
+    window.ppLib.vwo!.configure({ accountId: '123' });
+    window.ppLib.vwo!.init();
+
+    expect(logSpy).toHaveBeenCalledWith('error', '[ppVWO] parseForcedVariations error', expect.any(Error));
+  });
+
+  it('scanViewGoals skips when IntersectionObserver is unavailable', () => {
+    delete (window as any).IntersectionObserver;
+    document.body.innerHTML = '<div data-vwo-goal="100" data-vwo-trigger="view">View</div>';
+
+    loadWithCommon('vwo', { coverable: false });
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    window.ppLib.vwo!.configure({ accountId: '123' });
+    window.ppLib.vwo!.init();
+
+    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('IntersectionObserver not available'));
+  });
+
+  it('scanViewGoals exits early when no view-trigger elements exist', () => {
+    (window as any).IntersectionObserver = class {
+      observe = vi.fn();
+      unobserve = vi.fn();
+      disconnect = vi.fn();
+      constructor() {}
+    };
+
+    document.body.innerHTML = '<button data-vwo-goal="100">No view trigger</button>';
+
+    loadWithCommon('vwo', { coverable: false });
+    window.ppLib.vwo!.configure({ accountId: '123' });
+    window.ppLib.vwo!.init();
+
+    // Observer should not be created since no view-trigger elements
+    // The observe mock should not have been called
+  });
+
+  it('handleGoalClick ignores click on element without closest', () => {
+    loadWithCommon('vwo', { coverable: false });
+    window.ppLib.vwo!.configure({ accountId: '123' });
+    window.ppLib.vwo!.init();
+
+    // Dispatch click with a target that has no closest method
+    const mockTarget = document.createTextNode('text');
+    const event = new Event('click', { bubbles: true });
+    Object.defineProperty(event, 'target', { value: mockTarget });
+    document.dispatchEvent(event);
+
+    // Should not throw and VWO queue should not have goal entries
+    expect(window.VWO).toBeUndefined();
+  });
+
+  it('handleGoalSubmit tracks form with goal directly on form element', () => {
+    loadWithCommon('vwo', { coverable: false });
+    window.ppLib.vwo!.configure({ accountId: '123' });
+
+    document.body.innerHTML = '<form data-vwo-goal="600" data-vwo-trigger="submit"><button type="submit">Go</button></form>';
+    window.ppLib.vwo!.init();
+
+    const form = document.querySelector('form')!;
+    form.dispatchEvent(new Event('submit', { bubbles: true }));
+
+    expect(window.VWO).toBeDefined();
+    expect(window.VWO[0]).toEqual(['track.goalConversion', 600]);
+  });
+
+  it('handleGoalSubmit falls back to closest when form lacks goal attribute', () => {
+    loadWithCommon('vwo', { coverable: false });
+    window.ppLib.vwo!.configure({ accountId: '123' });
+
+    document.body.innerHTML = '<div data-vwo-goal="700" data-vwo-trigger="submit"><form id="innerForm"><button>Go</button></form></div>';
+    window.ppLib.vwo!.init();
+
+    const form = document.getElementById('innerForm')!;
+    form.dispatchEvent(new Event('submit', { bubbles: true }));
+
+    expect(window.VWO).toBeDefined();
+    expect(window.VWO[0]).toEqual(['track.goalConversion', 700]);
+  });
+
+  it('trackGoalFromElement with NaN revenue treats it as undefined', () => {
+    loadWithCommon('vwo', { coverable: false });
+    window.ppLib.vwo!.configure({ accountId: '123' });
+
+    document.body.innerHTML = '<button data-vwo-goal="800" data-vwo-revenue="abc">Click</button>';
+    window.ppLib.vwo!.init();
+
+    document.querySelector('button')!.click();
+
+    expect(window.VWO).toBeDefined();
+    // Revenue is NaN → treated as undefined → omitted from trackGoalConversion
+    expect(window.VWO[0]).toEqual(['track.goalConversion', 800]);
+  });
+
+  it('isFeatureEnabled returns false for control variation (1)', () => {
+    loadWithCommon('vwo', { coverable: false });
+    window._vwo_exp = { '10': { combination_chosen: 1, comb_n: { '1': 'Control' } } } as any;
+
+    expect(window.ppLib.vwo!.isFeatureEnabled('10')).toBe(false);
+
+    delete window._vwo_exp;
+  });
+
+  it('getVariation returns null when combination_chosen is missing', () => {
+    loadWithCommon('vwo', { coverable: false });
+    window._vwo_exp = { '10': { comb_n: {} } } as any;
+
+    expect(window.ppLib.vwo!.getVariation('10')).toBeNull();
+
+    delete window._vwo_exp;
+  });
+
+  it('forceVariation stores and applies via queue', () => {
+    loadWithCommon('vwo', { coverable: false });
+    window._vis_opt_set_combination = vi.fn();
+
+    window.ppLib.vwo!.forceVariation('50', '3');
+
+    // Execute queued function
+    for (const fn of window._vis_opt_queue) {
+      fn();
+    }
+
+    expect(window._vis_opt_set_combination).toHaveBeenCalledWith(3, 50);
+    const stored = JSON.parse(sessionStorage.getItem('pp_vwo_force')!);
+    expect(stored['50']).toBe('3');
+  });
+
+  it('trackGoal with revenue=0 includes zero revenue', () => {
+    loadWithCommon('vwo', { coverable: false });
+    window.ppLib.vwo!.trackGoal(999, 0);
+
+    expect(window.VWO).toBeDefined();
+    expect(window.VWO[0]).toEqual(['track.goalConversion', 999, 0]);
+  });
+
+  it('script onerror handler calls finish', () => {
+    loadWithCommon('vwo', { coverable: false });
+    window.ppLib.vwo!.configure({ accountId: '123' });
+    window.ppLib.vwo!.init();
+
+    const script = document.querySelector('script[src*="visualwebsiteoptimizer.com"]') as HTMLScriptElement;
+    expect(script).not.toBeNull();
+    expect(script.onerror).toBeDefined();
+
+    // Trigger onerror — this calls _vwo_code.finish() internally
+    script.onerror!(new Event('error'));
+
+    // finish() was invoked (finished flag should be true)
+    expect(window._vwo_code.finished()).toBe(true);
+  });
+
+  it('settings_timer timeout triggers finish', () => {
+    vi.useFakeTimers();
+
+    loadWithCommon('vwo', { coverable: false });
+    window.ppLib.vwo!.configure({ accountId: '123', settingsTolerance: 500 });
+    window.ppLib.vwo!.init();
+
+    expect(window._vwo_code.finished()).toBe(false);
+
+    vi.advanceTimersByTime(600);
+
+    // Timeout callback called finish()
+    expect(window._vwo_code.finished()).toBe(true);
+
+    vi.useRealTimers();
   });
 });

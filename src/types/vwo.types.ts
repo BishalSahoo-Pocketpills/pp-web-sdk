@@ -16,6 +16,7 @@ export interface VWOConfig {
   trackToDataLayer: boolean;
   attributes: VWOAttributes;
   debounceMs: number;
+  smartCodeUrl: string;
 }
 
 export interface VWOExperiment {
