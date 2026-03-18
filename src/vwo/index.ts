@@ -145,6 +145,7 @@ import { createVWOConfig } from './config';
         var b = d.createElement('script');
         b.src = scriptUrl;
         b.type = 'text/javascript';
+        if (CONFIG.nonce) b.setAttribute('nonce', CONFIG.nonce);
         b.onerror = function() {
           win._vwo_code.finish();
         };
@@ -516,7 +517,7 @@ import { createVWOConfig } from './config';
     },
 
     getConfig: function() {
-      return Object.assign({}, CONFIG);
+      return JSON.parse(JSON.stringify(CONFIG));
     }
   };
 

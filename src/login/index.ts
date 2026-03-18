@@ -124,7 +124,7 @@ import { createInitAuthState } from './auth-state';
     },
 
     getConfig: function(): LoginConfig {
-      return Object.assign({}, CONFIG);
+      return JSON.parse(JSON.stringify(CONFIG));
     }
   };
 

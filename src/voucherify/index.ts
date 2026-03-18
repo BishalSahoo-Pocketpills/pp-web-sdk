@@ -75,7 +75,11 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   function isCacheValid(key: string): boolean {
     var entry = memCache.get(key);
     if (!entry) return false;
-    return (Date.now() - entry.timestamp) < CONFIG.cache.ttl;
+    if ((Date.now() - entry.timestamp) >= CONFIG.cache.ttl) {
+      memCache.delete(key);
+      return false;
+    }
+    return true;
   }
 
   async function fetchWithRetry(url: string, options: RequestInit): Promise<Response> {
@@ -274,6 +278,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
     if (discountType === 'AMOUNT' || discountType === 'FIXED') {
       return formatPrice(discountAmount) + ' OFF';
     }
+    ppLib.log('warn', '[ppVoucherify] Unknown discount type: ' + discountType);
     return '';
   }
 
@@ -376,7 +381,9 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
     }
   }
 
-  async function fetchPricing(productIds?: string[]): Promise<PricingResult[]> {
+  var inflightPricing: Promise<PricingResult[]> | null = null;
+
+  async function fetchPricingImpl(productIds?: string[]): Promise<PricingResult[]> {
     try {
       var products = getProductsFromDOM();
       var ids = productIds || products.map(function(p) { return p.id; });
@@ -404,6 +411,12 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
       ppLib.log('error', '[ppVoucherify] fetchPricing error', e);
       return [];
     }
+  }
+
+  async function fetchPricing(productIds?: string[]): Promise<PricingResult[]> {
+    if (inflightPricing) return inflightPricing;
+    inflightPricing = fetchPricingImpl(productIds);
+    try { return await inflightPricing; } finally { inflightPricing = null; }
   }
 
   // =====================================================
@@ -436,8 +449,15 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   var initialized = false;
 
   function init(): void {
+    if (initialized) return;
+
     if (!CONFIG.api.applicationId && !CONFIG.cache.enabled) {
       ppLib.log('warn', '[ppVoucherify] No applicationId configured and cache not enabled. Call ppLib.voucherify.configure() before init.');
+      return;
+    }
+
+    if (CONFIG.cache.enabled && !CONFIG.cache.baseUrl) {
+      ppLib.log('warn', '[ppVoucherify] Cache enabled but cache.baseUrl is empty. Provide a cache proxy URL.');
       return;
     }
 
@@ -445,6 +465,11 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
     if (!hasConsent()) {
       ppLib.log('info', '[ppVoucherify] Consent not granted — module not initialized');
       return;
+    }
+
+    // Warn about exposed credentials in direct API mode
+    if (!CONFIG.cache.enabled && CONFIG.api.clientSecretKey) {
+      ppLib.log('warn', '[ppVoucherify] Direct API mode exposes credentials in browser. Use cache proxy (cache.enabled: true) for production.');
     }
 
     /*! v8 ignore start — jsdom readyState is always 'complete' */
@@ -540,7 +565,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
     },
 
     getConfig: function() {
-      return Object.assign({}, CONFIG);
+      return JSON.parse(JSON.stringify(CONFIG));
     }
   };
 

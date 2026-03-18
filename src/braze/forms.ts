@@ -13,6 +13,7 @@ export function createFormHandler(
 ) {
   const lastSubmitMap: Record<string, number> = {};
   var debounceWriteCount = 0;
+  var bound = false;
 
   function isDuplicate(formName: string): boolean {
     var now = Date.now();
@@ -159,6 +160,9 @@ export function createFormHandler(
   }
 
   function bind(): void {
+    if (bound) return;
+    bound = true;
+
     var listenerOptions: AddEventListenerOptions = CONFIG.form.preventDefault
       ? { capture: false, passive: false }
       : { capture: false, passive: true };

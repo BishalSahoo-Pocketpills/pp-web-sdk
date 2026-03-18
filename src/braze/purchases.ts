@@ -14,6 +14,8 @@ export function createPurchaseHandler(
 
   const lastPurchaseMap: Record<string, number> = {};
   var debounceWriteCount = 0;
+  var bound = false;
+  var bridged = false;
 
   function isDuplicate(key: string): boolean {
     var now = Date.now();
@@ -143,6 +145,8 @@ export function createPurchaseHandler(
 
   function bridgeEcommerce(): void {
     if (!CONFIG.purchase.bridgeEcommerce) return;
+    if (bridged) return;
+    bridged = true;
 
     var originalPush = win.dataLayer && win.dataLayer.push;
     win.dataLayer = win.dataLayer || [];
@@ -180,6 +184,9 @@ export function createPurchaseHandler(
   }
 
   function bind(): void {
+    if (bound) return;
+    bound = true;
+
     doc.addEventListener('click', handlePurchaseClick, { capture: false, passive: true } as EventListenerOptions);
     doc.addEventListener('touchend', handlePurchaseClick, { capture: false, passive: true } as EventListenerOptions);
 

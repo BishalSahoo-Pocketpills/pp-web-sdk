@@ -9,6 +9,7 @@ export function createEventHandler(
 ) {
   const lastEventMap: Record<string, number> = {};
   var debounceWriteCount = 0;
+  var bound = false;
 
   function isDuplicate(key: string): boolean {
     var now = Date.now();
@@ -111,6 +112,9 @@ export function createEventHandler(
   }
 
   function bind(): void {
+    if (bound) return;
+    bound = true;
+
     doc.addEventListener('click', handleInteraction, { capture: false, passive: true } as EventListenerOptions);
     doc.addEventListener('touchend', handleInteraction, { capture: false, passive: true } as EventListenerOptions);
     ppLib.log('info', '[ppBraze] Event handler bound');

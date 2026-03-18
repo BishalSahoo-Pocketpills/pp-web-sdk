@@ -114,7 +114,12 @@ import { createDomBinder } from './dom';
     });
   }
 
-  // Poll for previousUser cookie (set by late-loading scripts)
+  /**
+   * Poll for previousUser cookie set by late-loading scripts.
+   * Strategy: 20 attempts × 500ms = max 10s wait.
+   * Combined with the CONFIG.initDelay (default 1500ms), total max wait
+   * is ~11.5s from window.load. Covers scripts loaded via GTM containers.
+   */
   var pollTimerId: number | null = null;
 
   function onPollFound(): void {
@@ -223,7 +228,7 @@ import { createDomBinder } from './dom';
     scanViewItems: domBinder.scanViewItems,
 
     getConfig: function(): DataLayerConfig {
-      return Object.assign({}, CONFIG);
+      return JSON.parse(JSON.stringify(CONFIG));
     }
   };
 

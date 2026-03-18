@@ -1537,4 +1537,32 @@ describe('event-source module', () => {
       expect(mockTrackGoal).not.toHaveBeenCalled();
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // dataLayer soft cap (M1)
+  // ---------------------------------------------------------------------------
+  describe('dataLayer soft cap', () => {
+    beforeEach(() => {
+      loadWithCommon('event-source');
+    });
+
+    it('caps dataLayer at 500 entries before push via splice', () => {
+      // Create a dataLayer with 510 entries
+      const dataLayer: any[] = [];
+      for (let i = 0; i < 510; i++) {
+        dataLayer.push({ event: 'filler_' + i });
+      }
+      window.dataLayer = dataLayer;
+
+      createEventSourceDOM([{ source: 'cap_test', text: 'Click' }]);
+
+      const el = document.querySelector('[data-event-source]')!;
+      window.ppLib.eventSource.trackElement(el);
+
+      // splice(0, max(0, 510-500)) removes first 10 entries, then push adds 1 = 501
+      expect(window.dataLayer.length).toBe(501);
+      const lastEntry = window.dataLayer[window.dataLayer.length - 1];
+      expect(lastEntry.event).toBe('element_click');
+    });
+  });
 });

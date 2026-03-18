@@ -1189,4 +1189,141 @@ describe('Voucherify native coverage', () => {
     // No crash = eviction succeeded
     expect(callCount).toBeGreaterThan(52);
   });
+
+  // =====================================================
+  // INIT RE-INITIALIZATION GUARD (H1)
+  // =====================================================
+
+  it('init() is a no-op on second call (re-initialization guard)', async () => {
+    await freshLoad();
+    setupDOM();
+    window.fetch = mockFetch({ qualifications: [], total: 0, has_more: false });
+    window.ppLib.voucherify.configure({
+      cache: { enabled: true, baseUrl: '/api/voucherify', ttl: 60000 } as any,
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+    expect(window.ppLib.voucherify.isReady()).toBe(true);
+
+    // Second call should be a no-op
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    window.ppLib.voucherify.init();
+    // Should NOT log any additional init messages
+    expect(logSpy).not.toHaveBeenCalledWith('warn', expect.stringContaining('No applicationId'));
+  });
+
+  // =====================================================
+  // INFLIGHT REQUEST DEDUP (H4)
+  // =====================================================
+
+  it('fetchPricing deduplicates concurrent calls', async () => {
+    await freshLoad();
+    setupDOM();
+    let fetchCallCount = 0;
+    window.fetch = vi.fn(() => {
+      fetchCallCount++;
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve({ qualifications: [], total: 0, has_more: false })
+      });
+    }) as any;
+    window.ppLib.voucherify.configure({
+      cache: { enabled: true, baseUrl: '/api/voucherify', ttl: 1 } as any,
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    // Clear cache so fetch is triggered
+    window.ppLib.voucherify.clearCache();
+    await new Promise(r => setTimeout(r, 5));
+
+    // Fire two concurrent calls
+    const [r1, r2] = await Promise.all([
+      window.ppLib.voucherify.fetchPricing(),
+      window.ppLib.voucherify.fetchPricing()
+    ]);
+
+    // Both should resolve to the same result
+    expect(r1).toEqual(r2);
+    // Only one fetch should have been made (inflight dedup)
+    expect(fetchCallCount).toBe(1);
+  });
+
+  // =====================================================
+  // CREDENTIAL WARNING (H5)
+  // =====================================================
+
+  it('warns when API credentials are exposed in direct API mode', async () => {
+    await freshLoad();
+    setupDOM();
+    window.fetch = mockFetch({ qualifications: [], total: 0, has_more: false });
+    window.ppLib.voucherify.configure({
+      api: { applicationId: 'test-app', clientSecretKey: 'secret-key' } as any,
+      cache: { enabled: false } as any,
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    window.ppLib.voucherify.init();
+
+    expect(logSpy).toHaveBeenCalledWith(
+      'warn',
+      expect.stringContaining('Direct API mode exposes credentials')
+    );
+  });
+
+  it('does not warn about credentials when cache is enabled', async () => {
+    await freshLoad();
+    setupDOM();
+    window.fetch = mockFetch({ qualifications: [], total: 0, has_more: false });
+    window.ppLib.voucherify.configure({
+      api: { applicationId: 'test-app', clientSecretKey: 'secret-key' } as any,
+      cache: { enabled: true, baseUrl: '/api/voucherify', ttl: 60000 } as any,
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    window.ppLib.voucherify.init();
+
+    expect(logSpy).not.toHaveBeenCalledWith(
+      'warn',
+      expect.stringContaining('Direct API mode exposes credentials')
+    );
+  });
+
+  // =====================================================
+  // STALE CACHE DELETION ON READ (M2)
+  // =====================================================
+
+  it('isCacheValid deletes stale entries on read', async () => {
+    await freshLoad();
+    setupDOM();
+    let fetchCallCount = 0;
+    window.fetch = vi.fn(() => {
+      fetchCallCount++;
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve({ qualifications: [], total: 0, has_more: false })
+      });
+    }) as any;
+    window.ppLib.voucherify.configure({
+      cache: { enabled: true, baseUrl: '/api/voucherify', ttl: 1 } as any, // 1ms TTL
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    // First call populates cache
+    await window.ppLib.voucherify.checkQualifications({ scenario: 'ALL' });
+    expect(fetchCallCount).toBe(1);
+
+    // Wait for TTL to expire
+    await new Promise(r => setTimeout(r, 5));
+
+    // Second call should re-fetch because stale entry was deleted
+    await window.ppLib.voucherify.checkQualifications({ scenario: 'ALL' });
+    expect(fetchCallCount).toBe(2);
+  });
 });

@@ -21,6 +21,21 @@ export function createUserManager(
   ppLib: PPLib,
   CONFIG: BrazeConfig
 ) {
+  var mapValidated = false;
+
+  function validateAttributeMap(): void {
+    if (mapValidated) return;
+    mapValidated = true;
+    var seen: Record<string, string> = {};
+    for (var key in CONFIG.attributeMap) {
+      var target = CONFIG.attributeMap[key];
+      if (seen[target]) {
+        ppLib.log('warn', '[ppBraze] attributeMap collision: "' + seen[target] + '" and "' + key + '" both map to "' + target + '"');
+      }
+      seen[target] = key;
+    }
+  }
+
   function identify(userId: string): void {
     try {
       var sanitized = ppLib.Security.sanitize(userId);
@@ -42,6 +57,8 @@ export function createUserManager(
       /*! v8 ignore start */
       if (!attrs || typeof attrs !== 'object') return;
       /*! v8 ignore stop */
+
+      validateAttributeMap();
 
       var user = win.braze.getUser();
       var keys = Object.keys(attrs);
@@ -120,6 +137,8 @@ export function createUserManager(
    */
   function processFormAttrs(fieldMap: Record<string, string>): void {
     try {
+      validateAttributeMap();
+
       var user = win.braze.getUser();
       var keys = Object.keys(fieldMap);
 

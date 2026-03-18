@@ -514,4 +514,29 @@ describe('VWO native coverage', () => {
     window.ppLib.vwo!.forceVariation('5', '2');
     expect(window._vis_opt_queue).toBeDefined();
   });
+
+  // ==========================================================================
+  // CSP nonce support (M3)
+  // ==========================================================================
+  it('sets nonce attribute on SmartCode script element when configured', async () => {
+    await freshLoad();
+    window.ppLib.vwo!.configure({ accountId: '123', nonce: 'vwo-nonce-42' });
+    window.ppLib.vwo!.init();
+
+    const scripts = document.querySelectorAll('script[src*="visualwebsiteoptimizer.com"]');
+    expect(scripts.length).toBeGreaterThanOrEqual(1);
+    const script = scripts[scripts.length - 1] as HTMLScriptElement;
+    expect(script.getAttribute('nonce')).toBe('vwo-nonce-42');
+  });
+
+  it('does not set nonce attribute when nonce is not configured', async () => {
+    await freshLoad();
+    window.ppLib.vwo!.configure({ accountId: '456' });
+    window.ppLib.vwo!.init();
+
+    const scripts = document.querySelectorAll('script[src*="visualwebsiteoptimizer.com"]');
+    expect(scripts.length).toBeGreaterThanOrEqual(1);
+    const script = scripts[scripts.length - 1] as HTMLScriptElement;
+    expect(script.getAttribute('nonce')).toBeNull();
+  });
 });

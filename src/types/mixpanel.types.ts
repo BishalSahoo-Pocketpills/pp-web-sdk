@@ -12,6 +12,7 @@ export interface MixpanelConfig {
   optOutByDefault: boolean;
   sessionTimeout: number;
   cookieNames: MixpanelCookieNames;
+  nonce?: string;
 }
 
 export interface SessionManager {

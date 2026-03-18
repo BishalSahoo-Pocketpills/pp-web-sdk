@@ -997,12 +997,20 @@ describe('loaded callback', () => {
     teardownScriptEnv();
   });
 
-  it('calls opt_in_tracking on mixpanel', () => {
+  it('calls opt_in_tracking on mixpanel when optOutByDefault is false', () => {
     const loadedCallback = initAndGetLoadedCallback();
     const mp = createMockMixpanel();
     invokeLoadedCallback(loadedCallback, mp);
 
     expect(mp.opt_in_tracking).toHaveBeenCalled();
+  });
+
+  it('does NOT call opt_in_tracking when optOutByDefault is true', () => {
+    const loadedCallback = initAndGetLoadedCallback({ optOutByDefault: true });
+    const mp = createMockMixpanel();
+    invokeLoadedCallback(loadedCallback, mp);
+
+    expect(mp.opt_in_tracking).not.toHaveBeenCalled();
   });
 
   it('updates SessionManager timeout from config', () => {
@@ -1501,5 +1509,28 @@ describe('Integration / Edge Cases', () => {
     loadModule('mixpanel');
 
     expect(logSpy).toHaveBeenCalledWith('info', '[ppMixpanel] Module loaded');
+  });
+
+  // =========================================================================
+  // CSP nonce support (M3)
+  // =========================================================================
+  it('sets nonce attribute on Mixpanel script element when configured', () => {
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'tok123', nonce: 'abc123' });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    const scriptArg = insertBeforeSpy.mock.calls[0][0];
+    expect(scriptArg.getAttribute('nonce')).toBe('abc123');
+  });
+
+  it('does not set nonce attribute when nonce is not configured', () => {
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'tok123' });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    const scriptArg = insertBeforeSpy.mock.calls[0][0];
+    expect(scriptArg.getAttribute('nonce')).toBeNull();
   });
 });

@@ -12,7 +12,7 @@ function loadWithConsentRequired() {
   loadModule('common');
   // Make consent required BEFORE loading analytics so auto-init skips tracking
   window.ppLib.config.debug = false;
-  loadModule('analytics');
+  loadModule('analytics', { coverable: false });
   // Now set consent required via the public API
   window.ppAnalytics.config({ consent: { required: true, defaultState: 'denied' } });
 }
@@ -22,7 +22,7 @@ function loadWithDebug() {
   loadModule('common');
   window.ppLib.config.debug = true;
   window.ppLib.config.verbose = true;
-  loadModule('analytics');
+  loadModule('analytics', { coverable: false });
 }
 
 // Helper: set URL before loading
@@ -46,7 +46,7 @@ function restoreLocation() {
 // =========================================================================
 describe('IIFE Bootstrap', () => {
   it('calls initModule immediately when ppLib._isReady is true', () => {
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     expect(window.ppLib).toBeDefined();
     expect(window.ppLib._isReady).toBe(true);
     expect(window.ppAnalytics).toBeDefined();
@@ -56,7 +56,7 @@ describe('IIFE Bootstrap', () => {
     delete window.ppLib;
     delete window.ppLibReady;
 
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
 
     expect(window.ppLib).toBeUndefined();
     expect(window.ppLibReady).toBeDefined();
@@ -69,7 +69,7 @@ describe('IIFE Bootstrap', () => {
     delete window.ppLib;
     delete window.ppLibReady;
 
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     expect(window.ppLibReady.length).toBe(1);
 
     loadModule('common');
@@ -80,14 +80,14 @@ describe('IIFE Bootstrap', () => {
     delete window.ppLib;
     window.ppLibReady = [vi.fn()];
 
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
 
     expect(window.ppLibReady.length).toBe(2);
     expect(typeof window.ppLibReady[1]).toBe('function');
   });
 
   it('exposes window.ppAnalytics with all expected methods', () => {
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     const api = window.ppAnalytics;
     expect(api.version).toBeDefined();
     expect(typeof api.config).toBe('function');
@@ -122,7 +122,7 @@ describe('Auto-initialization', () => {
     });
 
     // With default consent (not required), init runs and sets initialized
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     expect(window.ppAnalytics).toBeDefined();
   });
 
@@ -135,7 +135,7 @@ describe('Auto-initialization', () => {
 
     const addEventSpy = vi.spyOn(document, 'addEventListener');
 
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
 
     const dclCall = addEventSpy.mock.calls.find(
       (c) => c[0] === 'DOMContentLoaded'
@@ -160,7 +160,7 @@ describe('Auto-initialization', () => {
   });
 
   it('does NOT expose ppAnalyticsDebug when debug=false', () => {
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     expect(window.ppAnalyticsDebug).toBeUndefined();
   });
 });
@@ -292,7 +292,7 @@ describe('Utils', () => {
     });
 
     it('does not log when debug is false', () => {
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       const consoleSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
       window.ppAnalytics.config({ someOption: true });
       // debug is false by default so no log
@@ -308,7 +308,7 @@ describe('Utils', () => {
       loadModule('common');
       window.ppLib.config.debug = true;
       window.ppLib.config.verbose = false;
-      loadModule('analytics');
+      loadModule('analytics', { coverable: false });
       // verbose messages are suppressed
       expect(window.ppAnalyticsDebug).toBeDefined();
     });
@@ -323,7 +323,7 @@ describe('Utils', () => {
       setUrl('https://example.com/?utm_source=google');
       loadModule('common');
       window.ppLib.config.debug = true;
-      loadModule('analytics');
+      loadModule('analytics', { coverable: false });
       const attr = window.ppAnalytics.getAttribution();
       // utm_source should have been captured
       if (attr.lastTouch) {
@@ -334,7 +334,7 @@ describe('Utils', () => {
 
     it('returns false for non-whitelisted param', () => {
       setUrl('https://example.com/?random_param=value');
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       const attr = window.ppAnalytics.getAttribution();
       // Non-whitelisted param should not appear
       if (attr.lastTouch) {
@@ -344,7 +344,7 @@ describe('Utils', () => {
     });
 
     it('returns false for null name', () => {
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       // null param name should not crash anything
       expect(window.ppAnalytics).toBeDefined();
     });
@@ -357,13 +357,13 @@ describe('Utils', () => {
 describe('Consent', () => {
   describe('isGranted', () => {
     it('returns true when consent is not required', () => {
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       expect(window.ppAnalytics.consent.status()).toBe(true);
     });
 
     it('uses custom framework check when enabled', () => {
       loadModule('common');
-      loadModule('analytics');
+      loadModule('analytics', { coverable: false });
       window.ppAnalytics.config({
         consent: {
           required: true,
@@ -378,7 +378,7 @@ describe('Consent', () => {
     it('custom framework returning false falls through to other checks', () => {
       loadModule('common');
       window.ppLib.config.debug = true;
-      loadModule('analytics');
+      loadModule('analytics', { coverable: false });
       window.ppAnalytics.config({
         consent: {
           required: true,
@@ -399,7 +399,7 @@ describe('Consent', () => {
     it('custom framework that throws falls through gracefully', () => {
       loadModule('common');
       window.ppLib.config.debug = true;
-      loadModule('analytics');
+      loadModule('analytics', { coverable: false });
       window.ppAnalytics.config({
         consent: {
           required: true,
@@ -424,7 +424,7 @@ describe('Consent', () => {
   describe('checkOneTrust', () => {
     it('returns true when OnetrustActiveGroups contains categoryId', () => {
       loadModule('common');
-      loadModule('analytics');
+      loadModule('analytics', { coverable: false });
       window.ppAnalytics.config({
         consent: {
           required: true,
@@ -440,7 +440,7 @@ describe('Consent', () => {
     it('returns false when OnetrustActiveGroups does not contain categoryId', () => {
       loadModule('common');
       window.ppLib.config.debug = true;
-      loadModule('analytics');
+      loadModule('analytics', { coverable: false });
       window.ppAnalytics.config({
         consent: {
           required: true,
@@ -460,7 +460,7 @@ describe('Consent', () => {
     it('returns false when OnetrustActiveGroups is undefined', () => {
       loadModule('common');
       window.ppLib.config.debug = true;
-      loadModule('analytics');
+      loadModule('analytics', { coverable: false });
       window.ppAnalytics.config({
         consent: {
           required: true,
@@ -481,7 +481,7 @@ describe('Consent', () => {
   describe('checkCookieYes', () => {
     it('returns true when cookieyes-consent cookie has analytics=yes', () => {
       loadModule('common');
-      loadModule('analytics');
+      loadModule('analytics', { coverable: false });
       window.ppAnalytics.config({
         consent: {
           required: true,
@@ -500,7 +500,7 @@ describe('Consent', () => {
     it('returns false when cookieyes-consent cookie has analytics=no', () => {
       loadModule('common');
       window.ppLib.config.debug = true;
-      loadModule('analytics');
+      loadModule('analytics', { coverable: false });
       window.ppAnalytics.config({
         consent: {
           required: true,
@@ -520,7 +520,7 @@ describe('Consent', () => {
     it('returns false when cookieyes-consent cookie is missing', () => {
       loadModule('common');
       window.ppLib.config.debug = true;
-      loadModule('analytics');
+      loadModule('analytics', { coverable: false });
       window.ppAnalytics.config({
         consent: {
           required: true,
@@ -540,7 +540,7 @@ describe('Consent', () => {
   describe('getStoredConsent', () => {
     it('returns true when stored consent is "approved"', () => {
       loadModule('common');
-      loadModule('analytics');
+      loadModule('analytics', { coverable: false });
       localStorage.setItem('pp_consent', 'approved');
       window.ppAnalytics.config({
         consent: {
@@ -557,7 +557,7 @@ describe('Consent', () => {
 
     it('returns false when stored consent is "denied"', () => {
       loadModule('common');
-      loadModule('analytics');
+      loadModule('analytics', { coverable: false });
       localStorage.setItem('pp_consent', 'denied');
       window.ppAnalytics.config({
         consent: {
@@ -575,7 +575,7 @@ describe('Consent', () => {
 
     it('falls back to state when no stored consent', () => {
       loadModule('common');
-      loadModule('analytics');
+      loadModule('analytics', { coverable: false });
       window.ppAnalytics.config({
         consent: {
           required: true,
@@ -639,7 +639,7 @@ describe('Consent', () => {
   describe('isGranted error fallback', () => {
     it('returns state === approved on error', () => {
       loadModule('common');
-      loadModule('analytics');
+      loadModule('analytics', { coverable: false });
       // The consent module's state starts as 'approved'
       // If isGranted throws internally, it returns state === 'approved'
       expect(window.ppAnalytics.consent.status()).toBe(true);
@@ -649,7 +649,7 @@ describe('Consent', () => {
   describe('setConsent', () => {
     it('grant sets state to approved and triggers init', () => {
       loadModule('common');
-      loadModule('analytics');
+      loadModule('analytics', { coverable: false });
       window.ppAnalytics.config({
         consent: { required: true, defaultState: 'denied' }
       });
@@ -660,7 +660,7 @@ describe('Consent', () => {
 
     it('revoke sets state to denied and clears storage', () => {
       loadModule('common');
-      loadModule('analytics');
+      loadModule('analytics', { coverable: false });
       // First grant
       window.ppAnalytics.consent.grant();
       // Then revoke
@@ -706,7 +706,7 @@ describe('UrlParser', () => {
     it('captures UTM params from URL', () => {
       setUrl('https://example.com/page?utm_source=google&utm_medium=cpc&utm_campaign=spring');
       window.requestIdleCallback = vi.fn((cb) => cb());
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       const attr = window.ppAnalytics.getAttribution();
       expect(attr.lastTouch).toBeDefined();
       expect(attr.lastTouch.utm_source).toBe('google');
@@ -717,7 +717,7 @@ describe('UrlParser', () => {
     it('captures ad click IDs from URL', () => {
       setUrl('https://example.com/page?gclid=abc123&fbclid=xyz789');
       window.requestIdleCallback = vi.fn((cb) => cb());
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       const attr = window.ppAnalytics.getAttribution();
       expect(attr.lastTouch).toBeDefined();
       expect(attr.lastTouch.gclid).toBe('abc123');
@@ -727,7 +727,7 @@ describe('UrlParser', () => {
     it('skips non-whitelisted params', () => {
       setUrl('https://example.com/page?utm_source=google&evil_param=bad');
       window.requestIdleCallback = vi.fn((cb) => cb());
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       const attr = window.ppAnalytics.getAttribution();
       if (attr.lastTouch) {
         expect(attr.lastTouch.evil_param).toBeUndefined();
@@ -738,7 +738,7 @@ describe('UrlParser', () => {
     it('returns empty object for URL with no tracked params', () => {
       setUrl('https://example.com/page?unrelated=value');
       window.requestIdleCallback = vi.fn((cb) => cb());
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       const attr = window.ppAnalytics.getAttribution();
       // No tracked params -> no lastTouch stored
       expect(attr.lastTouch).toBeNull();
@@ -748,7 +748,7 @@ describe('UrlParser', () => {
       // Default jsdom location has no search params
       restoreLocation();
       window.requestIdleCallback = vi.fn((cb) => cb());
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       const attr = window.ppAnalytics.getAttribution();
       expect(attr.lastTouch).toBeNull();
     });
@@ -758,7 +758,7 @@ describe('UrlParser', () => {
     it('adds landing_page, referrer, and timestamp metadata', () => {
       setUrl('https://example.com/page?utm_source=google');
       window.requestIdleCallback = vi.fn((cb) => cb());
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       const attr = window.ppAnalytics.getAttribution();
       expect(attr.lastTouch).toBeDefined();
       expect(attr.lastTouch.landing_page).toBeDefined();
@@ -769,7 +769,7 @@ describe('UrlParser', () => {
     it('returns null when no tracked params found', () => {
       restoreLocation();
       window.requestIdleCallback = vi.fn((cb) => cb());
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       const attr = window.ppAnalytics.getAttribution();
       expect(attr.lastTouch).toBeNull();
       expect(attr.firstTouch).toBeNull();
@@ -803,7 +803,7 @@ describe('UrlParser', () => {
       setUrl('https://example.com/?utm_source=test');
       Object.defineProperty(document, 'referrer', { value: '', configurable: true });
       window.requestIdleCallback = vi.fn((cb) => cb());
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       const attr = window.ppAnalytics.getAttribution();
       if (attr.lastTouch) {
         expect(attr.lastTouch.referrer).toBe('direct');
@@ -818,7 +818,7 @@ describe('UrlParser', () => {
         configurable: true,
       });
       window.requestIdleCallback = vi.fn((cb) => cb());
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       const attr = window.ppAnalytics.getAttribution();
       if (attr.lastTouch) {
         expect(attr.lastTouch.referrer).toBe('internal');
@@ -833,7 +833,7 @@ describe('UrlParser', () => {
         configurable: true,
       });
       window.requestIdleCallback = vi.fn((cb) => cb());
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       const attr = window.ppAnalytics.getAttribution();
       if (attr.lastTouch) {
         expect(attr.lastTouch.referrer).toBe('https://google.com');
@@ -848,7 +848,7 @@ describe('UrlParser', () => {
         configurable: true,
       });
       window.requestIdleCallback = vi.fn((cb) => cb());
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       const attr = window.ppAnalytics.getAttribution();
       if (attr.lastTouch) {
         expect(attr.lastTouch.referrer).toBe('unknown');
@@ -863,7 +863,7 @@ describe('UrlParser', () => {
         configurable: true,
       });
       window.requestIdleCallback = vi.fn((cb) => cb());
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       const attr = window.ppAnalytics.getAttribution();
       if (attr.lastTouch) {
         expect(attr.lastTouch.referrer).toBe('direct');
@@ -881,7 +881,7 @@ describe('Session', () => {
   });
 
   it('isValid returns false when no session_start in storage', () => {
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     // session_start is set during init if params are found
     // With no URL params, no session is started
     // We can test via debug internals
@@ -889,7 +889,7 @@ describe('Session', () => {
 
   it('isValid returns false for non-number session_start', () => {
     setSessionItem('session_start', 'not-a-number');
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     // The session is invalid due to non-number value
   });
 
@@ -898,7 +898,7 @@ describe('Session', () => {
     setSessionItem('session_start', Date.now());
     setUrl('https://example.com/?utm_source=google');
     window.requestIdleCallback = vi.fn((cb) => cb());
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     // First touch should NOT be overwritten since session is valid and first_touch exists
     // The fact that init completes means session handling works
     expect(window.ppAnalytics).toBeDefined();
@@ -910,7 +910,7 @@ describe('Session', () => {
     setSessionItem('session_start', oldTime);
     setUrl('https://example.com/?utm_source=google');
     window.requestIdleCallback = vi.fn((cb) => cb());
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     // Expired session means first_touch gets overwritten
     expect(window.ppAnalytics).toBeDefined();
   });
@@ -918,7 +918,7 @@ describe('Session', () => {
   it('start attempts to store timestamp (Storage.set fails for numbers due to validateData)', () => {
     setUrl('https://example.com/?utm_source=google');
     window.requestIdleCallback = vi.fn((cb) => cb());
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     // Session.start() calls Storage.set('session_start', timestamp)
     // but validateData rejects non-objects, so it's not stored
     const stored = sessionStorage.getItem('pp_attr_session_start');
@@ -1570,7 +1570,7 @@ describe('Tracker.init', () => {
   it('skips when consent is not granted', () => {
     loadModule('common');
     window.ppLib.config.debug = true;
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     // Set consent required + denied
     window.ppAnalytics.config({
       consent: {
@@ -1591,7 +1591,7 @@ describe('Tracker.init', () => {
   it('captures params and stores last touch', () => {
     setUrl('https://example.com/?utm_source=facebook&utm_medium=social');
     window.requestIdleCallback = vi.fn((cb) => cb());
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     const attr = window.ppAnalytics.getAttribution();
     expect(attr.lastTouch).toBeDefined();
     expect(attr.lastTouch.utm_source).toBe('facebook');
@@ -1601,7 +1601,7 @@ describe('Tracker.init', () => {
   it('stores first touch on initial visit', () => {
     setUrl('https://example.com/?utm_source=google');
     window.requestIdleCallback = vi.fn((cb) => cb());
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     const attr = window.ppAnalytics.getAttribution();
     expect(attr.firstTouch).toBeDefined();
     expect(attr.firstTouch.utm_source).toBe('google');
@@ -1610,7 +1610,7 @@ describe('Tracker.init', () => {
   it('overwrites first touch on re-init because session_start is not stored (validateData rejects numbers)', () => {
     setUrl('https://example.com/?utm_source=original');
     window.requestIdleCallback = vi.fn((cb) => cb());
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
 
     // Verify first touch is set
     const attr1 = window.ppAnalytics.getAttribution();
@@ -1633,7 +1633,7 @@ describe('Tracker.init', () => {
     // and can be retrieved. This tests the code path where session IS valid.
     setUrl('https://example.com/?utm_source=original');
     window.requestIdleCallback = vi.fn((cb) => cb());
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
 
     const attr1 = window.ppAnalytics.getAttribution();
     expect(attr1.firstTouch.utm_source).toBe('original');
@@ -1655,7 +1655,7 @@ describe('Tracker.init', () => {
     setSessionItem('session_start', Date.now() - (31 * 60 * 1000));
     setUrl('https://example.com/?utm_source=new_session');
     window.requestIdleCallback = vi.fn((cb) => cb());
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
 
     const attr = window.ppAnalytics.getAttribution();
     expect(attr.firstTouch.utm_source).toBe('new_session');
@@ -1664,7 +1664,7 @@ describe('Tracker.init', () => {
   it('calls Session.start during init (session_start not persisted since validateData rejects numbers)', () => {
     setUrl('https://example.com/?utm_source=google');
     window.requestIdleCallback = vi.fn((cb) => cb());
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
 
     // Session.start() calls Storage.set('session_start', Date.now())
     // but Storage.set -> validateData(number) returns false, so nothing stored
@@ -1676,7 +1676,7 @@ describe('Tracker.init', () => {
     setUrl('https://example.com/?utm_source=google');
     window.requestIdleCallback = vi.fn((cb) => cb());
     const dataLayer = createMockDataLayer();
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
 
     // Should have first_touch_attribution and last_touch_attribution events
     expect(dataLayer.some(e => e.event === 'first_touch_attribution')).toBe(true);
@@ -1687,7 +1687,7 @@ describe('Tracker.init', () => {
     setUrl('https://example.com/?utm_source=google');
     window.requestIdleCallback = vi.fn((cb) => cb());
     const dataLayer = createMockDataLayer();
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
 
     expect(dataLayer.some(e => e.event === 'attribution_page_view')).toBe(true);
   });
@@ -1715,7 +1715,7 @@ describe('Tracker.init', () => {
     setUrl('https://example.com/?utm_source=google');
     loadModule('common');
     window.ppLib.config.debug = true;
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     // Disable auto capture and re-init
     window.ppAnalyticsDebug.config.attribution.autoCapture = false;
     window.ppAnalyticsDebug.tracker.initialized = false;
@@ -1732,7 +1732,7 @@ describe('Tracker.init', () => {
     window.requestIdleCallback = vi.fn((cb) => cb());
     loadModule('common');
     window.ppLib.config.debug = true;
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     const config = window.ppAnalyticsDebug.config;
     config.attribution.trackPageViews = false;
     const dataLayer = createMockDataLayer();
@@ -1756,7 +1756,7 @@ describe('Tracker.sendAttribution', () => {
     setUrl('https://example.com/?utm_source=google&utm_medium=cpc&utm_campaign=spring&utm_term=shoes&utm_content=ad1&gclid=abc&fbclid=xyz');
     window.requestIdleCallback = vi.fn((cb) => cb());
     const dataLayer = createMockDataLayer();
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
 
     const ftEvent = dataLayer.find(e => e.event === 'first_touch_attribution');
     expect(ftEvent).toBeDefined();
@@ -1776,7 +1776,7 @@ describe('Tracker.sendAttribution', () => {
     setUrl('https://example.com/?utm_source=bing');
     window.requestIdleCallback = vi.fn((cb) => cb());
     const dataLayer = createMockDataLayer();
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
 
     const ltEvent = dataLayer.find(e => e.event === 'last_touch_attribution');
     expect(ltEvent).toBeDefined();
@@ -1788,7 +1788,7 @@ describe('Tracker.sendAttribution', () => {
     window.requestIdleCallback = vi.fn((cb) => cb());
     loadModule('common');
     window.ppLib.config.debug = true;
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     const config = window.ppAnalyticsDebug.config;
     config.platforms.gtm.enabled = false;
     const dataLayer = createMockDataLayer();
@@ -1820,7 +1820,7 @@ describe('Tracker.sendAttribution', () => {
     window.requestIdleCallback = vi.fn((cb) => cb());
     loadModule('common');
     window.ppLib.config.debug = true;
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     const config = window.ppAnalyticsDebug.config;
     config.platforms.mixpanel.enabled = false;
     const platforms = window.ppAnalyticsDebug.platforms;
@@ -1837,7 +1837,7 @@ describe('Tracker.sendAttribution', () => {
     window.requestIdleCallback = vi.fn((cb) => cb());
     loadModule('common');
     window.ppLib.config.debug = true;
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     const handler = vi.fn();
     window.ppAnalytics.registerPlatform('custom1', handler);
 
@@ -1853,7 +1853,7 @@ describe('Tracker.sendAttribution', () => {
     window.requestIdleCallback = vi.fn((cb) => cb());
     loadModule('common');
     window.ppLib.config.debug = true;
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     sessionStorage.clear();
     const dataLayer = createMockDataLayer();
     const before = dataLayer.length;
@@ -1977,7 +1977,7 @@ describe('Tracker.track', () => {
     setUrl('https://example.com/?utm_source=google');
     window.requestIdleCallback = vi.fn((cb) => cb());
     const dataLayer = createMockDataLayer();
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
 
     const before = dataLayer.length;
     window.ppAnalytics.track('purchase', { value: 99 });
@@ -1991,7 +1991,7 @@ describe('Tracker.track', () => {
     setUrl('https://example.com/?utm_source=google&utm_campaign=spring');
     window.requestIdleCallback = vi.fn((cb) => cb());
     const dataLayer = createMockDataLayer();
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
 
     const before = dataLayer.length;
     window.ppAnalytics.track('signup', { plan: 'pro' });
@@ -2032,7 +2032,7 @@ describe('Tracker.track', () => {
   it('handles missing properties (defaults to {})', () => {
     window.requestIdleCallback = vi.fn((cb) => cb());
     const dataLayer = createMockDataLayer();
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     const before = dataLayer.length;
 
     window.ppAnalytics.track('simple_event');
@@ -2089,7 +2089,7 @@ describe('Tracker.getAttribution', () => {
   it('returns firstTouch and lastTouch', () => {
     setUrl('https://example.com/?utm_source=google');
     window.requestIdleCallback = vi.fn((cb) => cb());
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
 
     const attr = window.ppAnalytics.getAttribution();
     expect(attr).toHaveProperty('firstTouch');
@@ -2101,7 +2101,7 @@ describe('Tracker.getAttribution', () => {
   it('returns null when no attribution data stored', () => {
     restoreLocation();
     window.requestIdleCallback = vi.fn((cb) => cb());
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     // Clear storage after init
     window.ppAnalytics.clear();
 
@@ -2132,14 +2132,14 @@ describe('Public API', () => {
 
   describe('config()', () => {
     it('returns CONFIG when called with no args', () => {
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       const config = window.ppAnalytics.config();
       expect(config).toBeDefined();
       expect(config.version).toBe('3.1.0');
     });
 
     it('merges options into CONFIG', () => {
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       window.ppAnalytics.config({ debug: true });
       const config = window.ppAnalytics.config();
       expect(config.debug).toBe(true);
@@ -2161,7 +2161,7 @@ describe('Public API', () => {
     it('delegates to Tracker.track', () => {
       window.requestIdleCallback = vi.fn((cb) => cb());
       const dataLayer = createMockDataLayer();
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       const before = dataLayer.length;
       window.ppAnalytics.track('api_test', { foo: 'bar' });
       expect(dataLayer.slice(before).some(e => e.event === 'api_test')).toBe(true);
@@ -2172,7 +2172,7 @@ describe('Public API', () => {
     it('delegates to Storage.clear', () => {
       setUrl('https://example.com/?utm_source=google');
       window.requestIdleCallback = vi.fn((cb) => cb());
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
 
       // Verify data exists
       expect(window.ppAnalytics.getAttribution().lastTouch).not.toBeNull();
@@ -2189,7 +2189,7 @@ describe('Public API', () => {
     it('delegates to Tracker.init', () => {
       window.requestIdleCallback = vi.fn((cb) => cb());
       const dataLayer = createMockDataLayer();
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       const before = dataLayer.length;
 
       window.ppAnalytics.init();
@@ -2200,7 +2200,7 @@ describe('Public API', () => {
 
   describe('version', () => {
     it('exposes version string', () => {
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
       expect(window.ppAnalytics.version).toBe('3.1.0');
     });
   });
@@ -2219,7 +2219,7 @@ describe('Persistence across sessions', () => {
     window.requestIdleCallback = vi.fn((cb) => cb());
     loadModule('common');
     window.ppLib.config.debug = true;
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     window.ppAnalyticsDebug.config.attribution.persistAcrossSessions = true;
 
     // Clear and re-init to use the new setting
@@ -2247,7 +2247,7 @@ describe('Edge cases', () => {
 
   it('handles missing window.location gracefully in UrlParser', () => {
     window.requestIdleCallback = vi.fn((cb) => cb());
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     // Module should still load without error
     expect(window.ppAnalytics).toBeDefined();
   });
@@ -2255,7 +2255,7 @@ describe('Edge cases', () => {
   it('custom consent checkFunction that is not a function', () => {
     loadModule('common');
     window.ppLib.config.debug = true;
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     window.ppAnalytics.config({
       consent: {
         required: true,
@@ -2391,7 +2391,7 @@ describe('Edge cases', () => {
   it('multiple custom params are captured', () => {
     setUrl('https://example.com/?ref=partner1&promo=summer&affiliate_id=aff123');
     window.requestIdleCallback = vi.fn((cb) => cb());
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     const attr = window.ppAnalytics.getAttribution();
     expect(attr.lastTouch).toBeDefined();
     expect(attr.lastTouch.ref).toBe('partner1');
@@ -2402,7 +2402,7 @@ describe('Edge cases', () => {
   it('captures all ad platform IDs', () => {
     setUrl('https://example.com/?msclkid=ms1&ttclid=tt1&li_fat_id=li1&twclid=tw1&epik=ep1&ScCid=sc1');
     window.requestIdleCallback = vi.fn((cb) => cb());
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     const attr = window.ppAnalytics.getAttribution();
     expect(attr.lastTouch).toBeDefined();
     expect(attr.lastTouch.msclkid).toBe('ms1');
@@ -2416,7 +2416,7 @@ describe('Edge cases', () => {
   it('Tracker.track with no attribution in storage', () => {
     window.requestIdleCallback = vi.fn((cb) => cb());
     const dataLayer = createMockDataLayer();
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     // Clear all storage
     window.ppAnalytics.clear();
     const before = dataLayer.length;
@@ -2435,7 +2435,7 @@ describe('Edge cases', () => {
     window.requestIdleCallback = vi.fn((cb) => cb());
     loadModule('common');
     window.ppLib.config.debug = true;
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     window.ppAnalyticsDebug.config.attribution.enableFirstTouch = false;
     // Clear and re-init
     sessionStorage.clear();
@@ -2453,7 +2453,7 @@ describe('Edge cases', () => {
     window.requestIdleCallback = vi.fn((cb) => cb());
     loadModule('common');
     window.ppLib.config.debug = true;
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     window.ppAnalyticsDebug.config.attribution.enableLastTouch = false;
     // Clear and re-init
     sessionStorage.clear();
@@ -2508,7 +2508,7 @@ describe('Integration: full attribution flow', () => {
     const mp = createMockMixpanel();
     window.mixpanel = mp;
 
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
 
     // Verify attribution stored
     const attr = window.ppAnalytics.getAttribution();
@@ -2542,7 +2542,7 @@ describe('Integration: full attribution flow', () => {
     const dataLayer = createMockDataLayer();
     loadModule('common');
     window.ppLib.config.debug = true;
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
 
     // Require consent
     window.ppAnalytics.config({
@@ -2579,7 +2579,7 @@ describe('Integration: full attribution flow', () => {
     window.requestIdleCallback = vi.fn((cb) => cb());
     loadModule('common');
     window.ppLib.config.debug = true;
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
 
     const customHandler = vi.fn();
     window.ppAnalytics.registerPlatform('customAnalytics', customHandler);
@@ -2616,7 +2616,7 @@ describe('Additional coverage paths', () => {
     });
     // Should not throw - the catch block handles it
     expect(() => {
-      loadWithCommon('analytics');
+      loadWithCommon('analytics', { coverable: false });
     }).not.toThrow();
     // ppAnalytics should still be exposed (the error is in the try block around init)
     expect(window.ppAnalytics).toBeDefined();
@@ -2666,7 +2666,7 @@ describe('Additional coverage paths', () => {
       value: { href: 'ftp://invalid.com', search: '', origin: 'ftp://invalid.com', pathname: '/' },
       configurable: true,
     });
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     const attr = window.ppAnalytics.getAttribution();
     expect(attr.lastTouch).toBeNull();
     restoreLocation();
@@ -2678,7 +2678,7 @@ describe('Additional coverage paths', () => {
       value: { href: '', search: '', origin: '', pathname: '/' },
       configurable: true,
     });
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     const attr = window.ppAnalytics.getAttribution();
     expect(attr.lastTouch).toBeNull();
     restoreLocation();
@@ -2702,7 +2702,7 @@ describe('Additional coverage paths', () => {
   it('Consent.isGranted returns true when custom framework is enabled and returns true', () => {
     loadModule('common');
     window.ppLib.config.debug = true;
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     window.ppAnalytics.config({
       consent: {
         required: true,
@@ -2717,7 +2717,7 @@ describe('Additional coverage paths', () => {
   it('Consent.isGranted outer catch returns state === approved', () => {
     loadModule('common');
     window.ppLib.config.debug = true;
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     // Force SafeUtils.get to throw to trigger outer catch
     const origGet = window.ppLib.SafeUtils.get;
     window.ppLib.SafeUtils.get = () => { throw new Error('get fail'); };
@@ -2729,7 +2729,7 @@ describe('Additional coverage paths', () => {
   it('Consent.isGranted outer catch returns false when state is denied', () => {
     loadModule('common');
     window.ppLib.config.debug = true;
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     window.ppAnalyticsDebug.consent.state = 'denied';
     const origGet = window.ppLib.SafeUtils.get;
     window.ppLib.SafeUtils.get = () => { throw new Error('get fail'); };
@@ -2740,7 +2740,7 @@ describe('Additional coverage paths', () => {
   it('Consent.checkOneTrust catches errors and returns false', () => {
     loadModule('common');
     window.ppLib.config.debug = true;
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     window.ppAnalytics.config({
       consent: {
         required: true,
@@ -2764,7 +2764,7 @@ describe('Additional coverage paths', () => {
   it('Consent.checkCookieYes catches errors and returns false', () => {
     loadModule('common');
     window.ppLib.config.debug = true;
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     window.ppAnalytics.config({
       consent: {
         required: true,
@@ -2797,7 +2797,7 @@ describe('Additional coverage paths', () => {
       if (callCount <= 5) throw new Error('sanitize fail'); // fail for first few params
       return origSanitize(val);
     };
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     // Should not throw, just skip problematic params
     expect(window.ppAnalytics).toBeDefined();
     window.ppLib.Security.sanitize = origSanitize;
@@ -2815,7 +2815,7 @@ describe('Additional coverage paths', () => {
       const result = origSanitize(val);
       return result;
     };
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     expect(window.ppAnalytics).toBeDefined();
     window.ppLib.Security.sanitize = origSanitize;
   });
@@ -2834,7 +2834,7 @@ describe('Additional coverage paths', () => {
       if (val && val.includes && val.includes('external.com')) return '';
       return origSanitize(val);
     };
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     const attr = window.ppAnalytics.getAttribution();
     if (attr.lastTouch) {
       expect(attr.lastTouch.referrer).toBe('unknown');
@@ -3052,7 +3052,7 @@ describe('Additional coverage paths', () => {
       }
       return origSanitize(val);
     };
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     // Should still produce attribution (params were captured before metadata error)
     expect(window.ppAnalytics).toBeDefined();
     window.ppLib.Security.sanitize = origSanitize;
@@ -3069,7 +3069,7 @@ describe('Additional coverage paths', () => {
       get: () => { throw new Error('location access error'); },
       configurable: true,
     });
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     expect(window.ppAnalytics).toBeDefined();
     Object.defineProperty(window, 'location', {
       value: origLocation,
@@ -3080,7 +3080,7 @@ describe('Additional coverage paths', () => {
   // --- Coverage gap: default checkFunction (line 32) ---
   it('exercises the default custom consent checkFunction (line 32)', () => {
     loadModule('common');
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     // Enable custom consent framework but keep the DEFAULT checkFunction (line 32: function() { return true; })
     window.ppAnalytics.config({
       consent: {
@@ -3101,7 +3101,7 @@ describe('Additional coverage paths', () => {
     // isValidParam is exercised during UrlParser.getParams() — called during init
     // Here we just ensure the code path is exercised with no params matching
     setUrl('https://example.com/?nonexistent_param=val');
-    loadWithCommon('analytics');
+    loadWithCommon('analytics', { coverable: false });
     const attr = window.ppAnalytics.getAttribution();
     // No tracked params captured
     expect(attr.lastTouch).toBeNull();
@@ -3114,7 +3114,7 @@ describe('Additional coverage paths', () => {
     loadModule('common');
     window.ppLib.config.debug = true;
     // Break CONFIG.parameters so getAllParamNames throws
-    loadModule('analytics');
+    loadModule('analytics', { coverable: false });
     const dbg = window.ppAnalyticsDebug;
     const origParams = dbg.config.parameters;
     Object.defineProperty(dbg.config, 'parameters', {
@@ -3175,5 +3175,129 @@ describe('Mixpanel.destroy()', () => {
     expect(() => platforms.Mixpanel.destroy()).not.toThrow();
     expect(platforms.Mixpanel._intervalId).toBeNull();
     expect(platforms.Mixpanel.ready).toBe(false);
+  });
+});
+
+// =========================================================================
+// CONSENT CACHING
+// =========================================================================
+describe('Consent Caching', () => {
+  it('returns cached consent result within TTL window', () => {
+    loadModule('common');
+    loadModule('analytics', { coverable: false });
+    localStorage.setItem('pp_consent', 'approved');
+    window.ppAnalytics.config({
+      consent: {
+        required: true,
+        frameworks: {
+          custom: { enabled: false },
+          oneTrust: { enabled: false },
+          cookieYes: { enabled: false }
+        }
+      }
+    });
+
+    // First call — should compute and cache
+    const result1 = window.ppAnalytics.consent.status();
+    expect(result1).toBe(true);
+
+    // Change underlying storage to 'denied' without going through setConsent
+    localStorage.setItem('pp_consent', 'denied');
+
+    // Second call within TTL — should return cached true
+    const result2 = window.ppAnalytics.consent.status();
+    expect(result2).toBe(true);
+  });
+
+  it('re-evaluates consent after TTL expires', () => {
+    loadModule('common');
+    loadModule('analytics', { coverable: false });
+    localStorage.setItem('pp_consent', 'approved');
+    window.ppAnalytics.config({
+      consent: {
+        required: true,
+        frameworks: {
+          custom: { enabled: false },
+          oneTrust: { enabled: false },
+          cookieYes: { enabled: false }
+        }
+      }
+    });
+
+    // First call — caches result as true
+    expect(window.ppAnalytics.consent.status()).toBe(true);
+
+    // Change underlying storage
+    localStorage.setItem('pp_consent', 'denied');
+
+    // Advance time past the 60s TTL
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 61000);
+
+    // Should re-evaluate and return false
+    expect(window.ppAnalytics.consent.status()).toBe(false);
+
+    vi.restoreAllMocks();
+  });
+
+  it('invalidates consent cache on setConsent (grant)', () => {
+    loadModule('common');
+    loadModule('analytics', { coverable: false });
+    localStorage.setItem('pp_consent', 'denied');
+    window.ppAnalytics.config({
+      consent: {
+        required: true,
+        defaultState: 'denied',
+        frameworks: {
+          custom: { enabled: false },
+          oneTrust: { enabled: false },
+          cookieYes: { enabled: false }
+        }
+      }
+    });
+
+    // First call — denied
+    expect(window.ppAnalytics.consent.status()).toBe(false);
+
+    // Grant consent — should invalidate cache
+    window.ppAnalytics.consent.grant();
+
+    // Should reflect new state immediately, not return cached false
+    expect(window.ppAnalytics.consent.status()).toBe(true);
+  });
+
+  it('invalidates consent cache on setConsent (revoke)', () => {
+    loadModule('common');
+    loadModule('analytics', { coverable: false });
+    localStorage.setItem('pp_consent', 'approved');
+    window.ppAnalytics.config({
+      consent: {
+        required: true,
+        frameworks: {
+          custom: { enabled: false },
+          oneTrust: { enabled: false },
+          cookieYes: { enabled: false }
+        }
+      }
+    });
+
+    // First call — approved
+    expect(window.ppAnalytics.consent.status()).toBe(true);
+
+    // Revoke consent — should invalidate cache
+    window.ppAnalytics.consent.revoke();
+
+    // Should reflect new state immediately
+    expect(window.ppAnalytics.consent.status()).toBe(false);
+  });
+
+  it('does not cache when consent is not required (early return)', () => {
+    loadModule('common');
+    loadModule('analytics', { coverable: false });
+
+    // consent.required defaults to false, so isGranted always returns true early
+    expect(window.ppAnalytics.consent.status()).toBe(true);
+
+    // This should always return true regardless of cache state
+    expect(window.ppAnalytics.consent.status()).toBe(true);
   });
 });

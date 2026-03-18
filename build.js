@@ -7,6 +7,7 @@ const distDir = path.join(__dirname, 'dist');
 
 const MODULES = require('./modules');
 const PKG_VERSION = require('./package.json').version;
+const isDev = process.argv.includes('--dev');
 
 function findFiles(dir, ext) {
   const results = [];
@@ -36,7 +37,8 @@ async function build() {
       outfile: path.join(distDir, moduleName + '.min.js'),
       bundle: true,
       format: 'iife',
-      minify: true,
+      minify: !isDev,
+      sourcemap: isDev ? 'linked' : false,
       target: ['es2018'],
       charset: 'utf8',
       define: { '__PP_SDK_VERSION__': JSON.stringify(PKG_VERSION) },

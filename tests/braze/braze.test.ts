@@ -1831,3 +1831,158 @@ describe('Edge Cases', () => {
     expect(mockBraze.logPurchase).toHaveBeenCalledWith('item-x', 15, 'CAD', 1);
   });
 });
+
+// =========================================================================
+// STUB QUEUE CAP
+// =========================================================================
+describe('Stub Queue Cap', () => {
+  it('caps stub queue at 500 entries and drops further pushes', () => {
+    loadWithCommon('braze');
+    window.ppLib.braze!.configure({
+      sdk: { apiKey: 'key', baseUrl: 'sdk.braze.com' } as any,
+      identity: { autoIdentify: false, userIdCookie: 'userId', emailCookie: '' }
+    });
+    window.ppLib.braze!.init();
+
+    // Push 501 events through the stub
+    for (let i = 0; i < 501; i++) {
+      window.braze.logCustomEvent('event_' + i);
+    }
+
+    // Replace with mock and drain
+    const mockBraze = createMockBraze();
+    window.braze = mockBraze as any;
+    const script = document.querySelector('script[src*="appboycdn"]') as HTMLScriptElement;
+    script.onload!(new Event('load'));
+
+    // logCustomEvent should have been called at most 500 times (the 501st was dropped)
+    expect(mockBraze.logCustomEvent).toHaveBeenCalledTimes(500);
+  });
+
+  it('caps getUser() nested stub queue entries at 500', () => {
+    loadWithCommon('braze');
+    window.ppLib.braze!.configure({
+      sdk: { apiKey: 'key', baseUrl: 'sdk.braze.com' } as any,
+      identity: { autoIdentify: false, userIdCookie: 'userId', emailCookie: '' }
+    });
+    window.ppLib.braze!.init();
+
+    // Push 501 getUser().setEmail() calls through the stub
+    for (let i = 0; i < 501; i++) {
+      window.braze.getUser().setEmail('user' + i + '@test.com');
+    }
+
+    const mockBraze = createMockBraze();
+    window.braze = mockBraze as any;
+    const script = document.querySelector('script[src*="appboycdn"]') as HTMLScriptElement;
+    script.onload!(new Event('load'));
+
+    expect(mockBraze._mockUser.setEmail).toHaveBeenCalledTimes(500);
+  });
+
+  it('drains correctly when queue is exactly at max capacity', () => {
+    loadWithCommon('braze');
+    window.ppLib.braze!.configure({
+      sdk: { apiKey: 'key', baseUrl: 'sdk.braze.com' } as any,
+      identity: { autoIdentify: false, userIdCookie: 'userId', emailCookie: '' }
+    });
+    window.ppLib.braze!.init();
+
+    // Push exactly 500 events
+    for (let i = 0; i < 500; i++) {
+      window.braze.logCustomEvent('event_' + i);
+    }
+
+    const mockBraze = createMockBraze();
+    window.braze = mockBraze as any;
+    const script = document.querySelector('script[src*="appboycdn"]') as HTMLScriptElement;
+    script.onload!(new Event('load'));
+
+    expect(mockBraze.logCustomEvent).toHaveBeenCalledTimes(500);
+  });
+});
+
+// =========================================================================
+// ATTRIBUTE MAP COLLISION DETECTION
+// =========================================================================
+describe('AttributeMap Collision Detection', () => {
+  it('logs warning when two keys map to the same target', () => {
+    loadWithCommon('braze');
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    const mockBraze = createMockBraze();
+    window.braze = mockBraze as any;
+
+    window.ppLib.braze!.configure({
+      attributeMap: { pharmacy: 'preferred_location', drugstore: 'preferred_location' }
+    });
+
+    window.ppLib.braze!.setUserAttributes({ pharmacy: 'uptown' });
+
+    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('attributeMap collision'));
+    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('preferred_location'));
+  });
+
+  it('does not warn when attribute map has no collisions', () => {
+    loadWithCommon('braze');
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    const mockBraze = createMockBraze();
+    window.braze = mockBraze as any;
+
+    window.ppLib.braze!.configure({
+      attributeMap: { pharmacy: 'preferred_pharmacy', clinic: 'preferred_clinic' }
+    });
+
+    window.ppLib.braze!.setUserAttributes({ pharmacy: 'uptown' });
+
+    expect(logSpy).not.toHaveBeenCalledWith('warn', expect.stringContaining('attributeMap collision'));
+  });
+
+  it('validates attributeMap only once (lazy cached)', () => {
+    loadWithCommon('braze');
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    const mockBraze = createMockBraze();
+    window.braze = mockBraze as any;
+
+    window.ppLib.braze!.configure({
+      attributeMap: { a: 'same', b: 'same' }
+    });
+
+    // Call setUserAttributes twice — collision warning should only fire once
+    window.ppLib.braze!.setUserAttributes({ a: 'v1' });
+    window.ppLib.braze!.setUserAttributes({ b: 'v2' });
+
+    const collisionWarnings = logSpy.mock.calls.filter(
+      call => call[0] === 'warn' && String(call[1]).includes('attributeMap collision')
+    );
+    expect(collisionWarnings).toHaveLength(1);
+  });
+
+  it('validates attributeMap from processFormAttrs as well', () => {
+    loadWithCommon('braze');
+    window.ppLib.braze!.configure({
+      sdk: { apiKey: 'key', baseUrl: 'sdk.braze.com' } as any,
+      identity: { autoIdentify: false, userIdCookie: 'userId', emailCookie: '' },
+      attributeMap: { field_a: 'collision_target', field_b: 'collision_target' }
+    });
+    window.ppLib.braze!.init();
+
+    const mockBraze = createMockBraze();
+    window.braze = mockBraze as any;
+    const script = document.querySelector('script[src*="appboycdn"]') as HTMLScriptElement;
+    script.onload!(new Event('load'));
+
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+
+    document.body.innerHTML = `
+      <form data-braze-form="collision_test">
+        <input data-braze-attr="field_a" value="val1">
+        <button type="submit">Submit</button>
+      </form>
+    `;
+
+    const form = document.querySelector('form')!;
+    form.dispatchEvent(new Event('submit', { bubbles: true }));
+
+    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('attributeMap collision'));
+  });
+});

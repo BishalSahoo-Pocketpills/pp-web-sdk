@@ -17,6 +17,7 @@ export interface VWOConfig {
   attributes: VWOAttributes;
   debounceMs: number;
   smartCodeUrl: string;
+  nonce?: string;
 }
 
 export interface VWOExperiment {

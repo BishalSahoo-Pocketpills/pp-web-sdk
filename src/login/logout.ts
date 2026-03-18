@@ -7,6 +7,13 @@ export function createLogoutUser(
   ppLib: PPLib,
   CONFIG: LoginConfig
 ): (hardLogout?: boolean) => void {
+  /**
+   * Logout user — clears session cookies and UI state.
+   *
+   * Note: This does NOT clear third-party SDK state (Braze, Mixpanel, VWO).
+   * Callers should also invoke vendor-specific logout methods if needed
+   * (e.g. braze.wipeData(), mixpanel.reset()).
+   */
   return function logoutUser(hardLogout?: boolean): void {
     try {
       hardLogout = hardLogout === true;

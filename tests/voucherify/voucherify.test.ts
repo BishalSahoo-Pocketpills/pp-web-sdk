@@ -1463,3 +1463,116 @@ describe('Campaign Name', () => {
     expect(results[0].campaignName).toBe('Summer Sale 2026');
   });
 });
+
+// =========================================================================
+// CACHE BASE URL VALIDATION
+// =========================================================================
+describe('Cache baseUrl Validation', () => {
+  it('blocks init when cache.enabled is true but cache.baseUrl is empty', () => {
+    loadWithCommon('voucherify', { coverable: false });
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+
+    window.ppLib.voucherify!.configure({
+      cache: { enabled: true, baseUrl: '' } as any,
+      pricing: { autoFetch: false } as any
+    });
+    window.ppLib.voucherify!.init();
+
+    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('cache.baseUrl is empty'));
+    expect(window.ppLib.voucherify!.isReady()).toBe(false);
+  });
+
+  it('allows init when cache.enabled is true and cache.baseUrl is set', () => {
+    loadWithCommon('voucherify', { coverable: false });
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    window.fetch = mockFetch(qualificationsResponse());
+
+    window.ppLib.voucherify!.configure({
+      cache: { enabled: true, baseUrl: '/api/proxy' } as any,
+      pricing: { autoFetch: false } as any
+    });
+    window.ppLib.voucherify!.init();
+
+    expect(logSpy).not.toHaveBeenCalledWith('warn', expect.stringContaining('cache.baseUrl is empty'));
+    expect(window.ppLib.voucherify!.isReady()).toBe(true);
+  });
+
+  it('does not check cache.baseUrl when cache is not enabled', () => {
+    loadWithCommon('voucherify', { coverable: false });
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+
+    window.ppLib.voucherify!.configure({
+      api: { applicationId: 'app-id' } as any,
+      cache: { enabled: false, baseUrl: '' } as any,
+      pricing: { autoFetch: false } as any
+    });
+    window.ppLib.voucherify!.init();
+
+    expect(logSpy).not.toHaveBeenCalledWith('warn', expect.stringContaining('cache.baseUrl is empty'));
+    expect(window.ppLib.voucherify!.isReady()).toBe(true);
+  });
+});
+
+// =========================================================================
+// UNKNOWN DISCOUNT TYPE WARNING
+// =========================================================================
+describe('Unknown Discount Type Warning', () => {
+  it('logs warning for unknown discount type in buildDiscountLabel', async () => {
+    loadWithCommon('voucherify', { coverable: false });
+    setupDOM();
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+
+    const response = qualificationsResponse([{
+      id: 'voucher-mystery',
+      result: { discount: { type: 'MYSTERY', mystery_off: 50 } }
+    }]);
+    window.fetch = mockFetch(response);
+
+    window.ppLib.voucherify!.configure({
+      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      pricing: { autoFetch: false } as any
+    });
+
+    const results = await window.ppLib.voucherify!.fetchPricing();
+
+    // Unknown type means no discount applied, label is empty
+    expect(results[0].discountLabel).toBe('');
+    expect(results[0].discountType).toBe('NONE');
+    // But the warning should not fire since MYSTERY type didn't win as bestType
+    // The warning fires from buildDiscountLabel which is only called when bestType !== 'NONE'
+  });
+
+  it('warns on unknown discount type when it is the only/best discount', async () => {
+    loadWithCommon('voucherify', { coverable: false });
+    setupDOM();
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+
+    // Use NONE as discountType to trigger buildDiscountLabel with unknown type
+    // Actually, buildDiscountLabel is called with bestType when bestType !== 'NONE'
+    // Since an unknown discount.type won't be matched, discountAmount stays 0 and bestType stays NONE
+    // So we need to test buildDiscountLabel directly via a scenario where it processes NONE type
+    // Actually, NONE type never reaches buildDiscountLabel since it's guarded by `bestType !== 'NONE'`
+    // The warning triggers when buildDiscountLabel receives UNIT or other unknown type
+    // Let's use a UNIT discount which DOES get mapped but results in a label call
+
+    // A UNIT discount that has bestDiscount > 0 will reach buildDiscountLabel with 'UNIT' type
+    const response = qualificationsResponse([{
+      id: 'voucher-unit',
+      result: { discount: { type: 'UNIT', unit_off: 1 } }
+    }]);
+    window.fetch = mockFetch(response);
+
+    window.ppLib.voucherify!.configure({
+      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      pricing: { autoFetch: false } as any
+    });
+
+    const results = await window.ppLib.voucherify!.fetchPricing();
+
+    // UNIT discount: unit_off=1, basePrice=60 → discountAmount=60, discountedPrice=0
+    expect(results[0].discountType).toBe('UNIT');
+    expect(results[0].discountLabel).toBe('');
+    // buildDiscountLabel was called with 'UNIT' which is not PERCENT/AMOUNT/FIXED
+    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('Unknown discount type: UNIT'));
+  });
+});

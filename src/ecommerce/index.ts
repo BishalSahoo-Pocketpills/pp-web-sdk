@@ -213,6 +213,7 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
       /*! v8 ignore stop */
 
       win.dataLayer = win.dataLayer || [];
+      win.dataLayer.splice(0, Math.max(0, win.dataLayer.length - 500));
 
       var payload: Record<string, any> = {
         event: eventName,
@@ -416,7 +417,7 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
     },
 
     getConfig: function() {
-      return Object.assign({}, CONFIG);
+      return JSON.parse(JSON.stringify(CONFIG));
     }
   };
 

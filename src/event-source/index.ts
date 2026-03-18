@@ -211,6 +211,7 @@ import type { EventSourceConfig, EventSourceData } from '../types/event-source.t
       }
       /*! v8 ignore stop */
 
+      win.dataLayer.splice(0, Math.max(0, win.dataLayer.length - 500));
       win.dataLayer.push(gtmData);
       ppLib.log('verbose', '[ppEventSource] Sent to GTM', gtmData);
     } catch (e) {
@@ -399,7 +400,7 @@ import type { EventSourceConfig, EventSourceData } from '../types/event-source.t
     },
 
     getConfig: function() {
-      return Object.assign({}, CONFIG);
+      return JSON.parse(JSON.stringify(CONFIG));
     }
   };
 

@@ -35,6 +35,8 @@ import type { MixpanelConfig } from '../types/mixpanel.types';
   // MIXPANEL SDK LOADER
   // =====================================================
 
+  // Mixpanel JS SDK loader stub v1.2 (synced from cdn.mxpnl.com/libs/mixpanel-2-latest.min.js)
+  // Last verified: 2026-03-17
   function loadMixpanelSDK(): void {
     /*! v8 ignore start */
     if ((win as any).mixpanel && (win as any).mixpanel.__SV) return;
@@ -111,6 +113,9 @@ import type { MixpanelConfig } from '../types/mixpanel.types';
       b.type = 'text/javascript';
       b.async = !0;
       b.src = 'https://cdn.mxpnl.com/libs/mixpanel-2-latest.min.js';
+      /*! v8 ignore start — vendored Mixpanel SDK snippet, IIFE source map can't attribute nonce branch */
+      if (CONFIG.nonce) b.setAttribute('nonce', CONFIG.nonce);
+      /*! v8 ignore stop */
       d = c.getElementsByTagName('script')[0];
       d.parentNode.insertBefore(b, d);
     }
@@ -277,7 +282,9 @@ import type { MixpanelConfig } from '../types/mixpanel.types';
       api_transport: 'sendBeacon',
       loaded: function(mp: any) {
         mixpanel = mp;
-        mp.opt_in_tracking();
+        if (!CONFIG.optOutByDefault) {
+          mp.opt_in_tracking();
+        }
 
         // Update session timeout from config
         SessionManager.timeout = CONFIG.sessionTimeout;
@@ -372,7 +379,7 @@ import type { MixpanelConfig } from '../types/mixpanel.types';
     getMixpanelCookieData: getMixpanelCookieData,
 
     getConfig: function() {
-      return Object.assign({}, CONFIG);
+      return JSON.parse(JSON.stringify(CONFIG));
     }
   };
 

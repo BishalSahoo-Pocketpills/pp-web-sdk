@@ -23,6 +23,15 @@ export function createSafeUtils(log: (level: string, message: string, data?: any
 
       try {
         const keys = path.split('.');
+
+        // Guard against prototype pollution
+        for (let i = 0; i < keys.length; i++) {
+          if (keys[i] === '__proto__' || keys[i] === 'constructor' || keys[i] === 'prototype') {
+            log('warn', 'Blocked prototype pollution attempt: ' + path);
+            return false;
+          }
+        }
+
         let target = obj;
 
         for (let i = 0; i < keys.length - 1; i++) {

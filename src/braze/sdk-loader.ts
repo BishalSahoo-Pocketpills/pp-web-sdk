@@ -8,6 +8,7 @@ export function createSdkLoader(
   CONFIG: BrazeConfig
 ) {
   let sdkReady = false;
+  const MAX_STUB_QUEUE = 500;
   const stubQueue: Array<{ method: string; args: any[] }> = [];
 
   // Nested method stubs (e.g. getUser().setEmail())
@@ -28,7 +29,9 @@ export function createSdkLoader(
     for (let i = 0; i < stubMethods.length; i++) {
       (function(method: string) {
         brazeStub[method] = function() {
-          stubQueue.push({ method: method, args: Array.prototype.slice.call(arguments) });
+          if (stubQueue.length < MAX_STUB_QUEUE) {
+            stubQueue.push({ method: method, args: Array.prototype.slice.call(arguments) });
+          }
         };
       })(stubMethods[i]);
     }
@@ -39,7 +42,9 @@ export function createSdkLoader(
       for (let i = 0; i < USER_METHODS.length; i++) {
         (function(method: string) {
           userStub[method] = function() {
-            stubQueue.push({ method: 'getUser().' + method, args: Array.prototype.slice.call(arguments) });
+            if (stubQueue.length < MAX_STUB_QUEUE) {
+              stubQueue.push({ method: 'getUser().' + method, args: Array.prototype.slice.call(arguments) });
+            }
           };
         })(USER_METHODS[i]);
       }
@@ -95,6 +100,7 @@ export function createSdkLoader(
     script.type = 'text/javascript';
     script.async = true;
     script.src = CONFIG.sdk.cdnUrl;
+    if (CONFIG.sdk.nonce) script.setAttribute('nonce', CONFIG.sdk.nonce);
 
     script.onload = function() {
       try {

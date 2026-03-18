@@ -531,6 +531,35 @@ describe('ppLib.log()', () => {
     });
     expect(() => ppLib.log('info', 'test')).not.toThrow();
   });
+
+  it('should allow error level through when debug is false (C2)', () => {
+    ppLib.config.debug = false;
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    ppLib.log('error', 'critical error');
+    expect(spy).toHaveBeenCalledWith(`[ppLib v${PKG_VERSION}]`, 'critical error', '');
+  });
+
+  it('should allow warn level through when debug is false (C2)', () => {
+    ppLib.config.debug = false;
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    ppLib.log('warn', 'important warning');
+    expect(spy).toHaveBeenCalledWith(`[ppLib v${PKG_VERSION}]`, 'important warning', '');
+  });
+
+  it('should still suppress info level when debug is false (C2)', () => {
+    ppLib.config.debug = false;
+    const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    ppLib.log('info', 'info msg');
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('should still suppress verbose level when debug is false (C2)', () => {
+    ppLib.config.debug = false;
+    ppLib.config.verbose = true;
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    ppLib.log('verbose', 'verbose msg');
+    expect(spy).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------

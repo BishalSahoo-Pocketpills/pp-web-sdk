@@ -32,8 +32,10 @@ import { createExtend } from './utils';
 
   ppLib.log = function(level: string, message: string, data?: any) {
     /*! v8 ignore start */
-    if (!ppLib.config.debug) return;
-    if (level === 'verbose' && !ppLib.config.verbose) return;
+    if (level !== 'error' && level !== 'warn') {
+      if (!ppLib.config.debug) return;
+      if (level === 'verbose' && !ppLib.config.verbose) return;
+    }
     /*! v8 ignore stop */
 
     try {

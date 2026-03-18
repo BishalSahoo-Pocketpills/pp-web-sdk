@@ -106,6 +106,49 @@ import { createPurchaseHandler } from './purchases';
   // PUBLIC API
   // =====================================================
 
+  function checkReady(): boolean {
+    return sdkLoader.isReady();
+  }
+
+  function getConfig(): BrazeConfig {
+    return JSON.parse(JSON.stringify(CONFIG));
+  }
+
+  function trackEvent(eventName: string, properties?: Record<string, any>): void {
+    try {
+      var sanitized = ppLib.Security.sanitize(eventName);
+      /*! v8 ignore start */
+      if (!sanitized) return;
+      /*! v8 ignore stop */
+
+      var sanitizedProps: Record<string, any> | undefined;
+      /*! v8 ignore start */
+      if (properties && typeof properties === 'object') {
+        sanitizedProps = {};
+        var keys = Object.keys(properties);
+        for (var i = 0; i < keys.length; i++) {
+          var val = properties[keys[i]];
+          if (typeof val === 'string') {
+            sanitizedProps[keys[i]] = ppLib.Security.sanitize(val);
+          } else {
+            sanitizedProps[keys[i]] = val;
+          }
+        }
+      }
+
+      if (sanitizedProps) {
+        win.braze.logCustomEvent(sanitized, sanitizedProps);
+      } else {
+        win.braze.logCustomEvent(sanitized);
+      }
+
+      ppLib.log('info', '[ppBraze] trackEvent → ' + sanitized, sanitizedProps);
+      /*! v8 ignore stop */
+    } catch (e) {
+      ppLib.log('error', '[ppBraze] trackEvent error', e);
+    }
+  }
+
   ppLib.braze = {
     configure: function(options?: Partial<BrazeConfig>) {
       /*! v8 ignore start */
@@ -134,40 +177,7 @@ import { createPurchaseHandler } from './purchases';
     },
     /*! v8 ignore stop */
 
-    trackEvent: function(eventName: string, properties?: Record<string, any>) {
-      try {
-        var sanitized = ppLib.Security.sanitize(eventName);
-        /*! v8 ignore start */
-        if (!sanitized) return;
-        /*! v8 ignore stop */
-
-        var sanitizedProps: Record<string, any> | undefined;
-        /*! v8 ignore start */
-        if (properties && typeof properties === 'object') {
-          sanitizedProps = {};
-          var keys = Object.keys(properties);
-          for (var i = 0; i < keys.length; i++) {
-            var val = properties[keys[i]];
-            if (typeof val === 'string') {
-              sanitizedProps[keys[i]] = ppLib.Security.sanitize(val);
-            } else {
-              sanitizedProps[keys[i]] = val;
-            }
-          }
-        }
-
-        if (sanitizedProps) {
-          win.braze.logCustomEvent(sanitized, sanitizedProps);
-        } else {
-          win.braze.logCustomEvent(sanitized);
-        }
-
-        ppLib.log('info', '[ppBraze] trackEvent → ' + sanitized, sanitizedProps);
-        /*! v8 ignore stop */
-      } catch (e) {
-        ppLib.log('error', '[ppBraze] trackEvent error', e);
-      }
-    },
+    trackEvent: trackEvent,
 
     trackPurchase: function(productId: string, price: number, currency?: string, quantity?: number, properties?: Record<string, any>) {
       purchaseHandler.trackPurchase(productId, price, currency, quantity, properties);
@@ -183,13 +193,9 @@ import { createPurchaseHandler } from './purchases';
     },
     /*! v8 ignore stop */
 
-    isReady: function() {
-      return sdkLoader.isReady();
-    },
+    isReady: checkReady,
 
-    getConfig: function() {
-      return Object.assign({}, CONFIG);
-    }
+    getConfig: getConfig
   };
 
   ppLib.log('info', '[ppBraze] Module loaded');

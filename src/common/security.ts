@@ -51,6 +51,7 @@ export function createSecurity(
         const parsed = new URL(url);
         return parsed.protocol === 'http:' || parsed.protocol === 'https:';
       } catch (e) {
+        log('verbose', 'isValidUrl parse error', e);
         return false;
       }
     },
@@ -109,6 +110,7 @@ export function createSecurity(
         ];
 
         for (let i = 0; i < dangerousPatterns.length; i++) {
+          dangerousPatterns[i].lastIndex = 0;
           if (dangerousPatterns[i].test(jsonStr)) {
             log('error', 'Dangerous pattern detected');
             return false;
@@ -117,6 +119,7 @@ export function createSecurity(
 
         return true;
       } catch (e) {
+        log('verbose', 'validateData error', e);
         return false;
       }
     }

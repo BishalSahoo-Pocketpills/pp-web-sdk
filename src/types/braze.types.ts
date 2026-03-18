@@ -4,6 +4,7 @@ export interface BrazeSdkConfig {
   cdnUrl: string;
   enableLogging: boolean;
   sessionTimeoutInSeconds: number;
+  nonce?: string;
 }
 
 export interface BrazeConsentConfig {

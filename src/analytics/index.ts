@@ -162,6 +162,10 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
   // =====================================================
 
   /*! v8 ignore start */
+  var consentCacheResult: boolean | null = null;
+  var consentCacheTime: number = 0;
+  var CONSENT_CACHE_TTL = 60000; // 60 seconds
+
   const Consent = {
     state: SafeUtils.get(CONFIG, 'consent.defaultState', 'approved') as string,
 
@@ -172,34 +176,47 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
           return true;
         }
 
+        var now = Date.now();
+        if (consentCacheResult !== null && (now - consentCacheTime) < CONSENT_CACHE_TTL) {
+          return consentCacheResult;
+        }
+
         /*! v8 ignore start */
+        var result: boolean | null = null;
+
         if (SafeUtils.get(CONFIG, 'consent.frameworks.custom.enabled', false)) {
           try {
             const checkFn = SafeUtils.get(CONFIG, 'consent.frameworks.custom.checkFunction');
             if (typeof checkFn === 'function') {
-              return checkFn();
+              result = checkFn();
             }
           } catch (e) {
             Utils.log('error', 'Custom consent check failed', e);
           }
         }
-        /*! v8 ignore stop */
 
-        /*! v8 ignore start */
-        if (SafeUtils.get(CONFIG, 'consent.frameworks.oneTrust.enabled', false)) {
-          if (this.checkOneTrust()) return true;
+        if (result === null && SafeUtils.get(CONFIG, 'consent.frameworks.oneTrust.enabled', false)) {
+          if (this.checkOneTrust()) result = true;
         }
 
-        if (SafeUtils.get(CONFIG, 'consent.frameworks.cookieYes.enabled', false)) {
-          if (this.checkCookieYes()) return true;
+        if (result === null && SafeUtils.get(CONFIG, 'consent.frameworks.cookieYes.enabled', false)) {
+          if (this.checkCookieYes()) result = true;
+        }
+
+        if (result === null) {
+          result = this.getStoredConsent();
         }
         /*! v8 ignore stop */
 
-        return this.getStoredConsent();
+        consentCacheResult = result;
+        consentCacheTime = Date.now();
+        return result;
       } catch (e) {
         /*! v8 ignore start */
         Utils.log('error', 'Consent check error', e);
-        return this.state === 'approved';
+        consentCacheResult = this.state === 'approved';
+        consentCacheTime = Date.now();
+        return consentCacheResult;
         /*! v8 ignore stop */
       }
     },
@@ -257,6 +274,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
 
     setConsent: function(granted: boolean): void {
       try {
+        consentCacheResult = null;
         this.state = granted ? 'approved' : 'denied';
 
         const storageKey = SafeUtils.get(CONFIG, 'consent.storageKey', 'pp_consent');
@@ -1044,10 +1062,10 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
           cachedParamNames = null;
           Utils.log('info', 'Configuration updated');
         }
-        return Object.assign({}, CONFIG);
+        return JSON.parse(JSON.stringify(CONFIG));
       } catch (e) {
         Utils.log('error', 'Config error', e);
-        return Object.assign({}, CONFIG);
+        return JSON.parse(JSON.stringify(CONFIG));
       }
     },
 
