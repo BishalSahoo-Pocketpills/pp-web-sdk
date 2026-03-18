@@ -148,6 +148,10 @@ describe('VWO native coverage', () => {
     expect(window._vwo_code.library_tolerance()).toBe(2500);
     expect(window._vwo_code.finished()).toBe(false);
     window._vwo_code.finish();
+    // Verify fade-in: style element replaced with transition CSS, not removed
+    const fadeStyle = document.getElementById('_vis_opt_path_hides');
+    expect(fadeStyle).not.toBeNull();
+    expect(fadeStyle!.textContent).toContain('transition:opacity .3s ease');
     expect(window._vwo_code.finished()).toBe(true);
     window._vwo_code.finish(); // idempotent (f already true → L134 false branch)
 
@@ -368,10 +372,21 @@ describe('VWO native coverage', () => {
   // SMARTCODE EDGE CASES
   // ==========================================================================
   it('SmartCode with isSPA=true and no hideElement', async () => {
+    vi.useFakeTimers();
     await freshLoad();
     // L125 isSPA truthy branch, L159 hideElement falsy branch
     window.ppLib.vwo!.configure({ accountId: '123', isSPA: true, hideElement: '' });
     window.ppLib.vwo!.init();
+    // finish() with empty hideElement → ternary false branch
+    window._vwo_code.finish();
+    const style = document.getElementById('_vis_opt_path_hides');
+    expect(style).not.toBeNull();
+    expect(style!.textContent).toBe('');
+    // Advance past cleanup timeout → removes element
+    vi.advanceTimersByTime(400);
+    expect(document.getElementById('_vis_opt_path_hides')).toBeNull();
+    delete window._vwo_settings_timer;
+    vi.useRealTimers();
   });
 
   it('SmartCode finish when element has no parentNode', async () => {
@@ -389,6 +404,22 @@ describe('VWO native coverage', () => {
     window._vwo_code.finish();
   });
 
+  it('finish() cleanup timeout is safe when element already removed', async () => {
+    vi.useFakeTimers();
+    await freshLoad();
+    window.ppLib.vwo!.configure({ accountId: '123' });
+    window.ppLib.vwo!.init();
+    // finish() replaces style and schedules 350ms cleanup
+    window._vwo_code.finish();
+    // Manually remove element before cleanup fires
+    const style = document.getElementById('_vis_opt_path_hides');
+    if (style) style.remove();
+    // Advance past cleanup timeout — callback fires but element has no parentNode → no-op
+    vi.advanceTimersByTime(400);
+    delete window._vwo_settings_timer;
+    vi.useRealTimers();
+  });
+
   it('SmartCode script onerror and settings timer callbacks', async () => {
     vi.useFakeTimers();
     await freshLoad();
@@ -403,8 +434,8 @@ describe('VWO native coverage', () => {
       }
     }
 
-    // Fire the settings timer callback → L155 (win._vwo_code.finish())
-    vi.advanceTimersByTime(200);
+    // Fire the settings timer (100ms) and cleanup timeout (350ms)
+    vi.advanceTimersByTime(400);
 
     // Clear the timer so afterEach doesn't try to clear an already-fired timer
     delete window._vwo_settings_timer;

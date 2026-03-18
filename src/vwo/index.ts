@@ -135,7 +135,16 @@ import { createVWOConfig } from './config';
           f = true;
           var a = d.getElementById('_vis_opt_path_hides');
           if (a && a.parentNode) {
-            a.parentNode.removeChild(a);
+            // Smooth fade-in instead of abrupt snap
+            a.textContent = hide_element
+              ? hide_element + '{transition:opacity .3s ease !important;opacity:1 !important;}'
+              : '';
+            // Clean up style element after transition completes
+            win.setTimeout(function() {
+              if (a && a.parentNode) {
+                a.parentNode.removeChild(a);
+              }
+            }, 350);
           }
         }
       },

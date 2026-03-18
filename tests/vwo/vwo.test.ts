@@ -294,7 +294,8 @@ describe('SmartCode injection', () => {
     expect(vwoScript!.src).toContain('f=0');
   });
 
-  it('finish() removes anti-FOUC style when not SPA', () => {
+  it('finish() replaces anti-FOUC style with fade-in transition', () => {
+    vi.useFakeTimers();
     window.ppLib.vwo!.init();
 
     const styleBefore = document.getElementById('_vis_opt_path_hides');
@@ -302,20 +303,37 @@ describe('SmartCode injection', () => {
 
     window._vwo_code.finish();
 
+    // Style element still exists but now has transition CSS
     const styleAfter = document.getElementById('_vis_opt_path_hides');
-    expect(styleAfter).toBeNull();
+    expect(styleAfter).not.toBeNull();
+    expect(styleAfter!.textContent).toContain('transition:opacity .3s ease');
+    expect(styleAfter!.textContent).toContain('opacity:1');
+
+    // After 350ms cleanup timeout, the style element is removed
+    vi.advanceTimersByTime(350);
+    expect(document.getElementById('_vis_opt_path_hides')).toBeNull();
+
+    vi.useRealTimers();
   });
 
   it('finish() is idempotent — second call is a no-op', () => {
+    vi.useFakeTimers();
     window.ppLib.vwo!.init();
 
     window._vwo_code.finish();
-    expect(document.getElementById('_vis_opt_path_hides')).toBeNull();
+    // Style still exists during transition
+    expect(document.getElementById('_vis_opt_path_hides')).not.toBeNull();
     expect(window._vwo_code.finished()).toBe(true);
 
     // Second call should not throw
     window._vwo_code.finish();
     expect(window._vwo_code.finished()).toBe(true);
+
+    // Cleanup after transition
+    vi.advanceTimersByTime(350);
+    expect(document.getElementById('_vis_opt_path_hides')).toBeNull();
+
+    vi.useRealTimers();
   });
 
   it('timeout removes anti-FOUC style if VWO does not load', () => {
@@ -325,10 +343,17 @@ describe('SmartCode injection', () => {
     const styleBefore = document.getElementById('_vis_opt_path_hides');
     expect(styleBefore).not.toBeNull();
 
+    // settings_tolerance fires finish() at 2000ms
     vi.advanceTimersByTime(2000);
 
+    // Style has transition CSS
     const styleAfter = document.getElementById('_vis_opt_path_hides');
-    expect(styleAfter).toBeNull();
+    expect(styleAfter).not.toBeNull();
+    expect(styleAfter!.textContent).toContain('transition:opacity .3s ease');
+
+    // Cleanup timeout at 2000+350=2350ms
+    vi.advanceTimersByTime(350);
+    expect(document.getElementById('_vis_opt_path_hides')).toBeNull();
 
     vi.useRealTimers();
   });
@@ -344,6 +369,10 @@ describe('SmartCode injection', () => {
     // Timeout fires but finish() is idempotent — no error
     vi.advanceTimersByTime(2000);
     expect(window._vwo_code.finished()).toBe(true);
+
+    // Cleanup timeout removes element
+    vi.advanceTimersByTime(350);
+    expect(document.getElementById('_vis_opt_path_hides')).toBeNull();
 
     vi.useRealTimers();
   });
