@@ -42,6 +42,14 @@ function setupDOM() {
   `;
 }
 
+function qualificationsResponse(redeemables: any[] = []) {
+  return {
+    qualifications: redeemables,
+    total: redeemables.length,
+    has_more: false
+  };
+}
+
 async function freshLoad() {
   vi.resetModules();
   delete window.ppLib;
@@ -1325,5 +1333,502 @@ describe('Voucherify native coverage', () => {
     // Second call should re-fetch because stale entry was deleted
     await window.ppLib.voucherify.checkQualifications({ scenario: 'ALL' });
     expect(fetchCallCount).toBe(2);
+  });
+
+  // =====================================================
+  // EDGE MODE
+  // =====================================================
+
+  it('edge mode: fetchPricing calls edge URL and injects pricing', async () => {
+    await freshLoad();
+    setupDOM();
+
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        segment: 'anonymous',
+        products: {
+          'weight-loss': {
+            basePrice: 60,
+            discountedPrice: 45,
+            discountAmount: 15,
+            discountLabel: '25% OFF',
+            discountType: 'PERCENT',
+            applicableVouchers: ['promo_1'],
+            campaignName: 'Summer'
+          },
+          'hair-loss': {
+            basePrice: 30,
+            discountedPrice: 30,
+            discountAmount: 0,
+            discountLabel: '',
+            discountType: 'NONE',
+            applicableVouchers: []
+          }
+        },
+        timestamp: Date.now()
+      })
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var results = await window.ppLib.voucherify.fetchPricing();
+
+    expect(results.length).toBe(2);
+    expect(results[0].productId).toBe('weight-loss');
+    expect(results[0].discountedPrice).toBe(45);
+    expect(results[1].productId).toBe('hair-loss');
+    expect(results[1].discountedPrice).toBe(30);
+
+    // Verify fetch was called with edge URL
+    expect(window.fetch).toHaveBeenCalledTimes(1);
+    var callUrl = (window.fetch as any).mock.calls[0][0] as string;
+    expect(callUrl).toContain('pp-pricing.workers.dev/api/prices/anonymous');
+    expect(callUrl).toContain('products=');
+
+    // Verify DOM injection
+    var discountedEl = document.querySelector('[data-voucherify-product="weight-loss"] [data-voucherify-discounted-price]')!;
+    expect(discountedEl.textContent).toContain('45');
+  });
+
+  it('edge mode: fetchPricing adds/removes loading class', async () => {
+    await freshLoad();
+    setupDOM();
+
+    var resolveEdge: (v: any) => void;
+    window.fetch = vi.fn().mockReturnValue(new Promise(resolve => {
+      resolveEdge = resolve;
+    })) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var fetchPromise = window.ppLib.voucherify.fetchPricing();
+
+    // Loading class should be added immediately
+    var el = document.querySelector('[data-voucherify-product="weight-loss"]')!;
+    expect(el.classList.contains('pp-voucherify-loading')).toBe(true);
+
+    // Resolve the fetch
+    resolveEdge!({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        segment: 'anonymous',
+        products: {
+          'weight-loss': { basePrice: 60, discountedPrice: 60, discountAmount: 0, discountLabel: '', discountType: 'NONE', applicableVouchers: [] },
+          'hair-loss': { basePrice: 30, discountedPrice: 30, discountAmount: 0, discountLabel: '', discountType: 'NONE', applicableVouchers: [] }
+        },
+        timestamp: Date.now()
+      })
+    });
+
+    await fetchPromise;
+
+    // Loading class should be removed
+    expect(el.classList.contains('pp-voucherify-loading')).toBe(false);
+  });
+
+  it('edge mode: fetchPricing falls back to direct API on edge failure', async () => {
+    await freshLoad();
+    setupDOM();
+
+    var callCount = 0;
+    window.fetch = vi.fn().mockImplementation((url: string) => {
+      callCount++;
+      if (callCount === 1) {
+        // Edge call fails
+        return Promise.reject(new Error('Network error'));
+      }
+      // Fallback direct API call succeeds
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(qualificationsResponse([
+          { id: 'promo_1', object: 'promotion_tier', result: { discount: { type: 'PERCENT', percent_off: 10 } } }
+        ]))
+      });
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      api: { applicationId: 'app-id', clientSecretKey: 'secret' } as any,
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var logSpy = vi.spyOn(window.ppLib, 'log');
+    var results = await window.ppLib.voucherify.fetchPricing();
+
+    expect(results.length).toBe(2);
+    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('Edge service unavailable'));
+    // First call was edge (failed), second was direct API (succeeded)
+    expect(callCount).toBe(2);
+  });
+
+  it('edge mode: fetchPricing falls back on non-ok edge response (500)', async () => {
+    await freshLoad();
+    setupDOM();
+
+    var callCount = 0;
+    window.fetch = vi.fn().mockImplementation((url: string) => {
+      callCount++;
+      if (callCount === 1) {
+        // Edge returns 500
+        return Promise.resolve({ ok: false, status: 500 });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(qualificationsResponse([]))
+      });
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      api: { applicationId: 'app-id', clientSecretKey: 'secret' } as any,
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var logSpy = vi.spyOn(window.ppLib, 'log');
+    var results = await window.ppLib.voucherify.fetchPricing();
+
+    expect(results.length).toBe(2);
+    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('Edge service unavailable'));
+    expect(callCount).toBe(2);
+  });
+
+  it('edge mode: determineSegment returns member when userId cookie set', async () => {
+    await freshLoad();
+    setupDOM();
+    document.cookie = 'userId=user123;path=/';
+
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        segment: 'member',
+        products: {
+          'weight-loss': { basePrice: 60, discountedPrice: 45, discountAmount: 15, discountLabel: '25% OFF', discountType: 'PERCENT', applicableVouchers: [] },
+          'hair-loss': { basePrice: 30, discountedPrice: 30, discountAmount: 0, discountLabel: '', discountType: 'NONE', applicableVouchers: [] }
+        },
+        timestamp: Date.now()
+      })
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    await window.ppLib.voucherify.fetchPricing();
+
+    var callUrl = (window.fetch as any).mock.calls[0][0] as string;
+    expect(callUrl).toContain('/api/prices/member');
+  });
+
+  it('edge mode: validateVoucher uses edge endpoint', async () => {
+    await freshLoad();
+
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        redeemables: [{ id: 'SUMMER25', status: 'APPLICABLE', result: { discount: { type: 'PERCENT', percent_off: 25 } } }]
+      })
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var result = await window.ppLib.voucherify.validateVoucher('SUMMER25');
+
+    expect(result.valid).toBe(true);
+    expect(result.code).toBe('SUMMER25');
+    expect(window.fetch).toHaveBeenCalledWith(
+      'https://pp-pricing.workers.dev/api/validate',
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  it('edge mode: validateVoucher falls back on edge failure', async () => {
+    await freshLoad();
+
+    var callCount = 0;
+    window.fetch = vi.fn().mockImplementation((url: string) => {
+      callCount++;
+      if (callCount === 1) {
+        // Edge returns 500 (covers !response.ok throw in edgeValidateVoucher)
+        return Promise.resolve({ ok: false, status: 500 });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          redeemables: [{ id: 'CODE', status: 'APPLICABLE', result: {} }]
+        })
+      });
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      api: { applicationId: 'app-id', clientSecretKey: 'secret' } as any,
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var logSpy = vi.spyOn(window.ppLib, 'log');
+    var result = await window.ppLib.voucherify.validateVoucher('CODE');
+
+    expect(result.valid).toBe(true);
+    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('Edge service unavailable'));
+    expect(callCount).toBe(2);
+  });
+
+  it('edge mode: checkQualifications uses edge endpoint', async () => {
+    await freshLoad();
+
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ redeemables: [{ id: 'p1', object: 'promotion_tier' }], total: 1, has_more: false })
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var result = await window.ppLib.voucherify.checkQualifications({ scenario: 'ALL' });
+
+    expect(result.total).toBe(1);
+    expect(window.fetch).toHaveBeenCalledWith(
+      'https://pp-pricing.workers.dev/api/qualify',
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  it('edge mode: checkQualifications falls back on edge failure', async () => {
+    await freshLoad();
+
+    var callCount = 0;
+    window.fetch = vi.fn().mockImplementation((url: string) => {
+      callCount++;
+      if (callCount === 1) {
+        // Edge returns 502 (covers !response.ok throw in edgeCheckQualifications)
+        return Promise.resolve({ ok: false, status: 502 });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ redeemables: [], total: 0, has_more: false })
+      });
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      api: { applicationId: 'app-id', clientSecretKey: 'secret' } as any,
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var logSpy = vi.spyOn(window.ppLib, 'log');
+    var result = await window.ppLib.voucherify.checkQualifications({ scenario: 'ALL' });
+
+    expect(result.total).toBe(0);
+    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('Edge service unavailable'));
+    expect(callCount).toBe(2);
+  });
+
+  it('edge mode: init allows edge mode without applicationId', async () => {
+    await freshLoad();
+
+    window.fetch = mockFetch({ segment: 'anonymous', products: {}, timestamp: Date.now() });
+
+    var logSpy = vi.spyOn(window.ppLib, 'log');
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    expect(window.ppLib.voucherify.isReady()).toBe(true);
+    expect(logSpy).not.toHaveBeenCalledWith('warn', expect.stringContaining('No applicationId'));
+  });
+
+  it('edge mode: fetchPricing handles products not in edge response', async () => {
+    await freshLoad();
+    setupDOM();
+
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        segment: 'anonymous',
+        products: {
+          'weight-loss': { basePrice: 60, discountedPrice: 45, discountAmount: 15, discountLabel: '25% OFF', discountType: 'PERCENT', applicableVouchers: [] }
+          // hair-loss is missing from response
+        },
+        timestamp: Date.now()
+      })
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var results = await window.ppLib.voucherify.fetchPricing();
+
+    expect(results.length).toBe(2);
+    // weight-loss has pricing from edge
+    expect(results[0].discountedPrice).toBe(45);
+    // hair-loss falls back to base price
+    expect(results[1].discountedPrice).toBe(30);
+    expect(results[1].discountType).toBe('NONE');
+  });
+
+  it('edge mode: configure with edge config returns it in getConfig', async () => {
+    await freshLoad();
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' }
+    });
+    var config = window.ppLib.voucherify.getConfig();
+    expect(config.edge.mode).toBe('edge');
+    expect(config.edge.edgeUrl).toBe('https://pp-pricing.workers.dev');
+  });
+
+  it('edge mode: fetchPricing with explicit productIds not in DOM (basePrices fallback)', async () => {
+    await freshLoad();
+    setupDOM();
+
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        segment: 'anonymous',
+        products: {
+          'unknown-prod': { basePrice: 0, discountedPrice: 0, discountAmount: 0, discountType: 'NONE', applicableVouchers: [] }
+        },
+        timestamp: Date.now()
+      })
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    // Pass a product ID that doesn't exist in DOM — triggers basePrices fallback to 0
+    var results = await window.ppLib.voucherify.fetchPricing(['unknown-prod']);
+    expect(results.length).toBe(1);
+    expect(results[0].basePrice).toBe(0);
+  });
+
+  it('edge mode: fetchPricing handles response with null products and missing entry fields', async () => {
+    await freshLoad();
+    setupDOM();
+
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        segment: 'anonymous',
+        // products is null — triggers || {} fallback
+        products: null,
+        timestamp: Date.now()
+      })
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var results = await window.ppLib.voucherify.fetchPricing();
+    // All products fall back to base prices since products is null
+    expect(results.length).toBe(2);
+    expect(results[0].discountType).toBe('NONE');
+    expect(results[1].discountType).toBe('NONE');
+  });
+
+  it('edge mode: fetchPricing handles entry with falsy discountLabel/discountType/applicableVouchers', async () => {
+    await freshLoad();
+    setupDOM();
+
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        segment: 'anonymous',
+        products: {
+          'weight-loss': {
+            basePrice: 60,
+            discountedPrice: 45,
+            discountAmount: 15,
+            // These are falsy — triggers || fallbacks
+            discountLabel: '',
+            discountType: null,
+            applicableVouchers: null
+          },
+          'hair-loss': {
+            basePrice: 30,
+            discountedPrice: 30,
+            discountAmount: 0,
+            discountLabel: null,
+            discountType: '',
+            applicableVouchers: undefined
+          }
+        },
+        timestamp: Date.now()
+      })
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var results = await window.ppLib.voucherify.fetchPricing();
+    expect(results.length).toBe(2);
+    // Fallback values
+    expect(results[0].discountLabel).toBe('');
+    expect(results[0].discountType).toBe('NONE');
+    expect(results[0].applicableVouchers).toEqual([]);
+    expect(results[1].discountLabel).toBe('');
+    expect(results[1].discountType).toBe('NONE');
+    expect(results[1].applicableVouchers).toEqual([]);
   });
 });

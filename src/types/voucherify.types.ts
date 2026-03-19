@@ -11,6 +11,11 @@ export interface VoucherifyCacheConfig {
   ttl: number;
 }
 
+export interface VoucherifyEdgeConfig {
+  mode: 'direct' | 'edge';
+  edgeUrl: string;
+}
+
 export interface VoucherifyPricingConfig {
   autoFetch: boolean;
   productAttribute: string;
@@ -43,6 +48,7 @@ export interface VoucherifyRetryConfig {
 export interface VoucherifyConfig {
   api: VoucherifyApiConfig;
   cache: VoucherifyCacheConfig;
+  edge: VoucherifyEdgeConfig;
   pricing: VoucherifyPricingConfig;
   context: VoucherifyContextConfig;
   consent: VoucherifyConsentConfig;

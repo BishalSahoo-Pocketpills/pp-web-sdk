@@ -29,6 +29,10 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
       baseUrl: '/api/voucherify',
       ttl: 300000
     },
+    edge: {
+      mode: 'direct',
+      edgeUrl: ''
+    },
     pricing: {
       autoFetch: true,
       productAttribute: 'data-voucherify-product',
@@ -381,6 +385,97 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
     }
   }
 
+  // =====================================================
+  // EDGE MODE
+  // =====================================================
+
+  function determineSegment(): string {
+    var sourceId = ppLib.getCookie(CONFIG.context.customerSourceIdCookie);
+    if (sourceId) return 'member';
+    return 'anonymous';
+  }
+
+  function addLoadingClass(products: DOMProduct[]): void {
+    for (var i = 0; i < products.length; i++) {
+      products[i].element.classList.add('pp-voucherify-loading');
+    }
+  }
+
+  function removeLoadingClass(products: DOMProduct[]): void {
+    for (var i = 0; i < products.length; i++) {
+      products[i].element.classList.remove('pp-voucherify-loading');
+    }
+  }
+
+  async function fetchPricingEdge(products: DOMProduct[], ids: string[]): Promise<PricingResult[]> {
+    var segment = determineSegment();
+    var basePrices = ids.map(function(id) {
+      var p = products.find(function(dp) { return dp.id === id; });
+      return p ? p.basePrice : 0;
+    });
+
+    var url = CONFIG.edge.edgeUrl + '/api/prices/' + encodeURIComponent(segment) +
+      '?products=' + encodeURIComponent(ids.join(',')) +
+      '&basePrices=' + encodeURIComponent(basePrices.join(','));
+
+    var response = await win.fetch(url);
+    if (!response.ok) {
+      throw new Error('Edge API error: ' + response.status);
+    }
+
+    var data = await response.json();
+    var pricingProducts: Record<string, any> = data.products || {};
+
+    var results: PricingResult[] = [];
+    for (var i = 0; i < ids.length; i++) {
+      var entry = pricingProducts[ids[i]];
+      if (entry) {
+        results.push({
+          productId: ids[i],
+          basePrice: entry.basePrice,
+          discountedPrice: entry.discountedPrice,
+          discountAmount: entry.discountAmount,
+          discountLabel: entry.discountLabel || '',
+          discountType: entry.discountType || 'NONE',
+          applicableVouchers: entry.applicableVouchers || [],
+          campaignName: entry.campaignName
+        });
+      } else {
+        var bp = basePrices[i];
+        results.push({
+          productId: ids[i],
+          basePrice: bp,
+          discountedPrice: bp,
+          discountAmount: 0,
+          discountLabel: '',
+          discountType: 'NONE',
+          applicableVouchers: []
+        });
+      }
+    }
+    return results;
+  }
+
+  async function edgeValidateVoucher(code: string, body: any): Promise<any> {
+    var response = await win.fetch(CONFIG.edge.edgeUrl + '/api/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!response.ok) throw new Error('Edge validate error: ' + response.status);
+    return response.json();
+  }
+
+  async function edgeCheckQualifications(body: any): Promise<any> {
+    var response = await win.fetch(CONFIG.edge.edgeUrl + '/api/qualify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!response.ok) throw new Error('Edge qualify error: ' + response.status);
+    return response.json();
+  }
+
   var inflightPricing: Promise<PricingResult[]> | null = null;
 
   async function fetchPricingImpl(productIds?: string[]): Promise<PricingResult[]> {
@@ -388,6 +483,21 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
       var products = getProductsFromDOM();
       var ids = productIds || products.map(function(p) { return p.id; });
       if (ids.length === 0) return [];
+
+      if (CONFIG.edge.mode === 'edge' && CONFIG.edge.edgeUrl) {
+        addLoadingClass(products);
+        try {
+          var edgeResults = await fetchPricingEdge(products, ids);
+          injectPricing(products, edgeResults);
+          removeLoadingClass(products);
+          ppLib.log('info', '[ppVoucherify] Edge pricing fetched for ' + ids.length + ' product(s)');
+          return edgeResults;
+        } catch (e) {
+          ppLib.log('warn', '[ppVoucherify] Edge service unavailable, falling back to direct API');
+          removeLoadingClass(products);
+          // Fall through to direct API
+        }
+      }
 
       var customer = buildCustomer();
       var items = buildOrderItems(ids);
@@ -451,7 +561,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   function init(): void {
     if (initialized) return;
 
-    if (!CONFIG.api.applicationId && !CONFIG.cache.enabled) {
+    if (!CONFIG.api.applicationId && !CONFIG.cache.enabled && CONFIG.edge.mode !== 'edge') {
       ppLib.log('warn', '[ppVoucherify] No applicationId configured and cache not enabled. Call ppLib.voucherify.configure() before init.');
       return;
     }
@@ -523,7 +633,19 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
           body.order = context.order;
         }
 
-        return apiValidations(body).then(function(response: any) {
+        var validateFn: (b: any) => Promise<any>;
+        if (CONFIG.edge.mode === 'edge' && CONFIG.edge.edgeUrl) {
+          validateFn = function(b: any) {
+            return edgeValidateVoucher(sanitizedCode, b).catch(function(e: any) {
+              ppLib.log('warn', '[ppVoucherify] Edge service unavailable, falling back to direct API');
+              return apiValidations(b);
+            });
+          };
+        } else {
+          validateFn = apiValidations;
+        }
+
+        return validateFn(body).then(function(response: any) {
           var redeemable = response.redeemables && response.redeemables[0];
           var result = redeemable && redeemable.result;
 
@@ -547,7 +669,20 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
 
     checkQualifications: function(context?: QualificationContext): Promise<QualificationResult> {
       var body = context || { scenario: 'ALL' };
-      return apiQualifications(body).then(function(response: any) {
+
+      var qualifyFn: (b: any) => Promise<any>;
+      if (CONFIG.edge.mode === 'edge' && CONFIG.edge.edgeUrl) {
+        qualifyFn = function(b: any) {
+          return edgeCheckQualifications(b).catch(function(e: any) {
+            ppLib.log('warn', '[ppVoucherify] Edge service unavailable, falling back to direct API');
+            return apiQualifications(b);
+          });
+        };
+      } else {
+        qualifyFn = apiQualifications;
+      }
+
+      return qualifyFn(body).then(function(response: any) {
         return {
           redeemables: response.redeemables || [],
           total: response.total || 0,
