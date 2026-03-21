@@ -601,8 +601,12 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   function categorizeRedeemable(r: any): OfferCategory {
     if (r.object === 'promotion_tier' || r.object === 'promotion_stack') return 'promotion';
     if (r.object === 'loyalty_card') return 'loyalty';
+    // Result-based detection (works for both "campaign" and "voucher" objects)
+    if (r.result && r.result.loyalty_card) return 'loyalty';
     if (r.campaign_type === 'REFERRAL_PROGRAM') return 'referral';
     if (r.result && r.result.gift) return 'gift';
+    // campaign objects with discount are auto-applied promotions
+    if (r.object === 'campaign' && r.result && r.result.discount) return 'promotion';
     return 'coupon';
   }
 
@@ -612,7 +616,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
     var entry: OfferEntry = {
       id: r.id,
       category: category,
-      title: r.campaign_name || r.campaign || '',
+      title: r.name || r.campaign_name || r.banner || r.campaign || '',
       description: '',
       applicableProductIds: []
     };
@@ -652,7 +656,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
       entry.description = formatPrice(r.result.gift.balance / 100) + ' gift card balance';
     }
 
-    if (r.campaign_name) entry.campaignName = r.campaign_name;
+    if (r.campaign_name || r.name) entry.campaignName = r.campaign_name || r.name;
 
     return entry;
   }
