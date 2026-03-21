@@ -1831,4 +1831,866 @@ describe('Voucherify native coverage', () => {
     expect(results[1].discountType).toBe('NONE');
     expect(results[1].applicableVouchers).toEqual([]);
   });
+
+  // =====================================================
+  // CMS MODE
+  // =====================================================
+
+  it('cms mode: anonymous user — no fetch, returns empty', async () => {
+    await freshLoad();
+    setupDOM();
+
+    window.fetch = vi.fn() as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'cms', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    // No userId cookie → anonymous → CMS prices already in HTML
+    var results = await window.ppLib.voucherify.fetchPricing();
+
+    expect(results).toEqual([]);
+    expect(window.fetch).not.toHaveBeenCalled();
+  });
+
+  it('cms mode: member without page opt-in — no fetch, returns empty', async () => {
+    await freshLoad();
+    setupDOM();
+    document.cookie = 'userId=user123;path=/';
+
+    window.fetch = vi.fn() as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'cms', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    // Member but no data-voucherify-member-pricing attribute → keep CMS prices
+    var results = await window.ppLib.voucherify.fetchPricing();
+
+    expect(results).toEqual([]);
+    expect(window.fetch).not.toHaveBeenCalled();
+  });
+
+  it('cms mode: member with page opt-in — fetches from edge and injects', async () => {
+    await freshLoad();
+    setupDOM();
+    document.cookie = 'userId=user123;path=/';
+
+    // Add page opt-in attribute
+    var wrapper = document.createElement('div');
+    wrapper.setAttribute('data-voucherify-member-pricing', '');
+    document.body.appendChild(wrapper);
+
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        segment: 'member',
+        products: {
+          'weight-loss': {
+            basePrice: 60,
+            discountedPrice: 30,
+            discountAmount: 30,
+            discountLabel: '50% OFF',
+            discountType: 'PERCENT',
+            applicableVouchers: ['promo_1'],
+            campaignName: 'Member Deal'
+          },
+          'hair-loss': {
+            basePrice: 30,
+            discountedPrice: 20,
+            discountAmount: 10,
+            discountLabel: '33% OFF',
+            discountType: 'PERCENT',
+            applicableVouchers: []
+          }
+        },
+        timestamp: Date.now()
+      })
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'cms', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var results = await window.ppLib.voucherify.fetchPricing();
+
+    expect(results.length).toBe(2);
+    expect(results[0].discountedPrice).toBe(30);
+    expect(results[1].discountedPrice).toBe(20);
+
+    // Verify fetch was called with member segment
+    var callUrl = (window.fetch as any).mock.calls[0][0] as string;
+    expect(callUrl).toContain('/api/prices/member');
+
+    // Verify DOM injection
+    var discountedEl = document.querySelector('[data-voucherify-product="weight-loss"] [data-voucherify-discounted-price]')!;
+    expect(discountedEl.textContent).toContain('30');
+  });
+
+  it('cms mode: member with page opt-in — edge failure keeps CMS prices', async () => {
+    await freshLoad();
+    setupDOM();
+    document.cookie = 'userId=user123;path=/';
+
+    var wrapper = document.createElement('div');
+    wrapper.setAttribute('data-voucherify-member-pricing', '');
+    document.body.appendChild(wrapper);
+
+    window.fetch = vi.fn().mockRejectedValue(new Error('Network error')) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'cms', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var logSpy = vi.spyOn(window.ppLib, 'log');
+    var results = await window.ppLib.voucherify.fetchPricing();
+
+    // Returns empty — no fallback to direct API in CMS mode
+    expect(results).toEqual([]);
+    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('Edge fetch failed in CMS mode'));
+  });
+
+  it('cms mode: loading class management during member fetch', async () => {
+    await freshLoad();
+    setupDOM();
+    document.cookie = 'userId=user123;path=/';
+
+    var wrapper = document.createElement('div');
+    wrapper.setAttribute('data-voucherify-member-pricing', '');
+    document.body.appendChild(wrapper);
+
+    var resolveEdge: (v: any) => void;
+    window.fetch = vi.fn().mockReturnValue(new Promise(resolve => {
+      resolveEdge = resolve;
+    })) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'cms', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var fetchPromise = window.ppLib.voucherify.fetchPricing();
+
+    // Loading class should be added
+    var el = document.querySelector('[data-voucherify-product="weight-loss"]')!;
+    expect(el.classList.contains('pp-voucherify-loading')).toBe(true);
+
+    // Resolve the fetch
+    resolveEdge!({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        segment: 'member',
+        products: {
+          'weight-loss': { basePrice: 60, discountedPrice: 60, discountAmount: 0, discountLabel: '', discountType: 'NONE', applicableVouchers: [] },
+          'hair-loss': { basePrice: 30, discountedPrice: 30, discountAmount: 0, discountLabel: '', discountType: 'NONE', applicableVouchers: [] }
+        },
+        timestamp: Date.now()
+      })
+    });
+
+    await fetchPromise;
+
+    // Loading class should be removed
+    expect(el.classList.contains('pp-voucherify-loading')).toBe(false);
+  });
+
+  it('cms mode: init allows CMS mode without applicationId', async () => {
+    await freshLoad();
+
+    var logSpy = vi.spyOn(window.ppLib, 'log');
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'cms', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    expect(window.ppLib.voucherify.isReady()).toBe(true);
+    expect(logSpy).not.toHaveBeenCalledWith('warn', expect.stringContaining('No applicationId'));
+  });
+
+  it('cms mode: getConfig returns cms mode', async () => {
+    await freshLoad();
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'cms', edgeUrl: 'https://pp-pricing.workers.dev' }
+    });
+    var config = window.ppLib.voucherify.getConfig();
+    expect(config.edge.mode).toBe('cms');
+    expect(config.edge.edgeUrl).toBe('https://pp-pricing.workers.dev');
+  });
+
+  it('cms mode: no products in DOM — returns empty', async () => {
+    await freshLoad();
+    // Don't call setupDOM() — no products in DOM
+    document.cookie = 'userId=user123;path=/';
+
+    var wrapper = document.createElement('div');
+    wrapper.setAttribute('data-voucherify-member-pricing', '');
+    document.body.appendChild(wrapper);
+
+    window.fetch = vi.fn() as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'cms', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var results = await window.ppLib.voucherify.fetchPricing();
+
+    expect(results).toEqual([]);
+    // getProductsFromDOM returns empty, so ids.length === 0 → early return
+    expect(window.fetch).not.toHaveBeenCalled();
+  });
+
+  // =====================================================
+  // OFFERS — EDGE MODE
+  // =====================================================
+
+  it('edge mode: fetchOffers calls edge URL, returns categorized bundle', async () => {
+    await freshLoad();
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        segment: 'anonymous',
+        offers: {
+          coupons: [{ id: 'c1', category: 'coupon', title: 'Save 25%', description: 'Desc', code: 'SAVE25', discount: { type: 'PERCENT', percentOff: 25, label: '25% OFF' }, applicableProductIds: [] }],
+          promotions: [],
+          loyalty: [],
+          referrals: [],
+          gifts: []
+        },
+        timestamp: 1000
+      })
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var result = await window.ppLib.voucherify.fetchOffers();
+    expect(result.offers.coupons.length).toBe(1);
+    expect(result.offers.coupons[0].code).toBe('SAVE25');
+    expect(result.segment).toBe('anonymous');
+
+    var callUrl = (window.fetch as any).mock.calls[0][0] as string;
+    expect(callUrl).toContain('/api/offers/anonymous');
+  });
+
+  it('edge mode: fetchOffers returns empty bundle on edge failure', async () => {
+    await freshLoad();
+    window.fetch = vi.fn().mockRejectedValue(new Error('Network error')) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var result = await window.ppLib.voucherify.fetchOffers();
+    expect(result.offers.coupons).toEqual([]);
+    expect(result.offers.promotions).toEqual([]);
+  });
+
+  it('edge mode: loading class management on offers container', async () => {
+    await freshLoad();
+    document.body.innerHTML = `
+      <div data-voucherify-offers="all">
+        <div data-voucherify-offer-template><span data-voucherify-offer-title></span></div>
+        <p data-voucherify-offers-empty>No offers.</p>
+      </div>
+    `;
+
+    var resolveEdge: (v: any) => void;
+    window.fetch = vi.fn().mockReturnValue(new Promise(resolve => {
+      resolveEdge = resolve;
+    })) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var fetchPromise = window.ppLib.voucherify.fetchOffers();
+
+    var container = document.querySelector('[data-voucherify-offers]')!;
+    expect(container.classList.contains('pp-voucherify-offers-loading')).toBe(true);
+
+    resolveEdge!({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        segment: 'anonymous',
+        offers: { coupons: [], promotions: [], loyalty: [], referrals: [], gifts: [] },
+        timestamp: 1000
+      })
+    });
+
+    await fetchPromise;
+    expect(container.classList.contains('pp-voucherify-offers-loading')).toBe(false);
+  });
+
+  // =====================================================
+  // OFFERS — CMS MODE
+  // =====================================================
+
+  it('cms mode offers: anonymous → returns empty, no fetch', async () => {
+    await freshLoad();
+    window.fetch = vi.fn() as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'cms', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var result = await window.ppLib.voucherify.fetchOffers();
+    expect(result.offers.coupons).toEqual([]);
+    expect(window.fetch).not.toHaveBeenCalled();
+  });
+
+  it('cms mode offers: member without opt-in → returns empty, no fetch', async () => {
+    await freshLoad();
+    document.cookie = 'userId=user123;path=/';
+    window.fetch = vi.fn() as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'cms', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var result = await window.ppLib.voucherify.fetchOffers();
+    expect(result.offers.coupons).toEqual([]);
+    expect(window.fetch).not.toHaveBeenCalled();
+  });
+
+  it('cms mode offers: member with opt-in → fetches from edge', async () => {
+    await freshLoad();
+    document.cookie = 'userId=user123;path=/';
+    document.body.innerHTML = '<div data-voucherify-member-offers></div>';
+
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        segment: 'member',
+        offers: {
+          coupons: [{ id: 'c1', category: 'coupon', title: 'Member Deal', description: 'Desc', code: 'MEM10', applicableProductIds: [] }],
+          promotions: [],
+          loyalty: [],
+          referrals: [],
+          gifts: []
+        },
+        timestamp: 1000
+      })
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'cms', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var result = await window.ppLib.voucherify.fetchOffers();
+    expect(result.offers.coupons.length).toBe(1);
+    expect(result.offers.coupons[0].code).toBe('MEM10');
+
+    var callUrl = (window.fetch as any).mock.calls[0][0] as string;
+    expect(callUrl).toContain('/api/offers/member');
+  });
+
+  // =====================================================
+  // OFFERS — DIRECT API MODE
+  // =====================================================
+
+  it('direct mode: categorizes qualifications response into offers bundle', async () => {
+    await freshLoad();
+    window.fetch = mockFetch({
+      qualifications: [
+        { id: 'promo_1', object: 'promotion_tier', result: { discount: { type: 'PERCENT', percent_off: 20 } }, campaign_name: 'Sale' },
+        { id: 'coupon_1', object: 'voucher', campaign_type: 'DISCOUNT_COUPONS', voucher: { code: 'SAVE20' }, result: { discount: { type: 'AMOUNT', amount_off: 2000 } }, campaign_name: 'Coupons' },
+        { id: 'loyalty_1', object: 'loyalty_card', result: { loyalty_card: { points: 100, balance: 75 } }, campaign_name: 'Rewards' }
+      ]
+    });
+
+    window.ppLib.voucherify.configure({
+      cache: { enabled: true, baseUrl: '/api/voucherify', ttl: 60000 } as any,
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var result = await window.ppLib.voucherify.fetchOffers();
+    expect(result.offers.promotions.length).toBe(1);
+    expect(result.offers.coupons.length).toBe(1);
+    expect(result.offers.loyalty.length).toBe(1);
+    expect(result.offers.coupons[0].code).toBe('SAVE20');
+    expect(result.offers.loyalty[0].loyalty!.balance).toBe(75);
+  });
+
+  it('direct mode: handles empty qualifications response', async () => {
+    await freshLoad();
+    window.fetch = mockFetch({ qualifications: [] });
+
+    window.ppLib.voucherify.configure({
+      cache: { enabled: true, baseUrl: '/api/voucherify', ttl: 60000 } as any,
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var result = await window.ppLib.voucherify.fetchOffers();
+    expect(result.offers.coupons).toEqual([]);
+    expect(result.offers.promotions).toEqual([]);
+    expect(result.offers.loyalty).toEqual([]);
+  });
+
+  // =====================================================
+  // OFFERS — PERSONALIZATION
+  // =====================================================
+
+  it('merges personal wallet with segment offers', async () => {
+    await freshLoad();
+    document.cookie = 'userId=user123;path=/';
+
+    var callCount = 0;
+    window.fetch = vi.fn().mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        // Segment offers from edge
+        return Promise.resolve({
+          ok: true, status: 200,
+          json: () => Promise.resolve({
+            segment: 'member',
+            offers: {
+              coupons: [{ id: 'seg_c1', category: 'coupon', title: 'Segment Coupon', description: '', applicableProductIds: [] }],
+              promotions: [],
+              loyalty: [],
+              referrals: [],
+              gifts: []
+            },
+            timestamp: 1000
+          })
+        });
+      }
+      // CUSTOMER_WALLET via cache proxy
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve({
+          qualifications: [
+            { id: 'wal_c1', object: 'voucher', campaign_type: 'DISCOUNT_COUPONS', voucher: { code: 'PERSONAL10' }, result: { discount: { type: 'PERCENT', percent_off: 10 } }, campaign_name: 'Personal' }
+          ]
+        })
+      });
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      cache: { enabled: true, baseUrl: '/api/voucherify', ttl: 60000 } as any,
+      pricing: { autoFetch: false } as any,
+      offers: { personalizeForMember: true } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var result = await window.ppLib.voucherify.fetchOffers();
+    expect(result.offers.coupons.length).toBe(2);
+    expect(result.offers.coupons[0].id).toBe('seg_c1');
+    expect(result.offers.coupons[1].id).toBe('wal_c1');
+  });
+
+  it('deduplicates offers by id when merging', async () => {
+    await freshLoad();
+    document.cookie = 'userId=user123;path=/';
+
+    var callCount = 0;
+    window.fetch = vi.fn().mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve({
+          ok: true, status: 200,
+          json: () => Promise.resolve({
+            segment: 'member',
+            offers: {
+              coupons: [{ id: 'same_id', category: 'coupon', title: 'Shared', description: '', applicableProductIds: [] }],
+              promotions: [], loyalty: [], referrals: [], gifts: []
+            },
+            timestamp: 1000
+          })
+        });
+      }
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve({
+          qualifications: [
+            { id: 'same_id', object: 'voucher', campaign_type: 'DISCOUNT_COUPONS', result: { discount: { type: 'PERCENT', percent_off: 10 } }, campaign_name: 'Same' }
+          ]
+        })
+      });
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      cache: { enabled: true, baseUrl: '/api/voucherify', ttl: 60000 } as any,
+      pricing: { autoFetch: false } as any,
+      offers: { personalizeForMember: true } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var result = await window.ppLib.voucherify.fetchOffers();
+    // Should not duplicate
+    expect(result.offers.coupons.length).toBe(1);
+  });
+
+  it('skips wallet when not logged in', async () => {
+    await freshLoad();
+    // No userId cookie → anonymous
+
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: () => Promise.resolve({
+        segment: 'anonymous',
+        offers: {
+          coupons: [{ id: 'c1', category: 'coupon', title: 'Public', description: '', applicableProductIds: [] }],
+          promotions: [], loyalty: [], referrals: [], gifts: []
+        },
+        timestamp: 1000
+      })
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      offers: { personalizeForMember: true } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var result = await window.ppLib.voucherify.fetchOffers();
+    expect(result.offers.coupons.length).toBe(1);
+    // Only 1 fetch (segment), no wallet call
+    expect(window.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  // =====================================================
+  // OFFERS — DOM RENDERING
+  // =====================================================
+
+  it('clones template for each offer and populates slots', async () => {
+    await freshLoad();
+    document.body.innerHTML = `
+      <div data-voucherify-offers="coupon">
+        <div data-voucherify-offer-template>
+          <h3 data-voucherify-offer-title></h3>
+          <p data-voucherify-offer-description></p>
+          <code data-voucherify-offer-code></code>
+          <span data-voucherify-offer-discount></span>
+          <span data-voucherify-offer-category></span>
+        </div>
+        <p data-voucherify-offers-empty>No offers.</p>
+      </div>
+    `;
+
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: () => Promise.resolve({
+        segment: 'anonymous',
+        offers: {
+          coupons: [
+            { id: 'c1', category: 'coupon', title: 'Summer Sale', description: 'Save 25%', code: 'SAVE25', discount: { type: 'PERCENT', percentOff: 25, label: '25% OFF' }, applicableProductIds: [] },
+            { id: 'c2', category: 'coupon', title: 'Flash Deal', description: 'Save $10', code: 'FLASH10', discount: { type: 'AMOUNT', amountOff: 10, label: '$10.00 OFF' }, applicableProductIds: [] }
+          ],
+          promotions: [], loyalty: [], referrals: [], gifts: []
+        },
+        timestamp: 1000
+      })
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    await window.ppLib.voucherify.fetchOffers();
+
+    var clones = document.querySelectorAll('.pp-voucherify-offer-clone');
+    expect(clones.length).toBe(2);
+
+    // First clone
+    expect(clones[0].querySelector('[data-voucherify-offer-title]')!.textContent).toBe('Summer Sale');
+    expect(clones[0].querySelector('[data-voucherify-offer-description]')!.textContent).toBe('Save 25%');
+    expect(clones[0].querySelector('[data-voucherify-offer-code]')!.textContent).toBe('SAVE25');
+    expect(clones[0].querySelector('[data-voucherify-offer-discount]')!.textContent).toBe('25% OFF');
+    expect(clones[0].querySelector('[data-voucherify-offer-category]')!.textContent).toBe('coupon');
+  });
+
+  it('hides template element', async () => {
+    await freshLoad();
+    document.body.innerHTML = `
+      <div data-voucherify-offers="coupon">
+        <div data-voucherify-offer-template><span data-voucherify-offer-title></span></div>
+      </div>
+    `;
+
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: () => Promise.resolve({
+        segment: 'anonymous',
+        offers: { coupons: [], promotions: [], loyalty: [], referrals: [], gifts: [] },
+        timestamp: 1000
+      })
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    await window.ppLib.voucherify.fetchOffers();
+
+    var template = document.querySelector('[data-voucherify-offer-template]') as HTMLElement;
+    expect(template.style.display).toBe('none');
+  });
+
+  it('shows empty state when no offers, hides when offers present', async () => {
+    await freshLoad();
+    document.body.innerHTML = `
+      <div data-voucherify-offers="coupon">
+        <div data-voucherify-offer-template><span data-voucherify-offer-title></span></div>
+        <p data-voucherify-offers-empty>No offers.</p>
+      </div>
+    `;
+
+    // First: no offers
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: () => Promise.resolve({
+        segment: 'anonymous',
+        offers: { coupons: [], promotions: [], loyalty: [], referrals: [], gifts: [] },
+        timestamp: 1000
+      })
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    await window.ppLib.voucherify.fetchOffers();
+
+    var emptyEl = document.querySelector('[data-voucherify-offers-empty]') as HTMLElement;
+    expect(emptyEl.style.display).toBe('');
+
+    // Second: offers present (need fresh load to reset inflight)
+    await freshLoad();
+    document.body.innerHTML = `
+      <div data-voucherify-offers="coupon">
+        <div data-voucherify-offer-template><span data-voucherify-offer-title></span></div>
+        <p data-voucherify-offers-empty>No offers.</p>
+      </div>
+    `;
+
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: () => Promise.resolve({
+        segment: 'anonymous',
+        offers: {
+          coupons: [{ id: 'c1', category: 'coupon', title: 'Deal', description: '', applicableProductIds: [] }],
+          promotions: [], loyalty: [], referrals: [], gifts: []
+        },
+        timestamp: 1000
+      })
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    await window.ppLib.voucherify.fetchOffers();
+
+    emptyEl = document.querySelector('[data-voucherify-offers-empty]') as HTMLElement;
+    expect(emptyEl.style.display).toBe('none');
+  });
+
+  it('removes previous clones on re-render', async () => {
+    await freshLoad();
+    document.body.innerHTML = `
+      <div data-voucherify-offers="coupon">
+        <div data-voucherify-offer-template><span data-voucherify-offer-title></span></div>
+      </div>
+    `;
+
+    // Add a fake previous clone
+    var oldClone = document.createElement('div');
+    oldClone.classList.add('pp-voucherify-offer-clone');
+    oldClone.textContent = 'OLD';
+    document.querySelector('[data-voucherify-offers]')!.appendChild(oldClone);
+
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: () => Promise.resolve({
+        segment: 'anonymous',
+        offers: {
+          coupons: [{ id: 'c1', category: 'coupon', title: 'New', description: '', applicableProductIds: [] }],
+          promotions: [], loyalty: [], referrals: [], gifts: []
+        },
+        timestamp: 1000
+      })
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    await window.ppLib.voucherify.fetchOffers();
+
+    var clones = document.querySelectorAll('.pp-voucherify-offer-clone');
+    expect(clones.length).toBe(1);
+    expect(clones[0].querySelector('[data-voucherify-offer-title]')!.textContent).toBe('New');
+  });
+
+  it('hides code element when offer has no code', async () => {
+    await freshLoad();
+    document.body.innerHTML = `
+      <div data-voucherify-offers="promotion">
+        <div data-voucherify-offer-template>
+          <span data-voucherify-offer-title></span>
+          <code data-voucherify-offer-code></code>
+        </div>
+      </div>
+    `;
+
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: () => Promise.resolve({
+        segment: 'anonymous',
+        offers: {
+          coupons: [],
+          promotions: [{ id: 'p1', category: 'promotion', title: 'Auto Promo', description: '', applicableProductIds: [] }],
+          loyalty: [], referrals: [], gifts: []
+        },
+        timestamp: 1000
+      })
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    await window.ppLib.voucherify.fetchOffers();
+
+    var codeEl = document.querySelector('.pp-voucherify-offer-clone [data-voucherify-offer-code]') as HTMLElement;
+    expect(codeEl.style.display).toBe('none');
+  });
+
+  it('adds category CSS class to cloned rows', async () => {
+    await freshLoad();
+    document.body.innerHTML = `
+      <div data-voucherify-offers="loyalty">
+        <div data-voucherify-offer-template>
+          <span data-voucherify-offer-title></span>
+          <span data-voucherify-offer-loyalty-balance></span>
+        </div>
+      </div>
+    `;
+
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: () => Promise.resolve({
+        segment: 'anonymous',
+        offers: {
+          coupons: [],
+          promotions: [],
+          loyalty: [{ id: 'l1', category: 'loyalty', title: 'Rewards', description: '', loyalty: { points: 100, balance: 75 }, applicableProductIds: [] }],
+          referrals: [], gifts: []
+        },
+        timestamp: 1000
+      })
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    await window.ppLib.voucherify.fetchOffers();
+
+    var clone = document.querySelector('.pp-voucherify-offer-clone')!;
+    expect(clone.classList.contains('pp-voucherify-offer-loyalty')).toBe(true);
+
+    var loyaltyEl = clone.querySelector('[data-voucherify-offer-loyalty-balance]')!;
+    expect(loyaltyEl.textContent).toBe('75 pts');
+  });
+
+  // =====================================================
+  // OFFERS — CONFIG
+  // =====================================================
+
+  it('configure merges offers config', async () => {
+    await freshLoad();
+    window.ppLib.voucherify.configure({
+      offers: { autoFetch: true, maxPerCategory: 5 } as any
+    });
+    var config = window.ppLib.voucherify.getConfig();
+    expect(config.offers.autoFetch).toBe(true);
+    expect(config.offers.maxPerCategory).toBe(5);
+    expect(config.offers.personalizeForMember).toBe(false); // default preserved
+  });
+
+  it('defaults to autoFetch: false', async () => {
+    await freshLoad();
+    var config = window.ppLib.voucherify.getConfig();
+    expect(config.offers.autoFetch).toBe(false);
+  });
+
+  it('fetchOffers exposed on ppLib.voucherify', async () => {
+    await freshLoad();
+    expect(typeof window.ppLib.voucherify.fetchOffers).toBe('function');
+  });
 });

@@ -6,7 +6,7 @@
  * Exposes: window.ppLib.voucherify
  */
 import type { PPLib } from '../types/common.types';
-import type { VoucherifyConfig, ValidationContext, QualificationContext, PricingResult, ValidationResult, QualificationResult, OrderItem, DOMProduct } from '../types/voucherify.types';
+import type { VoucherifyConfig, ValidationContext, QualificationContext, PricingResult, ValidationResult, QualificationResult, OrderItem, DOMProduct, OffersResult, OffersBundle, OfferEntry, OfferCategory, FetchOffersOptions } from '../types/voucherify.types';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -43,6 +43,22 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
       currencySymbol: '$',
       currency: 'CAD',
       locale: 'en-CA'
+    },
+    offers: {
+      autoFetch: false,
+      containerAttribute: 'data-voucherify-offers',
+      templateAttribute: 'data-voucherify-offer-template',
+      offerTitleAttribute: 'data-voucherify-offer-title',
+      offerDescriptionAttribute: 'data-voucherify-offer-description',
+      offerCodeAttribute: 'data-voucherify-offer-code',
+      offerDiscountAttribute: 'data-voucherify-offer-discount',
+      offerCategoryAttribute: 'data-voucherify-offer-category',
+      offerLoyaltyBalanceAttribute: 'data-voucherify-offer-loyalty-balance',
+      offerGiftBalanceAttribute: 'data-voucherify-offer-gift-balance',
+      emptyStateAttribute: 'data-voucherify-offers-empty',
+      categories: ['coupon', 'promotion', 'loyalty', 'referral', 'gift'] as OfferCategory[],
+      maxPerCategory: 10,
+      personalizeForMember: false
     },
     context: {
       customerSourceIdCookie: 'userId',
@@ -484,6 +500,33 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
       var ids = productIds || products.map(function(p) { return p.id; });
       if (ids.length === 0) return [];
 
+      // CMS mode: anonymous users already have prices in HTML from CMS.
+      // Only fetch from edge for members on pages that opt in.
+      if (CONFIG.edge.mode === 'cms') {
+        var segment = determineSegment();
+        if (segment === 'anonymous') {
+          return [];
+        }
+        // Member: check page opt-in attribute
+        var pageOptIn = doc.querySelector('[data-voucherify-member-pricing]');
+        if (!pageOptIn) {
+          return [];
+        }
+        // Member + opt-in: fetch from edge
+        addLoadingClass(products);
+        try {
+          var cmsEdgeResults = await fetchPricingEdge(products, ids);
+          injectPricing(products, cmsEdgeResults);
+          ppLib.log('info', '[ppVoucherify] CMS mode: member pricing fetched for ' + ids.length + ' product(s)');
+          return cmsEdgeResults;
+        } catch (e) {
+          ppLib.log('warn', '[ppVoucherify] Edge fetch failed in CMS mode, keeping CMS prices');
+          return [];
+        } finally {
+          removeLoadingClass(products);
+        }
+      }
+
       if (CONFIG.edge.mode === 'edge' && CONFIG.edge.edgeUrl) {
         addLoadingClass(products);
         try {
@@ -530,6 +573,322 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   }
 
   // =====================================================
+  // OFFERS
+  // =====================================================
+
+  var inflightOffers: Promise<OffersResult> | null = null;
+
+  var ALL_CATEGORIES: OfferCategory[] = ['coupon', 'promotion', 'loyalty', 'referral', 'gift'];
+
+  function emptyBundle(): OffersBundle {
+    return { coupons: [], promotions: [], loyalty: [], referrals: [], gifts: [] };
+  }
+
+  function emptyResult(segment: string): OffersResult {
+    return { segment: segment, offers: emptyBundle(), timestamp: Date.now() };
+  }
+
+  async function fetchOffersEdge(segment: string): Promise<OffersBundle> {
+    var url = CONFIG.edge.edgeUrl + '/api/offers/' + encodeURIComponent(segment);
+    var response = await fetchWithRetry(url, { method: 'GET' });
+    if (!response.ok) {
+      throw new Error('Edge offers API error: ' + response.status);
+    }
+    var data = await response.json();
+    return data.offers || emptyBundle();
+  }
+
+  function categorizeRedeemable(r: any): OfferCategory {
+    if (r.object === 'promotion_tier' || r.object === 'promotion_stack') return 'promotion';
+    if (r.object === 'loyalty_card') return 'loyalty';
+    if (r.campaign_type === 'REFERRAL_PROGRAM') return 'referral';
+    if (r.result && r.result.gift) return 'gift';
+    return 'coupon';
+  }
+
+  function buildOfferEntryFromRedeemable(r: any): OfferEntry {
+    var category = categorizeRedeemable(r);
+    var discount = r.result && r.result.discount;
+    var entry: OfferEntry = {
+      id: r.id,
+      category: category,
+      title: r.campaign_name || r.campaign || '',
+      description: '',
+      applicableProductIds: []
+    };
+
+    if (r.voucher && r.voucher.code) entry.code = r.voucher.code;
+
+    if (discount) {
+      var discountLabel = '';
+      if (discount.type === 'PERCENT' && discount.percent_off) {
+        discountLabel = discount.percent_off + '% OFF';
+        entry.description = 'Save ' + discount.percent_off + '% on your order';
+      } else if (discount.type === 'AMOUNT' && discount.amount_off) {
+        discountLabel = formatPrice(discount.amount_off / 100) + ' OFF';
+        entry.description = 'Save ' + formatPrice(discount.amount_off / 100) + ' on your order';
+      }
+      entry.discount = {
+        type: discount.type || 'NONE',
+        percentOff: discount.percent_off,
+        amountOff: discount.amount_off ? discount.amount_off / 100 : undefined,
+        label: discountLabel
+      };
+    }
+
+    if (r.result && r.result.loyalty_card) {
+      entry.loyalty = {
+        points: r.result.loyalty_card.points,
+        balance: r.result.loyalty_card.balance
+      };
+      entry.description = r.result.loyalty_card.balance + ' points available';
+    }
+
+    if (r.result && r.result.gift) {
+      entry.gift = {
+        amount: r.result.gift.amount,
+        balance: r.result.gift.balance
+      };
+      entry.description = formatPrice(r.result.gift.balance / 100) + ' gift card balance';
+    }
+
+    if (r.campaign_name) entry.campaignName = r.campaign_name;
+
+    return entry;
+  }
+
+  function categorizeRedeemables(redeemables: any[]): OffersBundle {
+    var bundle = emptyBundle();
+    for (var i = 0; i < redeemables.length; i++) {
+      var entry = buildOfferEntryFromRedeemable(redeemables[i]);
+      switch (entry.category) {
+        case 'coupon': bundle.coupons.push(entry); break;
+        case 'promotion': bundle.promotions.push(entry); break;
+        case 'loyalty': bundle.loyalty.push(entry); break;
+        case 'referral': bundle.referrals.push(entry); break;
+        case 'gift': bundle.gifts.push(entry); break;
+      }
+    }
+    return bundle;
+  }
+
+  function mergeOffersBundles(base: OffersBundle, personal: OffersBundle): OffersBundle {
+    var seenIds: Record<string, boolean> = {};
+    var merged = emptyBundle();
+
+    function addUnique(target: OfferEntry[], source: OfferEntry[]) {
+      for (var i = 0; i < source.length; i++) {
+        if (!seenIds[source[i].id]) {
+          seenIds[source[i].id] = true;
+          target.push(source[i]);
+        }
+      }
+    }
+
+    addUnique(merged.coupons, base.coupons);
+    addUnique(merged.coupons, personal.coupons);
+    addUnique(merged.promotions, base.promotions);
+    addUnique(merged.promotions, personal.promotions);
+    addUnique(merged.loyalty, base.loyalty);
+    addUnique(merged.loyalty, personal.loyalty);
+    addUnique(merged.referrals, base.referrals);
+    addUnique(merged.referrals, personal.referrals);
+    addUnique(merged.gifts, base.gifts);
+    addUnique(merged.gifts, personal.gifts);
+
+    return merged;
+  }
+
+  function filterBundle(bundle: OffersBundle, categories: OfferCategory[], maxPerCategory: number): OffersBundle {
+    var filtered = emptyBundle();
+    if (categories.indexOf('coupon') >= 0) filtered.coupons = bundle.coupons.slice(0, maxPerCategory);
+    if (categories.indexOf('promotion') >= 0) filtered.promotions = bundle.promotions.slice(0, maxPerCategory);
+    if (categories.indexOf('loyalty') >= 0) filtered.loyalty = bundle.loyalty.slice(0, maxPerCategory);
+    if (categories.indexOf('referral') >= 0) filtered.referrals = bundle.referrals.slice(0, maxPerCategory);
+    if (categories.indexOf('gift') >= 0) filtered.gifts = bundle.gifts.slice(0, maxPerCategory);
+    return filtered;
+  }
+
+  function renderOffers(bundle: OffersBundle): void {
+    var containerAttr = CONFIG.offers.containerAttribute;
+    var containers = doc.querySelectorAll('[' + containerAttr + ']');
+
+    for (var c = 0; c < containers.length; c++) {
+      var container = containers[c];
+      var categoryFilter = container.getAttribute(containerAttr) || 'all';
+      var requestedCategories: OfferCategory[] = categoryFilter === 'all'
+        ? ALL_CATEGORIES
+        : categoryFilter.split(',').map(function(s) { return s.trim() as OfferCategory; });
+
+      // Find template
+      var template = container.querySelector('[' + CONFIG.offers.templateAttribute + ']') as HTMLElement | null;
+      if (template) {
+        template.style.display = 'none';
+      }
+
+      // Remove previous clones
+      var oldClones = container.querySelectorAll('.pp-voucherify-offer-clone');
+      for (var r = 0; r < oldClones.length; r++) {
+        oldClones[r].parentNode!.removeChild(oldClones[r]);
+      }
+
+      // Collect matching offers
+      var offers: OfferEntry[] = [];
+      for (var k = 0; k < requestedCategories.length; k++) {
+        var cat = requestedCategories[k];
+        switch (cat) {
+          case 'coupon': offers = offers.concat(bundle.coupons); break;
+          case 'promotion': offers = offers.concat(bundle.promotions); break;
+          case 'loyalty': offers = offers.concat(bundle.loyalty); break;
+          case 'referral': offers = offers.concat(bundle.referrals); break;
+          case 'gift': offers = offers.concat(bundle.gifts); break;
+        }
+      }
+
+      // Clone template for each offer
+      if (template) {
+        for (var i = 0; i < offers.length; i++) {
+          var offer = offers[i];
+          var clone = template.cloneNode(true) as HTMLElement;
+          clone.removeAttribute(CONFIG.offers.templateAttribute);
+          clone.classList.add('pp-voucherify-offer-clone');
+          clone.classList.add('pp-voucherify-offer-' + offer.category);
+          clone.style.display = '';
+
+          // Populate slots
+          var titleEl = clone.querySelector('[' + CONFIG.offers.offerTitleAttribute + ']');
+          if (titleEl) titleEl.textContent = offer.title;
+
+          var descEl = clone.querySelector('[' + CONFIG.offers.offerDescriptionAttribute + ']');
+          if (descEl) descEl.textContent = offer.description;
+
+          var codeEl = clone.querySelector('[' + CONFIG.offers.offerCodeAttribute + ']') as HTMLElement | null;
+          if (codeEl) {
+            if (offer.code) {
+              codeEl.textContent = offer.code;
+              codeEl.style.display = '';
+            } else {
+              codeEl.style.display = 'none';
+            }
+          }
+
+          var discountEl = clone.querySelector('[' + CONFIG.offers.offerDiscountAttribute + ']');
+          if (discountEl) discountEl.textContent = (offer.discount && offer.discount.label) || '';
+
+          var categoryEl = clone.querySelector('[' + CONFIG.offers.offerCategoryAttribute + ']');
+          if (categoryEl) categoryEl.textContent = offer.category;
+
+          var loyaltyEl = clone.querySelector('[' + CONFIG.offers.offerLoyaltyBalanceAttribute + ']');
+          if (loyaltyEl) loyaltyEl.textContent = offer.loyalty ? String(offer.loyalty.balance) + ' pts' : '';
+
+          var giftEl = clone.querySelector('[' + CONFIG.offers.offerGiftBalanceAttribute + ']');
+          if (giftEl) giftEl.textContent = offer.gift ? formatPrice(offer.gift.balance / 100) : '';
+
+          container.appendChild(clone);
+        }
+      }
+
+      // Toggle empty state
+      var emptyEl = container.querySelector('[' + CONFIG.offers.emptyStateAttribute + ']') as HTMLElement | null;
+      if (emptyEl) {
+        emptyEl.style.display = offers.length === 0 ? '' : 'none';
+      }
+    }
+  }
+
+  function addOffersLoadingClass(): void {
+    var containers = doc.querySelectorAll('[' + CONFIG.offers.containerAttribute + ']');
+    for (var i = 0; i < containers.length; i++) {
+      containers[i].classList.add('pp-voucherify-offers-loading');
+    }
+  }
+
+  function removeOffersLoadingClass(): void {
+    var containers = doc.querySelectorAll('[' + CONFIG.offers.containerAttribute + ']');
+    for (var i = 0; i < containers.length; i++) {
+      containers[i].classList.remove('pp-voucherify-offers-loading');
+    }
+  }
+
+  async function fetchOffersImpl(options?: FetchOffersOptions): Promise<OffersResult> {
+    try {
+      var segment = determineSegment();
+      var categories = (options && options.categories != null) ? options.categories : CONFIG.offers.categories;
+      var maxPerCategory = (options && options.maxPerCategory != null) ? options.maxPerCategory : CONFIG.offers.maxPerCategory;
+      var personalize = (options && options.personalize != null) ? options.personalize : CONFIG.offers.personalizeForMember;
+
+      // CMS mode: anonymous → return empty (offers from CMS already in HTML if needed)
+      if (CONFIG.edge.mode === 'cms') {
+        if (segment === 'anonymous') {
+          return emptyResult(segment);
+        }
+        // Member: check page opt-in
+        var memberOptIn = doc.querySelector('[data-voucherify-member-offers]');
+        if (!memberOptIn) {
+          return emptyResult(segment);
+        }
+      }
+
+      addOffersLoadingClass();
+
+      var bundle: OffersBundle;
+      try {
+        if (CONFIG.edge.mode === 'edge' || CONFIG.edge.mode === 'cms') {
+          bundle = await fetchOffersEdge(segment);
+        } else {
+          // direct mode
+          var customer = buildCustomer();
+          var body: any = { scenario: 'ALL' };
+          if (customer) body.customer = customer;
+          var response = await apiQualifications(body);
+          var redeemablesRaw = (response && response.qualifications) || (response && response.redeemables) || [];
+          var redeemables = Array.isArray(redeemablesRaw) ? redeemablesRaw : (redeemablesRaw.data || []);
+          bundle = categorizeRedeemables(redeemables);
+        }
+
+        // Personal wallet merge
+        if (personalize && segment === 'member') {
+          var walletCustomer = buildCustomer();
+          if (walletCustomer) {
+            var walletBody: any = { scenario: 'CUSTOMER_WALLET', customer: walletCustomer };
+            var walletResponse = await apiQualifications(walletBody);
+            var walletRaw = (walletResponse && walletResponse.qualifications) || (walletResponse && walletResponse.redeemables) || [];
+            var walletRedeemables = Array.isArray(walletRaw) ? walletRaw : (walletRaw.data || []);
+            var personalBundle = categorizeRedeemables(walletRedeemables);
+            bundle = mergeOffersBundles(bundle, personalBundle);
+          }
+        }
+
+        var filtered = filterBundle(bundle, categories, maxPerCategory);
+
+        // Auto-render if containers exist
+        var hasContainers = doc.querySelectorAll('[' + CONFIG.offers.containerAttribute + ']').length > 0;
+        if (hasContainers) {
+          renderOffers(filtered);
+        }
+
+        ppLib.log('info', '[ppVoucherify] Offers fetched for segment: ' + segment);
+
+        return { segment: segment, offers: filtered, timestamp: Date.now() };
+      } catch (e) {
+        ppLib.log('warn', '[ppVoucherify] fetchOffers error', e);
+        return emptyResult(segment);
+      } finally {
+        removeOffersLoadingClass();
+      }
+    } catch (e) {
+      ppLib.log('error', '[ppVoucherify] fetchOffers error', e);
+      return emptyResult('unknown');
+    }
+  }
+
+  async function fetchOffers(options?: FetchOffersOptions): Promise<OffersResult> {
+    if (inflightOffers) return inflightOffers;
+    inflightOffers = fetchOffersImpl(options);
+    try { return await inflightOffers; } finally { inflightOffers = null; }
+  }
+
+  // =====================================================
   // CONSENT CHECK
   // =====================================================
 
@@ -561,7 +920,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   function init(): void {
     if (initialized) return;
 
-    if (!CONFIG.api.applicationId && !CONFIG.cache.enabled && CONFIG.edge.mode !== 'edge') {
+    if (!CONFIG.api.applicationId && !CONFIG.cache.enabled && CONFIG.edge.mode !== 'edge' && CONFIG.edge.mode !== 'cms') {
       ppLib.log('warn', '[ppVoucherify] No applicationId configured and cache not enabled. Call ppLib.voucherify.configure() before init.');
       return;
     }
@@ -594,6 +953,10 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
       }
     }
 
+    if (CONFIG.offers.autoFetch) {
+      fetchOffers();
+    }
+
     initialized = true;
   }
 
@@ -613,6 +976,10 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
 
     fetchPricing: function(productIds?: string[]): Promise<PricingResult[]> {
       return fetchPricing(productIds);
+    },
+
+    fetchOffers: function(options?: FetchOffersOptions): Promise<OffersResult> {
+      return fetchOffers(options);
     },
 
     validateVoucher: function(code: string, context?: Partial<ValidationContext>): Promise<ValidationResult> {

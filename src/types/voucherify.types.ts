@@ -12,7 +12,7 @@ export interface VoucherifyCacheConfig {
 }
 
 export interface VoucherifyEdgeConfig {
-  mode: 'direct' | 'edge';
+  mode: 'direct' | 'edge' | 'cms';
   edgeUrl: string;
 }
 
@@ -50,6 +50,7 @@ export interface VoucherifyConfig {
   cache: VoucherifyCacheConfig;
   edge: VoucherifyEdgeConfig;
   pricing: VoucherifyPricingConfig;
+  offers: VoucherifyOffersConfig;
   context: VoucherifyContextConfig;
   consent: VoucherifyConsentConfig;
   retry: VoucherifyRetryConfig;
@@ -107,6 +108,75 @@ export interface QualificationResult {
   hasMore: boolean;
 }
 
+// --- Offer types ---
+
+export type OfferCategory = 'coupon' | 'promotion' | 'loyalty' | 'referral' | 'gift';
+
+export interface OfferDiscount {
+  type: 'PERCENT' | 'AMOUNT' | 'FIXED' | 'UNIT' | 'NONE';
+  percentOff?: number;
+  amountOff?: number;
+  fixedAmount?: number;
+  unitOff?: number;
+  label: string;
+}
+
+export interface OfferEntry {
+  id: string;
+  category: OfferCategory;
+  title: string;
+  description: string;
+  code?: string;
+  discount?: OfferDiscount;
+  loyalty?: {
+    points: number;
+    balance: number;
+    nextExpirationDate?: string;
+    nextExpirationPoints?: number;
+  };
+  gift?: { amount: number; balance: number };
+  campaignName?: string;
+  applicableProductIds: string[];
+  metadata?: Record<string, any>;
+}
+
+export interface OffersBundle {
+  coupons: OfferEntry[];
+  promotions: OfferEntry[];
+  loyalty: OfferEntry[];
+  referrals: OfferEntry[];
+  gifts: OfferEntry[];
+}
+
+export interface OffersResult {
+  segment: string;
+  offers: OffersBundle;
+  timestamp: number;
+}
+
+export interface FetchOffersOptions {
+  categories?: OfferCategory[];
+  maxPerCategory?: number;
+  personalize?: boolean;
+}
+
+export interface VoucherifyOffersConfig {
+  autoFetch: boolean;
+  containerAttribute: string;
+  templateAttribute: string;
+  offerTitleAttribute: string;
+  offerDescriptionAttribute: string;
+  offerCodeAttribute: string;
+  offerDiscountAttribute: string;
+  offerCategoryAttribute: string;
+  offerLoyaltyBalanceAttribute: string;
+  offerGiftBalanceAttribute: string;
+  emptyStateAttribute: string;
+  categories: OfferCategory[];
+  maxPerCategory: number;
+  personalizeForMember: boolean;
+}
+
 export interface DOMProduct {
   id: string;
   basePrice: number;
@@ -117,6 +187,7 @@ export interface VoucherifyAPI {
   configure: (options?: Partial<VoucherifyConfig>) => VoucherifyConfig;
   init: () => void;
   fetchPricing: (productIds?: string[]) => Promise<PricingResult[]>;
+  fetchOffers: (options?: FetchOffersOptions) => Promise<OffersResult>;
   validateVoucher: (code: string, context?: Partial<ValidationContext>) => Promise<ValidationResult>;
   checkQualifications: (context?: QualificationContext) => Promise<QualificationResult>;
   clearCache: () => void;
