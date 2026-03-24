@@ -2693,4 +2693,413 @@ describe('Voucherify native coverage', () => {
     await freshLoad();
     expect(typeof window.ppLib.voucherify.fetchOffers).toBe('function');
   });
+
+  // =====================================================
+  // SEGMENT RESOLUTION
+  // =====================================================
+
+  it('resolveSegmentFromRules returns null when no rules configured', async () => {
+    await freshLoad();
+    window.ppLib.voucherify.configure({
+      segments: { rules: [], cookieName: 'pp_segment', cookieMaxAgeMinutes: 30, prioritizeOverMember: false },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    // getSegment with no rules and no userId → anonymous
+    expect(window.ppLib.voucherify.getSegment()).toBe('anonymous');
+  });
+
+  it('resolveSegmentFromRules matches query param and sets cookie', async () => {
+    await freshLoad();
+    // Set URL with utm_source=google
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, search: '?utm_source=google', href: 'http://localhost?utm_source=google', origin: 'http://localhost' },
+      writable: true,
+      configurable: true
+    });
+
+    window.ppLib.voucherify.configure({
+      segments: {
+        rules: [
+          { param: 'utm_source', value: 'google', segment: 'ad-google' },
+          { param: 'utm_source', value: 'facebook', segment: 'ad-facebook' }
+        ],
+        cookieName: 'pp_segment',
+        cookieMaxAgeMinutes: 30,
+        prioritizeOverMember: false
+      },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+
+    var segment = window.ppLib.voucherify.getSegment();
+    expect(segment).toBe('ad-google');
+    // Verify cookie was set
+    expect(document.cookie).toContain('pp_segment=ad-google');
+  });
+
+  it('resolveSegmentFromRules reads from cookie when no query param match', async () => {
+    await freshLoad();
+    // No query params
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, search: '', href: 'http://localhost', origin: 'http://localhost' },
+      writable: true,
+      configurable: true
+    });
+    // Set persisted cookie
+    document.cookie = 'pp_segment=ad-facebook;path=/';
+
+    window.ppLib.voucherify.configure({
+      segments: {
+        rules: [{ param: 'utm_source', value: 'google', segment: 'ad-google' }],
+        cookieName: 'pp_segment',
+        cookieMaxAgeMinutes: 30,
+        prioritizeOverMember: false
+      },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+
+    var segment = window.ppLib.voucherify.getSegment();
+    expect(segment).toBe('ad-facebook');
+  });
+
+  it('resolveSegmentFromRules refreshes cookie when query param matches existing cookie', async () => {
+    await freshLoad();
+    // Set old cookie
+    document.cookie = 'pp_segment=ad-facebook;path=/';
+    // URL now has utm_source=google
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, search: '?utm_source=google', href: 'http://localhost?utm_source=google', origin: 'http://localhost' },
+      writable: true,
+      configurable: true
+    });
+
+    window.ppLib.voucherify.configure({
+      segments: {
+        rules: [
+          { param: 'utm_source', value: 'google', segment: 'ad-google' },
+          { param: 'utm_source', value: 'facebook', segment: 'ad-facebook' }
+        ],
+        cookieName: 'pp_segment',
+        cookieMaxAgeMinutes: 30,
+        prioritizeOverMember: false
+      },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+
+    var segment = window.ppLib.voucherify.getSegment();
+    expect(segment).toBe('ad-google');
+    expect(document.cookie).toContain('pp_segment=ad-google');
+  });
+
+  it('determineSegment returns rule-resolved segment (prioritizeOverMember: true)', async () => {
+    await freshLoad();
+    document.cookie = 'userId=user123;path=/';
+    document.cookie = 'pp_segment=ad-google;path=/';
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, search: '', href: 'http://localhost', origin: 'http://localhost' },
+      writable: true,
+      configurable: true
+    });
+
+    window.ppLib.voucherify.configure({
+      segments: {
+        rules: [{ param: 'utm_source', value: 'google', segment: 'ad-google' }],
+        cookieName: 'pp_segment',
+        cookieMaxAgeMinutes: 30,
+        prioritizeOverMember: true
+      },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+
+    expect(window.ppLib.voucherify.getSegment()).toBe('ad-google');
+  });
+
+  it('determineSegment returns member over rule-resolved segment (prioritizeOverMember: false)', async () => {
+    await freshLoad();
+    document.cookie = 'userId=user123;path=/';
+    document.cookie = 'pp_segment=ad-google;path=/';
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, search: '', href: 'http://localhost', origin: 'http://localhost' },
+      writable: true,
+      configurable: true
+    });
+
+    window.ppLib.voucherify.configure({
+      segments: {
+        rules: [{ param: 'utm_source', value: 'google', segment: 'ad-google' }],
+        cookieName: 'pp_segment',
+        cookieMaxAgeMinutes: 30,
+        prioritizeOverMember: false
+      },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+
+    expect(window.ppLib.voucherify.getSegment()).toBe('member');
+  });
+
+  it('determineSegment returns rule-resolved segment for anonymous visitors', async () => {
+    await freshLoad();
+    // No userId cookie → not a member
+    document.cookie = 'pp_segment=ad-google;path=/';
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, search: '', href: 'http://localhost', origin: 'http://localhost' },
+      writable: true,
+      configurable: true
+    });
+
+    window.ppLib.voucherify.configure({
+      segments: {
+        rules: [{ param: 'utm_source', value: 'google', segment: 'ad-google' }],
+        cookieName: 'pp_segment',
+        cookieMaxAgeMinutes: 30,
+        prioritizeOverMember: false
+      },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+
+    expect(window.ppLib.voucherify.getSegment()).toBe('ad-google');
+  });
+
+  it('edge mode: URL contains rule-resolved segment key', async () => {
+    await freshLoad();
+    setupDOM();
+    document.cookie = 'pp_segment=ad-google;path=/';
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, search: '', href: 'http://localhost', origin: 'http://localhost' },
+      writable: true,
+      configurable: true
+    });
+
+    window.fetch = mockFetch({
+      segment: 'ad-google',
+      products: {
+        'weight-loss': { basePrice: 60, discountedPrice: 45, discountAmount: 15, discountLabel: '25% OFF', discountType: 'PERCENT', applicableVouchers: [] },
+        'hair-loss': { basePrice: 30, discountedPrice: 30, discountAmount: 0, discountLabel: '', discountType: 'NONE', applicableVouchers: [] }
+      },
+      timestamp: Date.now()
+    });
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      segments: {
+        rules: [{ param: 'utm_source', value: 'google', segment: 'ad-google' }],
+        cookieName: 'pp_segment',
+        cookieMaxAgeMinutes: 30,
+        prioritizeOverMember: false
+      },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var results = await window.ppLib.voucherify.fetchPricing();
+    expect(results.length).toBe(2);
+    // Verify edge URL contains the segment
+    var fetchCall = (window.fetch as any).mock.calls[0][0] as string;
+    expect(fetchCall).toContain('/api/prices/ad-google');
+  });
+
+  it('cms mode: fetches from edge for rule-resolved segment visitors', async () => {
+    await freshLoad();
+    setupDOM();
+    document.cookie = 'pp_segment=ad-google;path=/';
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, search: '', href: 'http://localhost', origin: 'http://localhost' },
+      writable: true,
+      configurable: true
+    });
+
+    window.fetch = mockFetch({
+      segment: 'ad-google',
+      products: {
+        'weight-loss': { basePrice: 60, discountedPrice: 45, discountAmount: 15, discountLabel: '25% OFF', discountType: 'PERCENT', applicableVouchers: [] },
+        'hair-loss': { basePrice: 30, discountedPrice: 22, discountAmount: 8, discountLabel: '27% OFF', discountType: 'PERCENT', applicableVouchers: [] }
+      },
+      timestamp: Date.now()
+    });
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'cms', edgeUrl: 'https://pp-pricing.workers.dev' },
+      segments: {
+        rules: [{ param: 'utm_source', value: 'google', segment: 'ad-google' }],
+        cookieName: 'pp_segment',
+        cookieMaxAgeMinutes: 30,
+        prioritizeOverMember: false
+      },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var results = await window.ppLib.voucherify.fetchPricing();
+    expect(results.length).toBe(2);
+    expect(results[0].discountedPrice).toBe(45);
+    expect(window.fetch).toHaveBeenCalled();
+  });
+
+  it('cms mode: returns empty for anonymous (unchanged)', async () => {
+    await freshLoad();
+    setupDOM();
+    // No cookies at all
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, search: '', href: 'http://localhost', origin: 'http://localhost' },
+      writable: true,
+      configurable: true
+    });
+
+    window.fetch = vi.fn() as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'cms', edgeUrl: 'https://pp-pricing.workers.dev' },
+      segments: {
+        rules: [{ param: 'utm_source', value: 'google', segment: 'ad-google' }],
+        cookieName: 'pp_segment',
+        cookieMaxAgeMinutes: 30,
+        prioritizeOverMember: false
+      },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var results = await window.ppLib.voucherify.fetchPricing();
+    expect(results).toEqual([]);
+    expect(window.fetch).not.toHaveBeenCalled();
+  });
+
+  it('getSegment() public API returns current segment', async () => {
+    await freshLoad();
+    expect(typeof window.ppLib.voucherify.getSegment).toBe('function');
+    // Default with no cookies → anonymous
+    expect(window.ppLib.voucherify.getSegment()).toBe('anonymous');
+  });
+
+  it('cloak attribute removed after pricing injection', async () => {
+    await freshLoad();
+    setupDOM();
+    // Set cloak attribute
+    document.documentElement.setAttribute('data-pp-segment-pending', '');
+    expect(document.documentElement.hasAttribute('data-pp-segment-pending')).toBe(true);
+
+    document.cookie = 'pp_segment=ad-google;path=/';
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, search: '', href: 'http://localhost', origin: 'http://localhost' },
+      writable: true,
+      configurable: true
+    });
+
+    window.fetch = mockFetch({
+      segment: 'ad-google',
+      products: {
+        'weight-loss': { basePrice: 60, discountedPrice: 45, discountAmount: 15, discountLabel: '25% OFF', discountType: 'PERCENT', applicableVouchers: [] },
+        'hair-loss': { basePrice: 30, discountedPrice: 30, discountAmount: 0, discountLabel: '', discountType: 'NONE', applicableVouchers: [] }
+      },
+      timestamp: Date.now()
+    });
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'cms', edgeUrl: 'https://pp-pricing.workers.dev' },
+      segments: {
+        rules: [{ param: 'utm_source', value: 'google', segment: 'ad-google' }],
+        cookieName: 'pp_segment',
+        cookieMaxAgeMinutes: 30,
+        prioritizeOverMember: false
+      },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    await window.ppLib.voucherify.fetchPricing();
+
+    // Cloak attribute should be removed after inject
+    expect(document.documentElement.hasAttribute('data-pp-segment-pending')).toBe(false);
+  });
+
+  it('cms mode: edge failure for custom segment removes cloak and returns empty', async () => {
+    await freshLoad();
+    setupDOM();
+    document.documentElement.setAttribute('data-pp-segment-pending', '');
+    document.cookie = 'pp_segment=ad-google;path=/';
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, search: '', href: 'http://localhost', origin: 'http://localhost' },
+      writable: true,
+      configurable: true
+    });
+
+    window.fetch = mockFetchReject('Edge down');
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'cms', edgeUrl: 'https://pp-pricing.workers.dev' },
+      segments: {
+        rules: [{ param: 'utm_source', value: 'google', segment: 'ad-google' }],
+        cookieName: 'pp_segment',
+        cookieMaxAgeMinutes: 30,
+        prioritizeOverMember: false
+      },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var results = await window.ppLib.voucherify.fetchPricing();
+    expect(results).toEqual([]);
+    expect(document.documentElement.hasAttribute('data-pp-segment-pending')).toBe(false);
+  });
+
+  it('segments config defaults are set correctly', async () => {
+    await freshLoad();
+    var config = window.ppLib.voucherify.getConfig();
+    expect(config.segments.rules).toEqual([]);
+    expect(config.segments.cookieName).toBe('pp_segment');
+    expect(config.segments.cookieMaxAgeMinutes).toBe(30);
+    expect(config.segments.prioritizeOverMember).toBe(false);
+  });
+
+  it('buildCustomer includes pp_segment metadata when rule-resolved segment active', async () => {
+    await freshLoad();
+    setupDOM();
+    document.cookie = 'userId=user123;path=/';
+    document.cookie = 'pp_segment=ad-google;path=/';
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, search: '', href: 'http://localhost', origin: 'http://localhost' },
+      writable: true,
+      configurable: true
+    });
+
+    var capturedBody: any = null;
+    window.fetch = vi.fn().mockImplementation((url: string, opts: any) => {
+      if (opts && opts.body) capturedBody = JSON.parse(opts.body);
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ qualifications: [], total: 0, has_more: false })
+      });
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      cache: { enabled: true, baseUrl: '/api/voucherify', ttl: 60000 } as any,
+      segments: {
+        rules: [{ param: 'utm_source', value: 'google', segment: 'ad-google' }],
+        cookieName: 'pp_segment',
+        cookieMaxAgeMinutes: 30,
+        prioritizeOverMember: true
+      },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    await window.ppLib.voucherify.fetchPricing();
+
+    // In direct API mode (not edge/cms), buildCustomer is called
+    expect(capturedBody).toBeTruthy();
+    expect(capturedBody.customer.metadata.pp_segment).toBe('ad-google');
+  });
 });

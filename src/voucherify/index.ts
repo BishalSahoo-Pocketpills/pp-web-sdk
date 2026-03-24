@@ -73,6 +73,12 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
     retry: {
       maxRetries: 2,
       baseDelay: 500
+    },
+    segments: {
+      rules: [],
+      cookieName: 'pp_segment',
+      cookieMaxAgeMinutes: 30,
+      prioritizeOverMember: false
     }
   };
 
@@ -224,6 +230,12 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
         var val = ppLib.getQueryParam(url, utmParams[i]);
         if (val) metadata[utmParams[i]] = ppLib.Security.sanitize(val);
       }
+    }
+
+    // Include rule-resolved segment key in customer metadata
+    var ruleSegment = resolveSegmentFromRules();
+    if (ruleSegment) {
+      metadata.pp_segment = ruleSegment;
     }
 
     customer.metadata = metadata;
@@ -405,10 +417,52 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   // EDGE MODE
   // =====================================================
 
+  function resolveSegmentFromRules(): string | null {
+    var rules = CONFIG.segments.rules;
+    if (!rules || rules.length === 0) return null;
+
+    // Check URL query params for a matching rule
+    var search = win.location.search;
+    var params = new URLSearchParams(search);
+
+    for (var i = 0; i < rules.length; i++) {
+      var rule = rules[i];
+      var paramValue = params.get(rule.param);
+      if (paramValue === rule.value) {
+        // Match found — set/refresh cookie
+        var maxAge = CONFIG.segments.cookieMaxAgeMinutes * 60;
+        doc.cookie = CONFIG.segments.cookieName + '=' + encodeURIComponent(rule.segment) +
+          ';path=/;max-age=' + maxAge + ';SameSite=Lax';
+        return rule.segment;
+      }
+    }
+
+    // No query match — check for persisted cookie
+    var cookieVal = ppLib.getCookie(CONFIG.segments.cookieName);
+    if (cookieVal) return decodeURIComponent(cookieVal);
+
+    return null;
+  }
+
   function determineSegment(): string {
+    if (CONFIG.segments.prioritizeOverMember) {
+      var ruleSegment = resolveSegmentFromRules();
+      if (ruleSegment) return ruleSegment;
+      var sourceId = ppLib.getCookie(CONFIG.context.customerSourceIdCookie);
+      if (sourceId) return 'member';
+      return 'anonymous';
+    }
+
+    // Default: member takes priority over rule-resolved segment
     var sourceId = ppLib.getCookie(CONFIG.context.customerSourceIdCookie);
     if (sourceId) return 'member';
+    var ruleSegment = resolveSegmentFromRules();
+    if (ruleSegment) return ruleSegment;
     return 'anonymous';
+  }
+
+  function removeCloakAttribute(): void {
+    doc.documentElement.removeAttribute('data-pp-segment-pending');
   }
 
   function addLoadingClass(products: DOMProduct[]): void {
@@ -501,9 +555,28 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
       if (ids.length === 0) return [];
 
       // CMS mode: anonymous users already have prices in HTML from CMS.
-      // Only fetch from edge for members on pages that opt in.
+      // Rule-resolved segments always fetch from edge. Members use page opt-in.
       if (CONFIG.edge.mode === 'cms') {
         var segment = determineSegment();
+
+        // Rule-resolved custom segment: always fetch from edge
+        if (segment !== 'anonymous' && segment !== 'member') {
+          addLoadingClass(products);
+          try {
+            var segEdgeResults = await fetchPricingEdge(products, ids);
+            injectPricing(products, segEdgeResults);
+            removeCloakAttribute();
+            ppLib.log('info', '[ppVoucherify] CMS mode: segment "' + segment + '" pricing fetched for ' + ids.length + ' product(s)');
+            return segEdgeResults;
+          } catch (e) {
+            ppLib.log('warn', '[ppVoucherify] Edge fetch failed in CMS mode for segment "' + segment + '", keeping CMS prices');
+            removeCloakAttribute();
+            return [];
+          } finally {
+            removeLoadingClass(products);
+          }
+        }
+
         if (segment === 'anonymous') {
           return [];
         }
@@ -532,6 +605,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
         try {
           var edgeResults = await fetchPricingEdge(products, ids);
           injectPricing(products, edgeResults);
+          removeCloakAttribute();
           removeLoadingClass(products);
           ppLib.log('info', '[ppVoucherify] Edge pricing fetched for ' + ids.length + ' product(s)');
           return edgeResults;
@@ -556,6 +630,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
       var results = mapQualificationsToResults(ids, products, response);
 
       injectPricing(products, results);
+      removeCloakAttribute();
 
       ppLib.log('info', '[ppVoucherify] Pricing fetched for ' + ids.length + ' product(s)');
 
@@ -1072,6 +1147,10 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
 
     getConfig: function() {
       return JSON.parse(JSON.stringify(CONFIG));
+    },
+
+    getSegment: function() {
+      return determineSegment();
     }
   };
 

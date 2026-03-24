@@ -45,6 +45,19 @@ export interface VoucherifyRetryConfig {
   baseDelay: number;
 }
 
+export interface SegmentRule {
+  param: string;
+  value: string;
+  segment: string;
+}
+
+export interface VoucherifySegmentConfig {
+  rules: SegmentRule[];
+  cookieName: string;
+  cookieMaxAgeMinutes: number;
+  prioritizeOverMember: boolean;
+}
+
 export interface VoucherifyConfig {
   api: VoucherifyApiConfig;
   cache: VoucherifyCacheConfig;
@@ -54,6 +67,7 @@ export interface VoucherifyConfig {
   context: VoucherifyContextConfig;
   consent: VoucherifyConsentConfig;
   retry: VoucherifyRetryConfig;
+  segments: VoucherifySegmentConfig;
 }
 
 export interface OrderItem {
@@ -193,4 +207,5 @@ export interface VoucherifyAPI {
   clearCache: () => void;
   isReady: () => boolean;
   getConfig: () => VoucherifyConfig;
+  getSegment: () => string;
 }
