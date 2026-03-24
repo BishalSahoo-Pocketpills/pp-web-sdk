@@ -58,6 +58,7 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
 
   const lastEventMap: Record<string, number> = {};
   let debounceWriteCount = 0;
+  let viewItemFired = false;
 
   function isDuplicate(key: string): boolean {
     const now = Date.now();
@@ -298,6 +299,10 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
         ppLib.log('verbose', '[ppEcommerce] No ecommerce items found on page');
         return;
       }
+
+      // Idempotency guard: only fire view_item once per page load
+      if (viewItemFired) return;
+      viewItemFired = true;
 
       const ecommerceData = buildEcommerceData(items);
       /*! v8 ignore start */

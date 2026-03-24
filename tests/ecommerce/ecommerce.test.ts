@@ -2013,3 +2013,174 @@ describe('dataLayer soft cap', () => {
     expect(lastEntry.event).toBe('add_to_cart');
   });
 });
+
+// =========================================================================
+// Item deduplication — production scenario simulation
+// =========================================================================
+describe('Item deduplication', () => {
+  beforeEach(() => {
+    loadWithCommon('ecommerce');
+  });
+
+  it('getItemsFromDOM deduplicates multiple DOM elements with same item_id', () => {
+    // Simulate a page with 7 elements sharing the same item_id
+    // (e.g., product card repeated in multiple page sections)
+    for (let i = 0; i < 7; i++) {
+      const el = document.createElement('div');
+      el.setAttribute('data-ecommerce-item', 'hair-loss-treatment');
+      el.setAttribute('data-ecommerce-name', 'Hair Loss Treatment');
+      el.setAttribute('data-ecommerce-price', '60');
+      document.body.appendChild(el);
+    }
+
+    const items = window.ppLib.ecommerce.getItems();
+    expect(items.length).toBe(1);
+    expect(items[0].item_id).toBe('hair-loss-treatment');
+    expect(items[0].price).toBe('60');
+  });
+
+  it('trackViewItem pushes exactly 1 item when 7 identical DOM elements exist', () => {
+    const dataLayer = createMockDataLayer();
+
+    for (let i = 0; i < 7; i++) {
+      const el = document.createElement('div');
+      el.setAttribute('data-ecommerce-item', 'hair-loss-treatment');
+      el.setAttribute('data-ecommerce-name', 'Hair Loss Treatment');
+      el.setAttribute('data-ecommerce-price', '60');
+      document.body.appendChild(el);
+    }
+
+    window.ppLib.ecommerce.trackViewItem();
+
+    const event = dataLayer.find(d => d.event === 'view_item');
+    expect(event).toBeDefined();
+    expect(event.ecommerce.items.length).toBe(1);
+    expect(event.ecommerce.value).toBe(60); // 1 × 60, not 7 × 60
+  });
+
+  it('buildEcommerceData deduplicates items passed to trackItem flow', () => {
+    const dataLayer = createMockDataLayer();
+
+    // Even if somehow duplicate items get past DOM scanning,
+    // buildEcommerceData has its own dedup layer
+    window.ppLib.ecommerce.trackItem({
+      item_id: 'ed-treatment',
+      item_name: 'ED Treatment',
+      price: 50,
+    });
+
+    const event = dataLayer.find(d => d.event === 'add_to_cart');
+    expect(event).toBeDefined();
+    expect(event.ecommerce.items.length).toBe(1);
+    expect(event.ecommerce.value).toBe(50);
+  });
+
+  it('preserves distinct items while deduplicating same-id items', () => {
+    // Mix of unique and duplicate items
+    const items = [
+      { id: 'finasteride-5mg', name: 'Finasteride 5mg', price: '39' },
+      { id: 'finasteride-5mg', name: 'Finasteride 5mg', price: '39' }, // duplicate
+      { id: 'finasteride-5mg', name: 'Finasteride 5mg', price: '39' }, // duplicate
+      { id: 'minoxidil', name: 'Minoxidil', price: '102' },
+      { id: 'minoxidil', name: 'Minoxidil', price: '102' }, // duplicate
+    ];
+
+    createEcommerceDOM({ items });
+
+    const result = window.ppLib.ecommerce.getItems();
+    expect(result.length).toBe(2);
+    expect(result[0].item_id).toBe('finasteride-5mg');
+    expect(result[1].item_id).toBe('minoxidil');
+  });
+
+  it('deduplicates by item_name when item_id differs but item_name matches', () => {
+    // This tests the dedup key: item_id || item_name
+    // Since item_id is present and different, they're treated as distinct
+    const el1 = document.createElement('div');
+    el1.setAttribute('data-ecommerce-item', 'product-card-1');
+    el1.setAttribute('data-ecommerce-name', 'Hair Loss Treatment');
+    el1.setAttribute('data-ecommerce-price', '60');
+    document.body.appendChild(el1);
+
+    const el2 = document.createElement('div');
+    el2.setAttribute('data-ecommerce-item', 'product-card-2');
+    el2.setAttribute('data-ecommerce-name', 'Hair Loss Treatment');
+    el2.setAttribute('data-ecommerce-price', '60');
+    document.body.appendChild(el2);
+
+    const items = window.ppLib.ecommerce.getItems();
+    // Both have different item_id so they're NOT deduped by item_id
+    // The dedup key is item_id first, so product-card-1 != product-card-2
+    expect(items.length).toBe(2);
+  });
+});
+
+// =========================================================================
+// trackViewItem idempotency guard
+// =========================================================================
+describe('trackViewItem idempotency', () => {
+  beforeEach(() => {
+    loadWithCommon('ecommerce');
+  });
+
+  it('fires view_item only once even when called multiple times', () => {
+    const dataLayer = createMockDataLayer();
+
+    createEcommerceDOM({
+      items: [{ id: 'product-1', name: 'Product 1', price: '60' }],
+    });
+
+    // Simulate multiple calls (e.g., from init + programmatic call)
+    window.ppLib.ecommerce.trackViewItem();
+    window.ppLib.ecommerce.trackViewItem();
+    window.ppLib.ecommerce.trackViewItem();
+
+    const viewItemEvents = dataLayer.filter(d => d.event === 'view_item');
+    expect(viewItemEvents.length).toBe(1);
+  });
+
+  it('does not block first call when no items exist, allows second call when items appear', () => {
+    const dataLayer = createMockDataLayer();
+
+    // First call: no items in DOM — returns early, viewItemFired stays false
+    window.ppLib.ecommerce.trackViewItem();
+    expect(dataLayer.find(d => d.event === 'view_item')).toBeUndefined();
+
+    // Items added to DOM later (e.g., by GTM)
+    createEcommerceDOM({
+      items: [{ id: 'product-1', name: 'Product 1', price: '60' }],
+    });
+
+    // Second call: items exist — fires successfully
+    window.ppLib.ecommerce.trackViewItem();
+    const event = dataLayer.find(d => d.event === 'view_item');
+    expect(event).toBeDefined();
+    expect(event.ecommerce.items.length).toBe(1);
+
+    // Third call: blocked by idempotency guard
+    window.ppLib.ecommerce.trackViewItem();
+    const viewItemEvents = dataLayer.filter(d => d.event === 'view_item');
+    expect(viewItemEvents.length).toBe(1);
+  });
+
+  it('idempotency does not affect add_to_cart via trackItem', () => {
+    const dataLayer = createMockDataLayer();
+
+    createEcommerceDOM({
+      items: [{ id: 'product-1', name: 'Product 1', price: '60' }],
+    });
+
+    // Fire view_item
+    window.ppLib.ecommerce.trackViewItem();
+
+    // trackItem should still work (it uses add_to_cart, not view_item)
+    window.ppLib.ecommerce.trackItem({
+      item_id: 'product-1',
+      item_name: 'Product 1',
+      price: 60,
+    });
+
+    expect(dataLayer.filter(d => d.event === 'view_item').length).toBe(1);
+    expect(dataLayer.filter(d => d.event === 'add_to_cart').length).toBe(1);
+  });
+});

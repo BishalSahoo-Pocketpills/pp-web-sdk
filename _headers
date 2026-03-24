@@ -3,6 +3,6 @@
 
 /*.min.js
   Access-Control-Allow-Origin: *
-  Cache-Control: public, max-age=31536000, immutable
+  Cache-Control: public, max-age=300, must-revalidate
   Content-Type: application/javascript; charset=utf-8
   X-Content-Type-Options: nosniff
