@@ -186,18 +186,32 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
   // BUILD ECOMMERCE DATA
   // =====================================================
 
+  function deduplicateItems(items: EcommerceItem[]): EcommerceItem[] {
+    var seen: Record<string, boolean> = {};
+    var unique: EcommerceItem[] = [];
+    for (let i = 0; i < items.length; i++) {
+      var key = items[i].item_id || items[i].item_name || '';
+      if (key && seen[key]) continue;
+      if (key) seen[key] = true;
+      unique.push(items[i]);
+    }
+    return unique;
+  }
+
   function buildEcommerceData(items: EcommerceItem[]): EcommerceData | null {
     /*! v8 ignore start */
     if (!items || items.length === 0) return null;
     /*! v8 ignore stop */
 
+    var dedupedItems = deduplicateItems(items);
+
     // Calculate total value from all items
     let totalValue = 0;
-    for (let i = 0; i < items.length; i++) {
-      const price = parseFloat(items[i].price);
+    for (let i = 0; i < dedupedItems.length; i++) {
+      const price = parseFloat(dedupedItems[i].price);
       /*! v8 ignore start */
       if (!isNaN(price)) {
-        totalValue += price * (items[i].quantity || 1);
+        totalValue += price * (dedupedItems[i].quantity || 1);
       /*! v8 ignore stop */
       }
     }
@@ -205,7 +219,7 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
     return {
       value: Math.round(totalValue * 100) / 100,
       currency: CONFIG.defaults.currency,
-      items: items
+      items: dedupedItems
     };
   }
 

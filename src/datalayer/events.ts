@@ -50,8 +50,13 @@ export function createEventPusher(
     dl.push({ ecommerce: null });
 
     var items: DataLayerItem[] = [];
+    var seenIds: Record<string, boolean> = {};
     for (var i = 0; i < inputItems.length; i++) {
-      items.push(itemBuilder.normalizeItem(inputItems[i]));
+      var normalized = itemBuilder.normalizeItem(inputItems[i]);
+      var dedupeKey = normalized.item_id || normalized.item_name || '';
+      if (dedupeKey && seenIds[dedupeKey]) continue;
+      if (dedupeKey) seenIds[dedupeKey] = true;
+      items.push(normalized);
     }
 
     var value = itemBuilder.calculateValue(items);
