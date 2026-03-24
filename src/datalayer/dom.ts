@@ -195,10 +195,15 @@ export function createDomBinder(
       }
 
       var items: DataLayerItemInput[] = [];
+      var seenIds: Record<string, boolean> = {};
       for (var i = 0; i < elements.length; i++) {
         var item = extractItemFromElement(elements[i]);
         if (item.item_id || item.item_name) {
-          items.push(item);
+          var dedupeKey = item.item_id || item.item_name || '';
+          if (!seenIds[dedupeKey]) {
+            seenIds[dedupeKey] = true;
+            items.push(item);
+          }
         }
       }
 

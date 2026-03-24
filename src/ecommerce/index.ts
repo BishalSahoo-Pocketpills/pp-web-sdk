@@ -148,11 +148,18 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/eco
   function getItemsFromDOM(): EcommerceItem[] {
     const elements = doc.querySelectorAll('[' + CONFIG.attributes.item + ']');
     const items: EcommerceItem[] = [];
+    const seenIds: Record<string, boolean> = {};
 
     for (let i = 0; i < elements.length; i++) {
       const item = parseItem(elements[i]);
       /*! v8 ignore start */
-      if (item) items.push(item);
+      if (item) {
+        var dedupeKey = item.item_id || item.item_name || '';
+        if (!seenIds[dedupeKey]) {
+          seenIds[dedupeKey] = true;
+          items.push(item);
+        }
+      }
       /*! v8 ignore stop */
     }
 
