@@ -1,4 +1,4 @@
-import type { VWOConfig } from '../types/vwo.types';
+import type { VWOConfig } from '@src/types/vwo.types';
 
 export function createVWOConfig(): VWOConfig {
   return {

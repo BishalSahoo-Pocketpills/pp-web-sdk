@@ -1263,7 +1263,7 @@ describe('Voucherify native coverage', () => {
   // CREDENTIAL WARNING (H5)
   // =====================================================
 
-  it('warns when API credentials are exposed in direct API mode', async () => {
+  it('blocks init when API credentials are exposed in direct API mode', async () => {
     await freshLoad();
     setupDOM();
     window.fetch = mockFetch({ qualifications: [], total: 0, has_more: false });
@@ -1277,9 +1277,11 @@ describe('Voucherify native coverage', () => {
     window.ppLib.voucherify.init();
 
     expect(logSpy).toHaveBeenCalledWith(
-      'warn',
-      expect.stringContaining('Direct API mode exposes credentials')
+      'error',
+      expect.stringContaining('BLOCKED')
     );
+    // Module should NOT be initialized
+    expect(window.ppLib.voucherify.isReady()).toBe(false);
   });
 
   it('does not warn about credentials when cache is enabled', async () => {
@@ -3101,5 +3103,175 @@ describe('Voucherify native coverage', () => {
     // In direct API mode (not edge/cms), buildCustomer is called
     expect(capturedBody).toBeTruthy();
     expect(capturedBody.customer.metadata.pp_segment).toBe('ad-google');
+  });
+
+  // =====================================================
+  // Edge rewrite guard: data-pp-segment-resolved
+  // =====================================================
+
+  it('edge rewrite guard: skips pricing fetch when data-pp-segment-resolved is present', async () => {
+    await freshLoad();
+
+    // Simulate edge-rewritten HTML: product container has the resolved attribute
+    document.body.innerHTML = `
+      <div data-voucherify-product="weight-loss" data-voucherify-base-price="60" data-pp-segment-resolved="ad_source:google">
+        <span data-voucherify-original-price>$60.00</span>
+        <span data-voucherify-discounted-price>$51.00</span>
+        <span data-voucherify-discount-label>15% OFF</span>
+      </div>
+    `;
+
+    var fetchSpy = vi.fn();
+    window.fetch = fetchSpy as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var results = await window.ppLib.voucherify.fetchPricing();
+
+    // Should NOT have called fetch — prices already injected by edge Worker
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(results).toEqual([]);
+  });
+
+  it('edge rewrite guard: proceeds with fetch when data-pp-segment-resolved is NOT present', async () => {
+    await freshLoad();
+    setupDOM();
+
+    window.fetch = mockFetch({
+      segment: 'anonymous',
+      products: {
+        'weight-loss': { basePrice: 60, discountedPrice: 45, discountAmount: 15, discountLabel: '25% OFF', discountType: 'PERCENT', applicableVouchers: [] },
+        'hair-loss': { basePrice: 30, discountedPrice: 30, discountAmount: 0, discountLabel: '', discountType: 'NONE', applicableVouchers: [] }
+      },
+      timestamp: Date.now()
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    var results = await window.ppLib.voucherify.fetchPricing();
+
+    // Should have called fetch — no edge rewrite detected
+    expect(window.fetch).toHaveBeenCalledTimes(1);
+    expect(results.length).toBe(2);
+  });
+
+  // =====================================================
+  // Click ID detection
+  // =====================================================
+
+  it('click ID: gclid param resolves to ad_source:google segment', async () => {
+    await freshLoad();
+    setupDOM();
+
+    // Set gclid in URL
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, search: '?gclid=CjwKCAjw', href: 'https://try.pocketpills.com/ed?gclid=CjwKCAjw' },
+      writable: true,
+      configurable: true
+    });
+
+    var capturedUrl = '';
+    window.fetch = vi.fn().mockImplementation((url: string) => {
+      capturedUrl = url;
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve({ segment: 'ad_source:google', products: {}, timestamp: Date.now() })
+      });
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    await window.ppLib.voucherify.fetchPricing();
+
+    // URL should contain ad_source:google segment
+    expect(capturedUrl).toContain('ad_source%3Agoogle');
+  });
+
+  it('click ID: fbclid + utm_source=instagram resolves to ad_source:instagram', async () => {
+    await freshLoad();
+    setupDOM();
+
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, search: '?fbclid=IwAR0&utm_source=instagram', href: 'https://try.pocketpills.com/ed?fbclid=IwAR0&utm_source=instagram' },
+      writable: true,
+      configurable: true
+    });
+
+    var capturedUrl = '';
+    window.fetch = vi.fn().mockImplementation((url: string) => {
+      capturedUrl = url;
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve({ segment: 'ad_source:instagram', products: {}, timestamp: Date.now() })
+      });
+    }) as any;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    window.ppLib.voucherify.init();
+
+    await window.ppLib.voucherify.fetchPricing();
+
+    expect(capturedUrl).toContain('ad_source%3Ainstagram');
+  });
+
+  it('click ID: sets ad_source metadata in buildCustomer', async () => {
+    await freshLoad();
+    setupDOM();
+
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, search: '?gclid=CjwKCAjw', href: 'https://try.pocketpills.com/ed?gclid=CjwKCAjw' },
+      writable: true,
+      configurable: true
+    });
+
+    // Use direct mode so buildCustomer sends the body
+    var capturedBody: any = null;
+    window.fetch = vi.fn().mockImplementation((_url: string, init: any) => {
+      if (init?.body) capturedBody = JSON.parse(init.body);
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve({ qualifications: [], total: 0, has_more: false })
+      });
+    }) as any;
+
+    document.cookie = 'userId=user123';
+
+    window.ppLib.voucherify.configure({
+      api: { applicationId: 'test', clientSecretKey: 'test' } as any,
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any,
+      segments: {
+        rules: [],
+        cookieName: 'pp_segment',
+        cookieMaxAgeMinutes: 30,
+        prioritizeOverMember: true
+      }
+    });
+    window.ppLib.voucherify.init();
+
+    await window.ppLib.voucherify.fetchPricing();
+
+    expect(capturedBody).toBeTruthy();
+    expect(capturedBody.customer.metadata.ad_source).toBe('google');
+    expect(capturedBody.customer.metadata.pp_segment).toBe('ad_source:google');
   });
 });

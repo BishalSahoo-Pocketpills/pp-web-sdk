@@ -1,4 +1,4 @@
-import type { PPLibConfig } from '../types/common.types';
+import type { PPLibConfig } from '@src/types/common.types';
 
 export function createConfig(): PPLibConfig {
   return {

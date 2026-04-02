@@ -5,8 +5,8 @@
  * Requires: common.js (window.ppLib)
  * Exposes: window.ppLib.mixpanel
  */
-import type { PPLib } from '../types/common.types';
-import type { MixpanelConfig } from '../types/mixpanel.types';
+import type { PPLib } from '@src/types/common.types';
+import type { MixpanelConfig } from '@src/types/mixpanel.types';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';

@@ -1,4 +1,4 @@
-import type { DataLayerPage } from '../types/datalayer.types';
+import type { DataLayerPage } from '@src/types/datalayer.types';
 
 export function createPageBuilder(
   win: Window & typeof globalThis,

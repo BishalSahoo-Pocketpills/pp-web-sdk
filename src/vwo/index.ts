@@ -5,9 +5,9 @@
  * Requires: common.js (window.ppLib)
  * Exposes: window.ppLib.vwo
  */
-import type { PPLib } from '../types/common.types';
-import type { VWOConfig, VWOExperiment } from '../types/vwo.types';
-import { createVWOConfig } from './config';
+import type { PPLib } from '@src/types/common.types';
+import type { VWOConfig, VWOExperiment } from '@src/types/vwo.types';
+import { createVWOConfig } from '@src/vwo/config';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';

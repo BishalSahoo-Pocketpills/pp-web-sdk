@@ -13,7 +13,11 @@
     "declaration": false,
     "declarationMap": false,
     "sourceMap": false,
-    "lib": ["ES2018", "DOM", "DOM.Iterable"]
+    "lib": ["ES2018", "DOM", "DOM.Iterable"],
+    "baseUrl": ".",
+    "paths": {
+      "@src/*": ["src/*"]
+    }
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist"]

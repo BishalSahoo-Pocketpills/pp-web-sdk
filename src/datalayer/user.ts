@@ -1,5 +1,5 @@
-import type { PPLib } from '../types/common.types';
-import type { DataLayerConfig, DataLayerUser } from '../types/datalayer.types';
+import type { PPLib } from '@src/types/common.types';
+import type { DataLayerConfig, DataLayerUser } from '@src/types/datalayer.types';
 
 export function createUserBuilder(
   ppLib: PPLib,

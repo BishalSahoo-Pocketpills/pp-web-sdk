@@ -1,4 +1,4 @@
-import type { SafeUtils } from '../types/common.types';
+import type { SafeUtils } from '@src/types/common.types';
 
 export function createSafeUtils(log: (level: string, message: string, data?: any) => void): SafeUtils {
   return {

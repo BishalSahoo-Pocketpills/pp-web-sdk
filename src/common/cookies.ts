@@ -1,4 +1,4 @@
-import type { PPLib } from '../types/common.types';
+import type { PPLib } from '@src/types/common.types';
 
 export function createGetCookie(doc: Document): (name: string) => string | null {
   return function getCookie(name: string): string | null {

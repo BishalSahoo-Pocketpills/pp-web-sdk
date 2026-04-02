@@ -5,11 +5,11 @@
  * Requires: common.js (window.ppLib)
  * Exposes: window.ppLib.login, window.logoutUser
  */
-import type { PPLib } from '../types/common.types';
-import type { LoginConfig } from '../types/login.types';
-import { createLoginConfig } from './config';
-import { createLogoutUser } from './logout';
-import { createInitAuthState } from './auth-state';
+import type { PPLib } from '@src/types/common.types';
+import type { LoginConfig } from '@src/types/login.types';
+import { createLoginConfig } from '@src/login/config';
+import { createLogoutUser } from '@src/login/logout';
+import { createInitAuthState } from '@src/login/auth-state';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';

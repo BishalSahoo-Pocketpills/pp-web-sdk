@@ -1,5 +1,5 @@
-import type { PPLib } from '../types/common.types';
-import type { BrazeConfig } from '../types/braze.types';
+import type { PPLib } from '@src/types/common.types';
+import type { BrazeConfig } from '@src/types/braze.types';
 
 export function createSdkLoader(
   win: Window & typeof globalThis,

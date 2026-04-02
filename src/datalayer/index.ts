@@ -5,15 +5,15 @@
  * Requires: common.js (window.ppLib)
  * Exposes: window.ppLib.datalayer
  */
-import type { PPLib } from '../types/common.types';
-import type { DataLayerConfig, DataLayerItemInput, DataLayerUser, UserDataInput, UserDataHashedInput } from '../types/datalayer.types';
-import { createDataLayerConfig } from './config';
-import { createPageBuilder } from './page';
-import { createUserBuilder } from './user';
-import { createUserDataManager } from './user-data';
-import { createItemBuilder } from './items';
-import { createEventPusher } from './events';
-import { createDomBinder } from './dom';
+import type { PPLib } from '@src/types/common.types';
+import type { DataLayerConfig, DataLayerItemInput, DataLayerUser, UserDataInput, UserDataHashedInput } from '@src/types/datalayer.types';
+import { createDataLayerConfig } from '@src/datalayer/config';
+import { createPageBuilder } from '@src/datalayer/page';
+import { createUserBuilder } from '@src/datalayer/user';
+import { createUserDataManager } from '@src/datalayer/user-data';
+import { createItemBuilder } from '@src/datalayer/items';
+import { createEventPusher } from '@src/datalayer/events';
+import { createDomBinder } from '@src/datalayer/dom';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';

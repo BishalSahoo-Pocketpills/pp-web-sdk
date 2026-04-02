@@ -1,4 +1,4 @@
-import type { PPLibConfig, SafeUtils, Security, Storage } from '../types/common.types';
+import type { PPLibConfig, SafeUtils, Security, Storage } from '@src/types/common.types';
 
 export function createStorage(
   win: Window & typeof globalThis,

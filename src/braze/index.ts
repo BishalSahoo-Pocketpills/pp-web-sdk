@@ -5,14 +5,14 @@
  * Requires: common.js (window.ppLib)
  * Exposes: window.ppLib.braze
  */
-import type { PPLib } from '../types/common.types';
-import type { BrazeConfig } from '../types/braze.types';
-import { createBrazeConfig } from './config';
-import { createSdkLoader } from './sdk-loader';
-import { createUserManager } from './user';
-import { createFormHandler } from './forms';
-import { createEventHandler } from './events';
-import { createPurchaseHandler } from './purchases';
+import type { PPLib } from '@src/types/common.types';
+import type { BrazeConfig } from '@src/types/braze.types';
+import { createBrazeConfig } from '@src/braze/config';
+import { createSdkLoader } from '@src/braze/sdk-loader';
+import { createUserManager } from '@src/braze/user';
+import { createFormHandler } from '@src/braze/forms';
+import { createEventHandler } from '@src/braze/events';
+import { createPurchaseHandler } from '@src/braze/purchases';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';

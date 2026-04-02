@@ -1,4 +1,4 @@
-import type { BrazeConfig } from '../types/braze.types';
+import type { BrazeConfig } from '@src/types/braze.types';
 
 export function createBrazeConfig(): BrazeConfig {
   return {

@@ -1,5 +1,5 @@
-import type { PPLib } from '../types/common.types';
-import type { LoginConfig } from '../types/login.types';
+import type { PPLib } from '@src/types/common.types';
+import type { LoginConfig } from '@src/types/login.types';
 
 export function createLogoutUser(
   win: Window & typeof globalThis,

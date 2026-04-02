@@ -1,4 +1,4 @@
-import type { PPLibConfig, SafeUtils, Security } from '../types/common.types';
+import type { PPLibConfig, SafeUtils, Security } from '@src/types/common.types';
 
 export function createSecurity(
   config: PPLibConfig,

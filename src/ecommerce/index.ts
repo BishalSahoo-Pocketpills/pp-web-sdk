@@ -5,8 +5,8 @@
  * Requires: common.js (window.ppLib)
  * Exposes: window.ppLib.ecommerce
  */
-import type { PPLib } from '../types/common.types';
-import type { EcommerceConfig, EcommerceItem, EcommerceData } from '../types/ecommerce.types';
+import type { PPLib } from '@src/types/common.types';
+import type { EcommerceConfig, EcommerceItem, EcommerceData } from '@src/types/ecommerce.types';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';

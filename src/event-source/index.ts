@@ -5,8 +5,8 @@
  * Requires: common.js (window.ppLib)
  * Exposes: window.ppLib.eventSource
  */
-import type { PPLib } from '../types/common.types';
-import type { EventSourceConfig, EventSourceData } from '../types/event-source.types';
+import type { PPLib } from '@src/types/common.types';
+import type { EventSourceConfig, EventSourceData } from '@src/types/event-source.types';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';

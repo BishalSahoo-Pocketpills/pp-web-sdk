@@ -1,4 +1,4 @@
-import type { DataLayerConfig } from '../types/datalayer.types';
+import type { DataLayerConfig } from '@src/types/datalayer.types';
 
 export function createDataLayerConfig(): DataLayerConfig {
   return {

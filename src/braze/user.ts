@@ -1,5 +1,5 @@
-import type { PPLib } from '../types/common.types';
-import type { BrazeConfig } from '../types/braze.types';
+import type { PPLib } from '@src/types/common.types';
+import type { BrazeConfig } from '@src/types/braze.types';
 
 // Standard Braze attribute → dedicated setter method mapping
 // Note: dob/setDateOfBirth is intentionally excluded — it requires 3 separate

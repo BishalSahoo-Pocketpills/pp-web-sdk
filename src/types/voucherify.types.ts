@@ -79,16 +79,100 @@ export interface OrderItem {
   price?: number;
 }
 
+// --- Voucherify API types (shared shapes) ---
+
+/** Discount structure from Voucherify API */
+export interface VoucherifyDiscountResult {
+  type: 'PERCENT' | 'AMOUNT' | 'FIXED' | 'UNIT';
+  percent_off?: number;
+  amount_off?: number;
+  fixed_amount?: number;
+  unit_off?: number;
+  effect?: string;
+}
+
+/** Loyalty card from Voucherify API */
+export interface VoucherifyLoyaltyResult {
+  points: number;
+  balance: number;
+  next_expiration_date?: string;
+  next_expiration_points?: number;
+}
+
+/** Gift card from Voucherify API */
+export interface VoucherifyGiftResult {
+  amount: number;
+  balance: number;
+}
+
+/** Order result from Voucherify API */
+export interface VoucherifyOrderResult {
+  amount: number;
+  discount_amount: number;
+  total_amount: number;
+}
+
+/** Redeemable object from Voucherify qualification/validation responses */
+export interface VoucherifyRedeemable {
+  id: string;
+  object: string;
+  name?: string;
+  campaign?: string;
+  campaign_name?: string;
+  campaign_type?: string;
+  banner?: string;
+  status?: string;
+  voucher?: { code?: string };
+  result?: {
+    discount?: VoucherifyDiscountResult;
+    loyalty_card?: VoucherifyLoyaltyResult;
+    gift?: VoucherifyGiftResult;
+    order?: VoucherifyOrderResult;
+  };
+  applicable_to?: {
+    data?: Array<{ object: string; id?: string; source_id?: string }>;
+    total?: number;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+/** Voucherify qualification/validation API response (polymorphic shape) */
+export interface VoucherifyApiResponse {
+  qualifications?: VoucherifyRedeemable[] | { data: VoucherifyRedeemable[]; total?: number };
+  redeemables?: VoucherifyRedeemable[] | { data: VoucherifyRedeemable[]; total?: number };
+  valid?: boolean;
+  tracking_id?: string;
+  total?: number;
+  has_more?: boolean;
+}
+
+/** Edge pricing API response */
+export interface EdgePricingResponse {
+  segment: string;
+  products: Record<string, {
+    basePrice: number;
+    discountedPrice: number;
+    discountAmount: number;
+    discountLabel: string;
+    discountType: PricingResult['discountType'];
+    applicableVouchers: string[];
+    campaignName?: string;
+  }>;
+  timestamp: number;
+}
+
+export type CustomerMetadata = Record<string, string | boolean | number>;
+
 export interface QualificationContext {
-  customer?: { source_id?: string; metadata?: Record<string, any> };
+  customer?: { source_id?: string; metadata?: CustomerMetadata };
   order?: { amount?: number; items?: OrderItem[] };
   scenario?: 'ALL' | 'CUSTOMER_WALLET' | 'AUDIENCE_ONLY' | 'PRODUCTS';
-  metadata?: Record<string, any>;
+  metadata?: CustomerMetadata;
 }
 
 export interface ValidationContext {
   redeemables: Array<{ object: string; id: string }>;
-  customer?: { source_id?: string; metadata?: Record<string, any> };
+  customer?: { source_id?: string; metadata?: CustomerMetadata };
   order?: { amount?: number; items?: OrderItem[] };
 }
 
@@ -112,12 +196,7 @@ export interface ValidationResult {
 }
 
 export interface QualificationResult {
-  redeemables: Array<{
-    id: string;
-    object: string;
-    result?: { discount?: any; gift?: any; loyalty?: any };
-    applicable_to?: any;
-  }>;
+  redeemables: VoucherifyRedeemable[];
   total: number;
   hasMore: boolean;
 }
@@ -151,7 +230,7 @@ export interface OfferEntry {
   gift?: { amount: number; balance: number };
   campaignName?: string;
   applicableProductIds: string[];
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface OffersBundle {

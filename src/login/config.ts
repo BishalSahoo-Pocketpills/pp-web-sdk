@@ -1,4 +1,4 @@
-import type { LoginConfig } from '../types/login.types';
+import type { LoginConfig } from '@src/types/login.types';
 
 export function createLoginConfig(): LoginConfig {
   return {

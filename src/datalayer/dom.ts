@@ -1,5 +1,5 @@
-import type { PPLib } from '../types/common.types';
-import type { DataLayerConfig, DataLayerItemInput } from '../types/datalayer.types';
+import type { PPLib } from '@src/types/common.types';
+import type { DataLayerConfig, DataLayerItemInput } from '@src/types/datalayer.types';
 
 var ECOMMERCE_EVENTS: Record<string, boolean> = {
   view_item: true,

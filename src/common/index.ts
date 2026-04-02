@@ -5,14 +5,14 @@
  *
  * Exposes: window.ppLib
  */
-import type { PPLib } from '../types/common.types';
-import { createSafeUtils } from './safe-utils';
-import { createConfig } from './config';
-import { createGetCookie, createDeleteCookie } from './cookies';
-import { createGetQueryParam } from './url';
-import { createSecurity } from './security';
-import { createStorage } from './storage';
-import { createExtend } from './utils';
+import type { PPLib } from '@src/types/common.types';
+import { createSafeUtils } from '@src/common/safe-utils';
+import { createConfig } from '@src/common/config';
+import { createGetCookie, createDeleteCookie } from '@src/common/cookies';
+import { createGetQueryParam } from '@src/common/url';
+import { createSecurity } from '@src/common/security';
+import { createStorage } from '@src/common/storage';
+import { createExtend } from '@src/common/utils';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';

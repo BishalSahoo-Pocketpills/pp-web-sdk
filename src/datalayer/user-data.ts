@@ -1,4 +1,4 @@
-import type { DataLayerUserData, DataLayerUserDataAddress, UserDataInput, UserDataHashedInput } from '../types/datalayer.types';
+import type { DataLayerUserData, DataLayerUserDataAddress, UserDataInput, UserDataHashedInput } from '@src/types/datalayer.types';
 
 var SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 

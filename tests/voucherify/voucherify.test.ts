@@ -299,11 +299,12 @@ describe('init()', () => {
   it('auto-fetches pricing when autoFetch is true and DOM is ready', async () => {
     loadWithCommon('voucherify', { coverable: false });
     setupDOM();
-    const fetchMock = mockFetch(qualificationsResponse());
+    const fetchMock = mockFetch({ segment: 'anonymous', products: {}, timestamp: Date.now() });
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app-id', clientSecretKey: 'secret' } as any
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' } as any,
+      consent: { required: false } as any
     });
     window.ppLib.voucherify!.init();
 

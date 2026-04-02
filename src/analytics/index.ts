@@ -5,8 +5,8 @@
  * Requires: common.js (window.ppLib)
  * Exposes: window.ppAnalytics
  */
-import type { PPLib } from '../types/common.types';
-import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, CustomPlatform } from '../types/analytics.types';
+import type { PPLib } from '@src/types/common.types';
+import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, CustomPlatform } from '@src/types/analytics.types';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';

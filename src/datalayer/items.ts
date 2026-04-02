@@ -1,5 +1,5 @@
-import type { PPLib } from '../types/common.types';
-import type { DataLayerConfig, DataLayerItem, DataLayerItemInput } from '../types/datalayer.types';
+import type { PPLib } from '@src/types/common.types';
+import type { DataLayerConfig, DataLayerItem, DataLayerItemInput } from '@src/types/datalayer.types';
 
 export function createItemBuilder(
   ppLib: PPLib,

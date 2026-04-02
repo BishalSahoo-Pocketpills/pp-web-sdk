@@ -1,4 +1,4 @@
-import type { PPLib } from '../types/common.types';
+import type { PPLib } from '@src/types/common.types';
 
 export function createExtend(
   log: PPLib['log']

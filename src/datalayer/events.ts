@@ -1,5 +1,5 @@
-import type { PPLib } from '../types/common.types';
-import type { DataLayerConfig, DataLayerItem, DataLayerItemInput, DataLayerUser, DataLayerUserData, DataLayerPage } from '../types/datalayer.types';
+import type { PPLib } from '@src/types/common.types';
+import type { DataLayerConfig, DataLayerItem, DataLayerItemInput, DataLayerUser, DataLayerUserData, DataLayerPage } from '@src/types/datalayer.types';
 
 export function createEventPusher(
   win: Window & typeof globalThis,

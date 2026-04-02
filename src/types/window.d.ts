@@ -1,5 +1,5 @@
-import type { PPLib } from './common.types';
-import type { AnalyticsAPI } from './analytics.types';
+import type { PPLib } from '@src/types/common.types';
+import type { AnalyticsAPI } from '@src/types/analytics.types';
 
 interface PPLibReadyCallback {
   (ppLib: PPLib): void;
