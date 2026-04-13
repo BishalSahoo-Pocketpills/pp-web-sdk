@@ -56,6 +56,7 @@ export interface PPLib {
   log: (level: string, message: string, data?: any) => void;
   extend: (target: any, source: any) => any;
   ready: (callback: (ppLib: PPLib) => void) => void;
+  attribution: import('../common/attribution').AttributionService;
   login?: import('./login.types').LoginAPI;
   ecommerce?: import('./ecommerce.types').EcommerceAPI;
   eventSource?: import('./event-source.types').EventSourceAPI;

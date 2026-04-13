@@ -769,6 +769,17 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
 
         Utils.log('info', 'Initializing tracker v' + CONFIG.version);
 
+        // Initialize shared marketing attribution service (extracts params once)
+        if (ppLib.attribution) {
+          ppLib.attribution.configure({
+            includeFirstTouch: SafeUtils.get(CONFIG, 'attribution.enableFirstTouch', true),
+            includeLastTouch: SafeUtils.get(CONFIG, 'attribution.enableLastTouch', true),
+            persistFirstTouch: SafeUtils.get(CONFIG, 'attribution.persistAcrossSessions', false),
+            sessionTimeoutMs: SafeUtils.get(CONFIG, 'attribution.sessionTimeout', 30) * 60 * 1000,
+          });
+          ppLib.attribution.init();
+        }
+
         let currentParams: TrackedParams | null = null;
 
         /*! v8 ignore start */
@@ -1004,12 +1015,20 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
           properties.last_touch_campaign = SafeUtils.get(lastTouch, 'utm_campaign', '');
         }
 
+        // Clone properties to avoid mutating the caller's object
+        var enrichedProps = ppLib.extend({}, properties);
+
+        // Unified marketing attribution from shared service
+        if (ppLib.attribution) {
+          ppLib.attribution.enrich(enrichedProps);
+        }
+
         /*! v8 ignore start */
         if (SafeUtils.get(CONFIG, 'platforms.gtm.enabled', true)) {
         /*! v8 ignore stop */
           EventQueue.add({
             type: 'gtm',
-            data: ppLib.extend({ event: eventName }, properties)
+            data: ppLib.extend({ event: eventName }, enrichedProps)
           });
         }
 
@@ -1021,7 +1040,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
             data: {
               type: 'track',
               eventName: eventName,
-              properties: properties
+              properties: enrichedProps
             }
           });
         }

@@ -252,6 +252,11 @@ import type { EventSourceConfig, EventSourceData } from '@src/types/event-source
   }
 
   function dispatchEvent(data: EventSourceData): void {
+    // Auto-enrich with marketing attribution from shared service
+    if (ppLib.attribution) {
+      ppLib.attribution.enrich(data as Record<string, unknown>);
+    }
+
     sendToMixpanel(data);
     sendToGTM(data);
     sendToVWO(data);

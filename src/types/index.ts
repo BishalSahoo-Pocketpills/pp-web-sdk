@@ -7,3 +7,4 @@ export type { MixpanelConfig, MixpanelAPI, SessionManager } from '@src/types/mix
 export type { BrazeConfig, BrazeSdkConfig, BrazeConsentConfig, BrazeIdentityConfig, BrazeFormConfig, BrazeEventConfig, BrazePurchaseConfig, BrazeAPI } from '@src/types/braze.types';
 export type { VoucherifyConfig, VoucherifyApiConfig, VoucherifyCacheConfig, VoucherifyPricingConfig, VoucherifyContextConfig, VoucherifyConsentConfig, VoucherifyAPI, OrderItem, QualificationContext, ValidationContext, PricingResult, ValidationResult, QualificationResult } from '@src/types/voucherify.types';
 export type { DataLayerConfig, DataLayerUser, DataLayerUserDataAddress, DataLayerUserData, DataLayerPage, DataLayerItem, DataLayerItemInput, UserDataInput, UserDataHashedInput, DataLayerAPI } from '@src/types/datalayer.types';
+export type { TouchAttribution, MarketingAttribution, AttributionServiceConfig, AttributionService } from '@src/common/attribution';

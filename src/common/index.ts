@@ -13,6 +13,7 @@ import { createGetQueryParam } from '@src/common/url';
 import { createSecurity } from '@src/common/security';
 import { createStorage } from '@src/common/storage';
 import { createExtend } from '@src/common/utils';
+import { createAttributionService } from '@src/common/attribution';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -83,6 +84,13 @@ import { createExtend } from '@src/common/utils';
   // =====================================================
 
   ppLib.extend = createExtend(ppLib.log);
+
+  // =====================================================
+  // MARKETING ATTRIBUTION SERVICE
+  // Shared across all modules — single extraction, unified enrichment
+  // =====================================================
+
+  ppLib.attribution = createAttributionService(win, ppLib);
 
   // =====================================================
   // MODULE READY SYSTEM
