@@ -124,7 +124,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
         lastError = new Error('HTTP ' + response.status);
       } catch (e) {
         // Network error — retry
-        lastError = e;
+        lastError = e instanceof Error ? e : new Error(String(e));
       }
       if (attempt < maxRetries) {
         await new Promise(function(resolve) {
@@ -140,7 +140,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
 
     if (isCacheValid(cacheKey)) {
       ppLib.log('info', '[ppVoucherify] Cache hit for ' + endpoint);
-      return memCache.get(cacheKey)!.data;
+      return memCache.get(cacheKey)!.data as VoucherifyApiResponse;
     }
 
     var apiResponse: Response;
@@ -1186,7 +1186,8 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
         }
 
         return validateFn(body).then(function(response: VoucherifyApiResponse) {
-          var redeemable = response.redeemables && response.redeemables[0];
+          var redeemables = extractRedeemables(response);
+          var redeemable = redeemables[0];
           var result = redeemable && redeemable.result;
 
           return {
