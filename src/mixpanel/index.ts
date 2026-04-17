@@ -353,6 +353,16 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
         // UTM attribution
         campaignParams();
 
+        // Register shared marketing attribution as super property
+        if (ppLib.attribution) {
+          ppLib.attribution.init();
+          var mktgAttr = ppLib.attribution.get();
+          if (mktgAttr) {
+            mp.register({ marketingAttribution: mktgAttr });
+            mp.people.set({ marketingAttribution: mktgAttr });
+          }
+        }
+
         ppLib.log('info', '[ppMixpanel] Initialized successfully');
       }
     });
