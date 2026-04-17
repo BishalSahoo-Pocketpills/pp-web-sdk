@@ -245,14 +245,14 @@ export function createAttributionService(
   // ---------------------------------------------------------------------------
 
   function isSessionActive(): boolean {
-    var sessionStart = ppLib.Storage.get(config.storageKeySession);
-    if (!sessionStart) return false;
-    var elapsed = Date.now() - parseInt(sessionStart, 10);
+    var session = ppLib.Storage.get(config.storageKeySession);
+    if (!session || !session.ts) return false;
+    var elapsed = Date.now() - session.ts;
     return elapsed < config.sessionTimeoutMs;
   }
 
   function touchSession(): void {
-    ppLib.Storage.set(config.storageKeySession, String(Date.now()));
+    ppLib.Storage.set(config.storageKeySession, { ts: Date.now() });
   }
 
   // ---------------------------------------------------------------------------
