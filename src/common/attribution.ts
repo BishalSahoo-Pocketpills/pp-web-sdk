@@ -325,6 +325,9 @@ export function createAttributionService(
     // Touch session
     touchSession();
 
+    // Patch global platform dispatch methods for automatic enrichment
+    patchPlatforms();
+
     ppLib.log('info', '[ppAttribution] Initialized — platform: ' + current.platform + ', source: ' + current.source +
       (hasNewParams ? ' (new params)' : sessionActive ? ' (existing session)' : ' (new session)'));
   }
@@ -378,6 +381,70 @@ export function createAttributionService(
     // The attribution object is freshly built each call, so no aliasing risk.
     (event as Record<string, unknown>).marketingAttribution = attribution;
     return event as T & { marketingAttribution?: MarketingAttribution };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Global platform patching — intercepts all event dispatches at the platform
+  // level so every caller (Analytics, DataLayer, EventSource, Mixpanel, or
+  // any future module) gets marketingAttribution automatically.
+  // ---------------------------------------------------------------------------
+
+  var platformsPatched = false;
+
+  function patchPlatforms(): void {
+    if (platformsPatched || !config.enrichEvents) return;
+    platformsPatched = true;
+
+    // Patch window.dataLayer.push — all GTM/GA4 events
+    try {
+      var dl: Array<Record<string, unknown>> = (win as unknown as Record<string, unknown>).dataLayer as Array<Record<string, unknown>> || [];
+      (win as unknown as Record<string, unknown>).dataLayer = dl;
+      var originalPush = dl.push.bind(dl);
+      dl.push = function(...args: Record<string, unknown>[]): number {
+        for (var i = 0; i < args.length; i++) {
+          if (args[i] && typeof args[i] === 'object' && args[i].event && !args[i].marketingAttribution) {
+            enrichEvent(args[i]);
+          }
+        }
+        return originalPush(...args);
+      };
+      ppLib.log('info', '[ppAttribution] Patched dataLayer.push for auto-enrichment');
+    } catch (e) {
+      ppLib.log('warn', '[ppAttribution] Failed to patch dataLayer', e);
+    }
+
+    // Mixpanel: register marketingAttribution as a super property.
+    // Super properties are automatically included in every mixpanel.track() call
+    // by the Mixpanel SDK — no patching needed.
+    try {
+      var registerMixpanel = function() {
+        var mp = (win as unknown as Record<string, unknown>).mixpanel as Record<string, unknown> | undefined;
+        if (!mp || typeof mp.register !== 'function') return false;
+
+        var attribution = getMarketingAttribution();
+        if (attribution) {
+          (mp.register as Function)({ marketingAttribution: attribution });
+          var people = mp.people as Record<string, unknown> | undefined;
+          if (people && typeof people.set === 'function') {
+            (people.set as Function)({ marketingAttribution: attribution });
+          }
+          ppLib.log('info', '[ppAttribution] Registered marketingAttribution as Mixpanel super property');
+        }
+        return true;
+      };
+
+      // Mixpanel may not be loaded yet — retry with polling
+      if (!registerMixpanel()) {
+        var attempts = 0;
+        var interval = win.setInterval(function() {
+          if (registerMixpanel() || ++attempts >= 20) {
+            win.clearInterval(interval);
+          }
+        }, 500);
+      }
+    } catch (e) {
+      ppLib.log('warn', '[ppAttribution] Failed to register Mixpanel super property', e);
+    }
   }
 
   // ---------------------------------------------------------------------------

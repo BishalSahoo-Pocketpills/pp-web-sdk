@@ -1016,12 +1016,8 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
         }
 
         // Clone properties to avoid mutating the caller's object
+        // marketingAttribution is auto-injected by global platform patches
         var enrichedProps = ppLib.extend({}, properties);
-
-        // Unified marketing attribution from shared service
-        if (ppLib.attribution) {
-          ppLib.attribution.enrich(enrichedProps);
-        }
 
         /*! v8 ignore start */
         if (SafeUtils.get(CONFIG, 'platforms.gtm.enabled', true)) {

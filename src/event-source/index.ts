@@ -252,10 +252,8 @@ import type { EventSourceConfig, EventSourceData } from '@src/types/event-source
   }
 
   function dispatchEvent(data: EventSourceData): void {
-    // Auto-enrich with marketing attribution from shared service
-    if (ppLib.attribution) {
-      ppLib.attribution.enrich(data as Record<string, unknown>);
-    }
+    // marketingAttribution is auto-injected by the global dataLayer.push and
+    // mixpanel.track patches in the attribution service — no per-module enrichment needed.
 
     sendToMixpanel(data);
     sendToGTM(data);

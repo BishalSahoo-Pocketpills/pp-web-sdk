@@ -35,10 +35,8 @@ export function createEventPusher(
 
     merge(enriched, extra || {});
 
-    // Auto-enrich with marketing attribution from shared service
-    if (ppLib.attribution) {
-      ppLib.attribution.enrich(enriched);
-    }
+    // marketingAttribution is auto-injected by the global dataLayer.push patch
+    // in the attribution service — no per-module enrichment needed.
 
     if (!ppLib.Security.validateData(enriched)) {
       ppLib.log('error', '[ppDataLayer] Invalid event data rejected for ' + eventName);

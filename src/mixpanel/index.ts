@@ -353,15 +353,8 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
         // UTM attribution
         campaignParams();
 
-        // Register shared marketing attribution as super property
-        if (ppLib.attribution) {
-          ppLib.attribution.init();
-          var mktgAttr = ppLib.attribution.get();
-          if (mktgAttr) {
-            mp.register({ marketingAttribution: mktgAttr });
-            mp.people.set({ marketingAttribution: mktgAttr });
-          }
-        }
+        // marketingAttribution is auto-injected by the global mixpanel.track
+        // patch in the attribution service — no per-module registration needed.
 
         ppLib.log('info', '[ppMixpanel] Initialized successfully');
       }
