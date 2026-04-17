@@ -223,12 +223,10 @@ export function createAttributionService(
     var medium = resolveParam(params, 'utm_medium', MEDIUM_ALIASES);
     var campaign = resolveParam(params, 'utm_campaign', CAMPAIGN_ALIASES);
 
-    // Detect platform using resolved source (not just utm_source)
-    var paramsWithResolved = params;
-    if (source && !params.utm_source) {
-      paramsWithResolved = Object.assign({}, params, { utm_source: source });
-    }
-    var platform = detectPlatform(paramsWithResolved, referrer);
+    // Detect platform from click IDs, utm_source (not custom aliases), or referrer.
+    // Custom aliases like ?source=febpt populate the source field but should NOT
+    // override platform detection — platform should come from known signals only.
+    var platform = detectPlatform(params, referrer);
 
     return {
       source: source || (platform !== 'direct' ? platform.replace('_ads', '').replace('_', '') : 'direct'),
