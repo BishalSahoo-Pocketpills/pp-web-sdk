@@ -204,14 +204,36 @@ export function createAttributionService(
   // Build curated attribution from raw params
   // ---------------------------------------------------------------------------
 
+  // Custom param aliases — non-standard params that map to standard fields
+  var SOURCE_ALIASES = ['source', 'src', 'ref'];
+  var MEDIUM_ALIASES = ['medium', 'channel'];
+  var CAMPAIGN_ALIASES = ['campaign', 'camp', 'promo'];
+
+  function resolveParam(params: Record<string, string>, primary: string, aliases: string[]): string {
+    if (params[primary]) return params[primary];
+    for (var i = 0; i < aliases.length; i++) {
+      if (params[aliases[i]]) return params[aliases[i]];
+    }
+    return '';
+  }
+
   function buildTouch(params: Record<string, string>): TouchAttribution {
     var referrer = classifyReferrer();
-    var platform = detectPlatform(params, referrer);
+    var source = resolveParam(params, 'utm_source', SOURCE_ALIASES);
+    var medium = resolveParam(params, 'utm_medium', MEDIUM_ALIASES);
+    var campaign = resolveParam(params, 'utm_campaign', CAMPAIGN_ALIASES);
+
+    // Detect platform using resolved source (not just utm_source)
+    var paramsWithResolved = params;
+    if (source && !params.utm_source) {
+      paramsWithResolved = Object.assign({}, params, { utm_source: source });
+    }
+    var platform = detectPlatform(paramsWithResolved, referrer);
 
     return {
-      source: params.utm_source || (platform !== 'direct' ? platform.replace('_ads', '').replace('_', '') : 'direct'),
-      medium: inferMedium(params, platform),
-      campaign: params.utm_campaign || '',
+      source: source || (platform !== 'direct' ? platform.replace('_ads', '').replace('_', '') : 'direct'),
+      medium: medium || inferMedium(params, platform),
+      campaign: campaign,
       platform: platform,
       clickId: extractClickId(params),
       landingPage: win.location.pathname || '/',
@@ -265,10 +287,11 @@ export function createAttributionService(
   // ---------------------------------------------------------------------------
 
   function hasNewTrafficParams(params: Record<string, string>): boolean {
-    // Check if URL has any marketing-relevant params (UTM, click IDs)
+    // Check if URL has any marketing-relevant params (UTM, click IDs, custom aliases)
     var marketingKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
       'gclid', 'gclsrc', 'dclid', 'wbraid', 'gbraid', 'fbclid', 'ttclid',
-      'msclkid', 'li_fat_id', 'twclid', 'epik', 'sccid'];
+      'msclkid', 'li_fat_id', 'twclid', 'epik', 'sccid',
+      ...SOURCE_ALIASES, ...MEDIUM_ALIASES, ...CAMPAIGN_ALIASES];
     for (var i = 0; i < marketingKeys.length; i++) {
       if (params[marketingKeys[i]]) return true;
     }
