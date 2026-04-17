@@ -149,7 +149,7 @@ export function createAttributionService(
     }
 
     // Priority 3: Referrer-based detection
-    if (referrer) {
+    if (referrer && referrer !== 'direct' && referrer !== 'internal' && referrer !== 'unknown') {
       var refLower = referrer.toLowerCase();
       for (var s = 0; s < ORGANIC_SEARCH_DOMAINS.length; s++) {
         if (refLower.indexOf(ORGANIC_SEARCH_DOMAINS[s]) !== -1) return 'organic_search';
