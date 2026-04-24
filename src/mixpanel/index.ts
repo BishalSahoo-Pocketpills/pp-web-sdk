@@ -21,7 +21,7 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
     enabled: true,
     token: '',
     projectName: '',
-    crossSubdomainCookie: false,
+    crossSubdomainCookie: true,
     optOutByDefault: false,
     sessionTimeout: 1800000, // 30 minutes in ms
     cookieNames: {
