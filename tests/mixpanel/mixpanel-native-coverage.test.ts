@@ -176,7 +176,7 @@ describe('Mixpanel native coverage', () => {
       expect(config.enabled).toBe(true);
       expect(config.token).toBe('');
       expect(config.projectName).toBe('');
-      expect(config.crossSubdomainCookie).toBe(false);
+      expect(config.crossSubdomainCookie).toBe(true);
       expect(config.optOutByDefault).toBe(false);
       expect(config.sessionTimeout).toBe(1800000);
       expect(config.cookieNames).toEqual({

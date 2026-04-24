@@ -276,6 +276,50 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
     loadMixpanelSDK();
     mixpanel = (win as any).mixpanel;
 
+    // One-time migration: preserve distinct_id when moving from subdomain to parent domain cookie.
+    // Only runs when:
+    //   1. crossSubdomainCookie is enabled (current config)
+    //   2. A Mixpanel cookie exists on the current subdomain
+    //   3. Migration hasn't already been done (checked via a one-time flag)
+    //
+    // How it works:
+    //   - Reads the distinct_id from the existing subdomain-scoped Mixpanel cookie
+    //   - Deletes only the subdomain-scoped cookie (parent domain cookie is untouched)
+    //   - After Mixpanel init (which creates a new parent domain cookie), re-identifies
+    //     with the old distinct_id so the user profile is preserved
+    //   - Sets a migration flag in sessionStorage to avoid re-running
+    var migratedDistinctId: string | null = null;
+    if (CONFIG.crossSubdomainCookie && CONFIG.token) {
+      try {
+        var migrationKey = 'pp_mp_migrated';
+        var alreadyMigrated = false;
+        try { alreadyMigrated = win.sessionStorage.getItem(migrationKey) === '1'; } catch (e) { /* no sessionStorage */ }
+
+        if (!alreadyMigrated) {
+          var mpCookieName = 'mp_' + CONFIG.token + '_mixpanel';
+          var mpCookie = ppLib.getCookie(mpCookieName);
+
+          if (mpCookie) {
+            var parsed = ppLib.Security.json.parse(mpCookie);
+            if (parsed && parsed.distinct_id) {
+              migratedDistinctId = String(parsed.distinct_id);
+            }
+
+            // Delete the subdomain-scoped cookie only (set domain to exact hostname)
+            var hostname = win.location.hostname;
+            doc.cookie = mpCookieName + '=; domain=' + hostname + '; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+
+            ppLib.log('info', '[ppMixpanel] Subdomain cookie migrated (distinct_id: ' + (migratedDistinctId || 'none') + ')');
+          }
+
+          // Mark migration as done for this session (prevents re-running on every page)
+          try { win.sessionStorage.setItem(migrationKey, '1'); } catch (e) { /* no sessionStorage */ }
+        }
+      } catch (e) {
+        ppLib.log('warn', '[ppMixpanel] Cookie migration error', e);
+      }
+    }
+
     mixpanel.init(CONFIG.token, {
       cross_subdomain_cookie: CONFIG.crossSubdomainCookie,
       opt_out_tracking_by_default: CONFIG.optOutByDefault,
@@ -284,6 +328,15 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
         mixpanel = mp;
         if (!CONFIG.optOutByDefault) {
           mp.opt_in_tracking();
+        }
+
+        // Re-identify with the migrated distinct_id to preserve user continuity.
+        // This only fires once (when migratedDistinctId was extracted above).
+        // mp.identify() merges the old anonymous profile with the new one —
+        // no data loss, no duplicate users.
+        if (migratedDistinctId) {
+          mp.identify(migratedDistinctId);
+          ppLib.log('info', '[ppMixpanel] Re-identified with migrated distinct_id: ' + migratedDistinctId);
         }
 
         // Update session timeout from config

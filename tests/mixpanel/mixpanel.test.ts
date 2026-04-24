@@ -122,8 +122,8 @@ describe('CONFIG defaults', () => {
     expect(window.ppLib.mixpanel.getConfig().projectName).toBe('');
   });
 
-  it('has crossSubdomainCookie defaulting to false', () => {
-    expect(window.ppLib.mixpanel.getConfig().crossSubdomainCookie).toBe(false);
+  it('has crossSubdomainCookie defaulting to true', () => {
+    expect(window.ppLib.mixpanel.getConfig().crossSubdomainCookie).toBe(true);
   });
 
   it('has optOutByDefault defaulting to false', () => {
