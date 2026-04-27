@@ -300,19 +300,28 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
           var mpCookie = ppLib.getCookie(mpCookieName);
 
           if (mpCookie) {
+            // Read the distinct_id before attempting deletion
             var parsed = ppLib.Security.json.parse(mpCookie);
-            if (parsed && parsed.distinct_id) {
-              migratedDistinctId = String(parsed.distinct_id);
-            }
+            var existingDistinctId = (parsed && parsed.distinct_id) ? String(parsed.distinct_id) : null;
 
-            // Delete the subdomain-scoped cookie only (set domain to exact hostname)
+            // Attempt to delete a subdomain-scoped cookie (exact hostname, no leading dot).
+            // If the cookie was on the parent domain (.pocketpills.com), this delete is a no-op
+            // because browsers only delete cookies matching the exact domain they were set on.
             var hostname = win.location.hostname;
             doc.cookie = mpCookieName + '=; domain=' + hostname + '; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
 
-            ppLib.log('info', '[ppMixpanel] Subdomain cookie migrated (distinct_id: ' + (migratedDistinctId || 'none') + ')');
+            // Check if the cookie still exists after the delete attempt.
+            // If it's gone → it was subdomain-scoped → migration needed.
+            // If it's still there → it's a parent domain cookie → no migration needed.
+            var cookieAfterDelete = ppLib.getCookie(mpCookieName);
+            if (!cookieAfterDelete && existingDistinctId) {
+              // Cookie was subdomain-scoped and is now deleted. Preserve the distinct_id.
+              migratedDistinctId = existingDistinctId;
+              ppLib.log('info', '[ppMixpanel] Subdomain cookie migrated (distinct_id: ' + migratedDistinctId + ')');
+            }
           }
 
-          // Mark migration as done for this session (prevents re-running on every page)
+          // Mark migration check as done for this session
           try { win.sessionStorage.setItem(migrationKey, '1'); } catch (e) { /* no sessionStorage */ }
         }
       } catch (e) {
