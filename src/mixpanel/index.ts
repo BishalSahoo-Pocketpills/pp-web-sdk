@@ -304,10 +304,15 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
             var parsed = ppLib.Security.json.parse(mpCookie);
             var existingDistinctId = (parsed && parsed.distinct_id) ? String(parsed.distinct_id) : null;
 
-            // Attempt to delete a subdomain-scoped cookie (exact hostname, no leading dot).
-            // If the cookie was on the parent domain (.pocketpills.com), this delete is a no-op
-            // because browsers only delete cookies matching the exact domain they were set on.
+            // Attempt to delete a subdomain-scoped cookie.
+            // Mixpanel with cross_subdomain_cookie: false sets cookies WITHOUT a domain
+            // attribute, which scopes them to the exact hostname. To delete, we must
+            // match how it was set — try both: without domain (how Mixpanel sets it)
+            // and with explicit hostname (belt and suspenders).
+            // If the cookie was on the parent domain (.pocketpills.com), neither delete
+            // will match, so the cookie survives — which is the correct behavior.
             var hostname = win.location.hostname;
+            doc.cookie = mpCookieName + '=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
             doc.cookie = mpCookieName + '=; domain=' + hostname + '; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
 
             // Check if the cookie still exists after the delete attempt.
@@ -341,11 +346,22 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
 
         // Re-identify with the migrated distinct_id to preserve user continuity.
         // This only fires once (when migratedDistinctId was extracted above).
-        // mp.identify() merges the old anonymous profile with the new one —
-        // no data loss, no duplicate users.
         if (migratedDistinctId) {
-          mp.identify(migratedDistinctId);
-          ppLib.log('info', '[ppMixpanel] Re-identified with migrated distinct_id: ' + migratedDistinctId);
+          if (migratedDistinctId.indexOf('$device:') === 0) {
+            // Anonymous user: distinct_id has $device: prefix.
+            // Mixpanel intentionally rejects mp.identify() with $device: IDs —
+            // anonymous users don't have persistent cross-session identity.
+            // The user will get a new anonymous ID on the parent domain.
+            // This is acceptable: anonymous event history stays on the old ID,
+            // new events use the new ID. If the user later identifies (login),
+            // both profiles merge via mp.identify(userId).
+            ppLib.log('info', '[ppMixpanel] Anonymous user — new parent domain identity assigned (old: ' + migratedDistinctId + ')');
+          } else {
+            // Identified user: use mp.identify() to link the new anonymous
+            // profile to the existing identified profile. No data loss.
+            mp.identify(migratedDistinctId);
+            ppLib.log('info', '[ppMixpanel] Re-identified with migrated distinct_id: ' + migratedDistinctId);
+          }
         }
 
         // Update session timeout from config
