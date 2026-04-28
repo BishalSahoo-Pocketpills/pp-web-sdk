@@ -276,19 +276,17 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
     loadMixpanelSDK();
     mixpanel = (win as any).mixpanel;
 
-    // One-time migration: preserve distinct_id when moving from subdomain to parent domain cookie.
-    // Only runs when:
-    //   1. crossSubdomainCookie is enabled (current config)
-    //   2. A Mixpanel cookie exists on the current subdomain
-    //   3. Migration hasn't already been done (checked via a one-time flag)
+    // Read the distinct_id from any existing Mixpanel cookie BEFORE init.
+    // After init with cross_subdomain_cookie: true, Mixpanel will create a new
+    // parent domain cookie. If the distinct_id changed (subdomain cookie wasn't
+    // readable from the parent domain), we re-identify to preserve continuity.
     //
-    // How it works:
-    //   - Reads the distinct_id from the existing subdomain-scoped Mixpanel cookie
-    //   - Deletes only the subdomain-scoped cookie (parent domain cookie is untouched)
-    //   - After Mixpanel init (which creates a new parent domain cookie), re-identifies
-    //     with the old distinct_id so the user profile is preserved
-    //   - Sets a migration flag in sessionStorage to avoid re-running
-    var migratedDistinctId: string | null = null;
+    // This approach is safe because:
+    //   - We never delete any cookies ourselves (no browser inconsistency risk)
+    //   - We only call mp.identify() for identified users (not $device: anonymous)
+    //   - We compare before/after distinct_ids to detect actual migration
+    //   - sessionStorage flag prevents re-checking after first page load
+    var preInitDistinctId: string | null = null;
     if (CONFIG.crossSubdomainCookie && CONFIG.token) {
       try {
         var migrationKey = 'pp_mp_migrated';
@@ -298,39 +296,16 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
         if (!alreadyMigrated) {
           var mpCookieName = 'mp_' + CONFIG.token + '_mixpanel';
           var mpCookie = ppLib.getCookie(mpCookieName);
-
           if (mpCookie) {
-            // Read the distinct_id before attempting deletion
             var parsed = ppLib.Security.json.parse(mpCookie);
-            var existingDistinctId = (parsed && parsed.distinct_id) ? String(parsed.distinct_id) : null;
-
-            // Attempt to delete a subdomain-scoped cookie.
-            // Mixpanel with cross_subdomain_cookie: false sets cookies WITHOUT a domain
-            // attribute, which scopes them to the exact hostname. To delete, we must
-            // match how it was set — try both: without domain (how Mixpanel sets it)
-            // and with explicit hostname (belt and suspenders).
-            // If the cookie was on the parent domain (.pocketpills.com), neither delete
-            // will match, so the cookie survives — which is the correct behavior.
-            var hostname = win.location.hostname;
-            doc.cookie = mpCookieName + '=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-            doc.cookie = mpCookieName + '=; domain=' + hostname + '; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-
-            // Check if the cookie still exists after the delete attempt.
-            // If it's gone → it was subdomain-scoped → migration needed.
-            // If it's still there → it's a parent domain cookie → no migration needed.
-            var cookieAfterDelete = ppLib.getCookie(mpCookieName);
-            if (!cookieAfterDelete && existingDistinctId) {
-              // Cookie was subdomain-scoped and is now deleted. Preserve the distinct_id.
-              migratedDistinctId = existingDistinctId;
-              ppLib.log('info', '[ppMixpanel] Subdomain cookie migrated (distinct_id: ' + migratedDistinctId + ')');
+            if (parsed && parsed.distinct_id) {
+              preInitDistinctId = String(parsed.distinct_id);
             }
           }
-
-          // Mark migration check as done for this session
           try { win.sessionStorage.setItem(migrationKey, '1'); } catch (e) { /* no sessionStorage */ }
         }
       } catch (e) {
-        ppLib.log('warn', '[ppMixpanel] Cookie migration error', e);
+        ppLib.log('warn', '[ppMixpanel] Pre-init cookie read error', e);
       }
     }
 
@@ -344,24 +319,26 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
           mp.opt_in_tracking();
         }
 
-        // Re-identify with the migrated distinct_id to preserve user continuity.
-        // This only fires once (when migratedDistinctId was extracted above).
-        if (migratedDistinctId) {
-          if (migratedDistinctId.indexOf('$device:') === 0) {
-            // Anonymous user: distinct_id has $device: prefix.
-            // Mixpanel intentionally rejects mp.identify() with $device: IDs —
-            // anonymous users don't have persistent cross-session identity.
-            // The user will get a new anonymous ID on the parent domain.
-            // This is acceptable: anonymous event history stays on the old ID,
-            // new events use the new ID. If the user later identifies (login),
-            // both profiles merge via mp.identify(userId).
-            ppLib.log('info', '[ppMixpanel] Anonymous user — new parent domain identity assigned (old: ' + migratedDistinctId + ')');
-          } else {
-            // Identified user: use mp.identify() to link the new anonymous
-            // profile to the existing identified profile. No data loss.
-            mp.identify(migratedDistinctId);
-            ppLib.log('info', '[ppMixpanel] Re-identified with migrated distinct_id: ' + migratedDistinctId);
+        // Check if distinct_id changed after init (indicates subdomain → parent migration).
+        // Mixpanel init with cross_subdomain_cookie: true reads the parent domain cookie.
+        // If the user only had a subdomain cookie, Mixpanel won't find it and will
+        // generate a new distinct_id. We detect this by comparing before/after.
+        if (preInitDistinctId) {
+          var postInitDistinctId = mp.get_distinct_id ? mp.get_distinct_id() : null;
+
+          if (postInitDistinctId && postInitDistinctId !== preInitDistinctId) {
+            // distinct_id changed → subdomain cookie wasn't picked up by parent domain init.
+            if (preInitDistinctId.indexOf('$device:') === 0) {
+              // Anonymous user: can't call mp.identify() with $device: prefix.
+              // User gets a new anonymous ID. Events merge when they later log in.
+              ppLib.log('info', '[ppMixpanel] Anonymous subdomain user migrated (old: ' + preInitDistinctId + ', new: ' + postInitDistinctId + ')');
+            } else {
+              // Identified user: re-identify to preserve profile continuity.
+              mp.identify(preInitDistinctId);
+              ppLib.log('info', '[ppMixpanel] Identified user migrated (distinct_id: ' + preInitDistinctId + ')');
+            }
           }
+          // If distinct_id is the same, cookie was already on parent domain — no action needed.
         }
 
         // Update session timeout from config
