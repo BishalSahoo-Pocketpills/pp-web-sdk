@@ -628,6 +628,95 @@ describe('Mixpanel native coverage', () => {
   });
 
   // ==========================================================================
+  // 8b. Cross-subdomain migration
+  // ==========================================================================
+  describe('cross-subdomain migration', () => {
+    afterEach(() => {
+      sessionStorage.removeItem('pp_mp_migrated');
+    });
+
+    it('re-identifies identified user when distinct_id changes after init', async () => {
+      // Set Mixpanel cookie with a known distinct_id
+      setCookie('mp_test-token-abc_mixpanel', JSON.stringify({ distinct_id: 'user-123' }));
+
+      const loadedCallback = await initAndGetLoadedCallback({
+        crossSubdomainCookie: true,
+      });
+      const mp = createMockMixpanel();
+      // Simulate distinct_id changing (subdomain → parent migration)
+      mp.get_distinct_id = vi.fn(() => 'new-distinct-id-456');
+      invokeLoadedCallback(loadedCallback, mp);
+
+      expect(mp.identify).toHaveBeenCalledWith('user-123');
+    });
+
+    it('logs anonymous migration when distinct_id starts with $device:', async () => {
+      setCookie('mp_test-token-abc_mixpanel', JSON.stringify({ distinct_id: '$device:anon-abc' }));
+
+      const loadedCallback = await initAndGetLoadedCallback({
+        crossSubdomainCookie: true,
+      });
+      const mp = createMockMixpanel();
+      mp.get_distinct_id = vi.fn(() => 'new-anon-id');
+      const logSpy = vi.spyOn(window.ppLib, 'log');
+      invokeLoadedCallback(loadedCallback, mp);
+
+      // Should NOT call identify for anonymous users
+      expect(mp.identify).not.toHaveBeenCalled();
+      expect(logSpy).toHaveBeenCalledWith('info', expect.stringContaining('Anonymous subdomain user migrated'));
+    });
+
+    it('does nothing when distinct_id is unchanged after init', async () => {
+      setCookie('mp_test-token-abc_mixpanel', JSON.stringify({ distinct_id: 'same-id' }));
+
+      const loadedCallback = await initAndGetLoadedCallback({
+        crossSubdomainCookie: true,
+      });
+      const mp = createMockMixpanel();
+      mp.get_distinct_id = vi.fn(() => 'same-id');
+      invokeLoadedCallback(loadedCallback, mp);
+
+      expect(mp.identify).not.toHaveBeenCalled();
+    });
+
+    it('skips migration when already migrated (sessionStorage flag)', async () => {
+      sessionStorage.setItem('pp_mp_migrated', '1');
+      setCookie('mp_test-token-abc_mixpanel', JSON.stringify({ distinct_id: 'user-x' }));
+
+      const loadedCallback = await initAndGetLoadedCallback({
+        crossSubdomainCookie: true,
+      });
+      const mp = createMockMixpanel();
+      mp.get_distinct_id = vi.fn(() => 'different-id');
+      invokeLoadedCallback(loadedCallback, mp);
+
+      // Should not identify since migration was already done
+      expect(mp.identify).not.toHaveBeenCalled();
+    });
+
+    it('handles cookie read error gracefully', async () => {
+      await freshLoad({ token: 'test-token-abc', crossSubdomainCookie: true });
+      const originalGetCookie = window.ppLib.getCookie;
+      // Make getCookie throw — triggers pre-init catch (line 307-309)
+      window.ppLib.getCookie = () => { throw new Error('cookie error'); };
+      const logSpy = vi.spyOn(window.ppLib, 'log');
+
+      setupScriptEnv();
+      window.ppLib.mixpanel.init();
+
+      // Restore getCookie before loaded callback fires (it also uses getCookie)
+      window.ppLib.getCookie = originalGetCookie;
+
+      const initArgs = (window as any).mixpanel._i[0];
+      const loadedCallback = initArgs[1].loaded;
+      const mp = createMockMixpanel();
+      invokeLoadedCallback(loadedCallback, mp);
+
+      expect(logSpy).toHaveBeenCalledWith('warn', '[ppMixpanel] Pre-init cookie read error', expect.any(Error));
+    });
+  });
+
+  // ==========================================================================
   // 9. Loaded callback — opt_in_tracking gate (CRITICAL)
   // ==========================================================================
   describe('loaded callback — opt_in_tracking gate', () => {
@@ -1020,6 +1109,62 @@ describe('Mixpanel native coverage', () => {
         (props: any) => props && typeof props === 'object' && 'experiment_a' in props
       );
       expect(hasExp).toBe(false);
+    });
+  });
+
+  // ==========================================================================
+  // 15b. Loaded callback — VWO experiment props initial registration error
+  // ==========================================================================
+  describe('loaded callback — VWO props initial registration error', () => {
+    it('handles error in VWO props registration gracefully', async () => {
+      await freshLoad({ token: 'test-token-abc' });
+
+      // Set valid VWO props so readVWOProps() returns them
+      (window.ppLib as any)._vwoExperimentProps = { vwo_experiments: '42:V1' };
+
+      setupScriptEnv();
+      window.ppLib.mixpanel.init();
+
+      const initArgs = (window as any).mixpanel._i[0];
+      const loadedCallback = initArgs[1].loaded;
+      const mp = createMockMixpanel();
+      // Make mp.register throw only when called with VWO props
+      const originalRegister = mp.register;
+      mp.register = vi.fn((props: any) => {
+        if (props && props.vwo_experiments) {
+          throw new Error('register failed');
+        }
+        return originalRegister(props);
+      });
+      const logSpy = vi.spyOn(window.ppLib, 'log');
+      invokeLoadedCallback(loadedCallback, mp);
+
+      expect(logSpy).toHaveBeenCalledWith('warn', '[ppMixpanel] Failed to register VWO experiment properties', expect.any(Error));
+
+      delete (window.ppLib as any)._vwoExperimentProps;
+    });
+
+    it('ignores invalid JSON in sessionStorage via safe parse', async () => {
+      await freshLoad({ token: 'test-token-abc' });
+
+      // Invalid JSON — ppLib.Security.json.parse returns null, no throw
+      sessionStorage.setItem('pp_vwo_exp_props', '{invalid json');
+
+      setupScriptEnv();
+      window.ppLib.mixpanel.init();
+
+      const initArgs = (window as any).mixpanel._i[0];
+      const loadedCallback = initArgs[1].loaded;
+      const mp = createMockMixpanel();
+      invokeLoadedCallback(loadedCallback, mp);
+
+      // Should not have registered any VWO props
+      const vwoCalls = mp.register.mock.calls.filter(
+        (c: any) => c[0] && c[0].vwo_experiments
+      );
+      expect(vwoCalls.length).toBe(0);
+
+      sessionStorage.removeItem('pp_vwo_exp_props');
     });
   });
 
@@ -1428,6 +1573,180 @@ describe('Mixpanel native coverage', () => {
       const secondCallCount = insertBeforeSpy!.mock.calls.length;
 
       expect(secondCallCount).toBe(firstCallCount);
+    });
+  });
+
+  // ==========================================================================
+  // 22. Loaded callback — VWO experiment props polling
+  // ==========================================================================
+  describe('loaded callback — VWO experiment props deferred', () => {
+    it('polls for VWO experiment props and registers when available', async () => {
+      vi.useFakeTimers();
+      const loadedCallback = await initAndGetLoadedCallback();
+      const mp = createMockMixpanel();
+
+      // No VWO props at load time
+      invokeLoadedCallback(loadedCallback, mp);
+      expect((window.ppLib as any)._vwoExperimentProps).toBeUndefined();
+
+      // Simulate VWO module setting props after 1.5 seconds
+      vi.advanceTimersByTime(1000);
+      (window.ppLib as any)._vwoExperimentProps = {
+        vwo_experiments: '72:Control',
+        vwo_campaign_72: 'Control',
+      };
+      vi.advanceTimersByTime(500);
+
+      // Polling should have registered the props
+      expect(mp.register).toHaveBeenCalledWith(
+        expect.objectContaining({ vwo_experiments: '72:Control' })
+      );
+
+      // Clean up
+      delete (window.ppLib as any)._vwoExperimentProps;
+      vi.useRealTimers();
+    });
+
+    it('polls for VWO props from sessionStorage when ppLib prop is not set', async () => {
+      vi.useFakeTimers();
+      const loadedCallback = await initAndGetLoadedCallback();
+      const mp = createMockMixpanel();
+
+      invokeLoadedCallback(loadedCallback, mp);
+
+      // Simulate sessionStorage being set (by VWO module on another page)
+      vi.advanceTimersByTime(500);
+      sessionStorage.setItem('pp_vwo_exp_props', JSON.stringify({
+        vwo_experiments: '42:Variation 1',
+        vwo_campaign_42: 'Variation 1',
+      }));
+      vi.advanceTimersByTime(500);
+
+      expect(mp.register).toHaveBeenCalledWith(
+        expect.objectContaining({ vwo_experiments: '42:Variation 1' })
+      );
+
+      sessionStorage.removeItem('pp_vwo_exp_props');
+      vi.useRealTimers();
+    });
+
+    it('stops polling after 30 iterations without VWO props', async () => {
+      vi.useFakeTimers();
+      const clearIntervalSpy = vi.spyOn(window, 'clearInterval');
+      const loadedCallback = await initAndGetLoadedCallback();
+      const mp = createMockMixpanel();
+
+      invokeLoadedCallback(loadedCallback, mp);
+
+      // Advance past all 30 polls
+      vi.advanceTimersByTime(15000);
+      expect(clearIntervalSpy).toHaveBeenCalled();
+
+      clearIntervalSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('registers VWO props via _vis_opt_queue callback', async () => {
+      const loadedCallback = await initAndGetLoadedCallback();
+      const mp = createMockMixpanel();
+
+      invokeLoadedCallback(loadedCallback, mp);
+
+      // Simulate VWO module setting props
+      (window.ppLib as any)._vwoExperimentProps = {
+        vwo_experiments: '99:Big CTA',
+        vwo_campaign_99: 'Big CTA',
+      };
+
+      // Execute the _vis_opt_queue callback
+      if (window._vis_opt_queue) {
+        for (const fn of window._vis_opt_queue) fn();
+      }
+
+      expect(mp.register).toHaveBeenCalledWith(
+        expect.objectContaining({ vwo_experiments: '99:Big CTA' })
+      );
+
+      delete (window.ppLib as any)._vwoExperimentProps;
+    });
+
+    it('registerVWOProps is idempotent — second call returns true without re-registering', async () => {
+      vi.useFakeTimers();
+      const loadedCallback = await initAndGetLoadedCallback();
+      const mp = createMockMixpanel();
+
+      invokeLoadedCallback(loadedCallback, mp);
+
+      // Set VWO props and let first poll fire
+      (window.ppLib as any)._vwoExperimentProps = {
+        vwo_experiments: '42:V1',
+      };
+      vi.advanceTimersByTime(500);
+
+      const registerCallCount = mp.register.mock.calls.filter(
+        (c: any) => c[0] && c[0].vwo_experiments === '42:V1'
+      ).length;
+
+      // Second poll should not re-register
+      vi.advanceTimersByTime(500);
+
+      const afterCallCount = mp.register.mock.calls.filter(
+        (c: any) => c[0] && c[0].vwo_experiments === '42:V1'
+      ).length;
+
+      expect(afterCallCount).toBe(registerCallCount);
+
+      delete (window.ppLib as any)._vwoExperimentProps;
+      vi.useRealTimers();
+    });
+
+    it('VWO deferred registration handles errors gracefully', async () => {
+      vi.useFakeTimers();
+      const loadedCallback = await initAndGetLoadedCallback();
+      const mp = createMockMixpanel();
+
+      invokeLoadedCallback(loadedCallback, mp);
+
+      // Set props but make register throw
+      (window.ppLib as any)._vwoExperimentProps = {
+        vwo_experiments: '42:V1',
+      };
+      mp.register = vi.fn(() => { throw new Error('register failed'); });
+      vi.advanceTimersByTime(500);
+
+      // Should not throw, just log warning
+      delete (window.ppLib as any)._vwoExperimentProps;
+      vi.useRealTimers();
+    });
+
+    it('skips VWO polling when props are already set at load time', async () => {
+      vi.useFakeTimers();
+      const setIntervalSpy = vi.spyOn(window, 'setInterval');
+
+      // Set VWO props BEFORE mixpanel init
+      await freshLoad({ token: 'test-token-abc' });
+      (window.ppLib as any)._vwoExperimentProps = {
+        vwo_experiments: '42:V1',
+      };
+
+      setupScriptEnv();
+      window.ppLib.mixpanel.init();
+
+      const initArgs = (window as any).mixpanel._i[0];
+      const loadedCallback = initArgs[1].loaded;
+      const mp = createMockMixpanel();
+      invokeLoadedCallback(loadedCallback, mp);
+
+      // Should have registered immediately, no 500ms poll interval
+      expect(mp.register).toHaveBeenCalledWith(
+        expect.objectContaining({ vwo_experiments: '42:V1' })
+      );
+      const pollCalls = setIntervalSpy.mock.calls.filter(c => c[1] === 500);
+      expect(pollCalls.length).toBe(0);
+
+      setIntervalSpy.mockRestore();
+      delete (window.ppLib as any)._vwoExperimentProps;
+      vi.useRealTimers();
     });
   });
 });

@@ -69,4 +69,5 @@ export interface PPLib {
   _ecomBound?: boolean;
   _esBound?: boolean;
   _mpTrackPatched?: boolean;
+  _vwoExperimentProps?: Record<string, string>;
 }

@@ -291,13 +291,11 @@ import { createVWOConfig } from '@src/vwo/config';
       props.vwo_experiments = summaryParts.join(', ');
 
       // Store on ppLib for Mixpanel module to read during its init
-      (ppLib as any)._vwoExperimentProps = props;
+      ppLib._vwoExperimentProps = props;
 
       // Also persist in sessionStorage for SPA page navigations
       // (VWO may not re-fire _vis_opt_queue on subsequent pages)
-      try {
-        win.sessionStorage.setItem('pp_vwo_exp_props', JSON.stringify(props));
-      } catch (e) { /* no sessionStorage */ }
+      sessionStorageSet('pp_vwo_exp_props', JSON.stringify(props));
 
       // If Mixpanel is already fully loaded, register immediately
       var mp = (win as any).mixpanel;
@@ -489,22 +487,50 @@ import { createVWOConfig } from '@src/vwo/config';
       injectSmartCode();
     }
 
-    // Track experiments — try immediately (VWO may already be ready)
-    // AND queue for later (in case VWO hasn't assigned variations yet)
+    // Track experiments — three strategies to handle VWO timing:
+    // 1. Immediate: VWO already assigned variations (rare on first load)
+    // 2. _vis_opt_queue: VWO hasn't loaded yet, will process queue later
+    // 3. Polling: VWO loaded and drained queue before us, but hasn't
+    //    set combination_chosen yet — poll until it appears
     var experimentsTracked = false;
-    var experiments = readExperiments();
-    if (experiments.length > 0) {
-      trackExperiments();
-      experimentsTracked = true;
+    var experimentPollInterval: number | null = null;
+
+    function tryTrackExperiments(): boolean {
+      if (experimentsTracked) return true;
+      if (readExperiments().length > 0) {
+        trackExperiments();
+        experimentsTracked = true;
+        // Clean up polling if it was the queue callback that succeeded
+        if (experimentPollInterval !== null) {
+          win.clearInterval(experimentPollInterval);
+          experimentPollInterval = null;
+        }
+        return true;
+      }
+      return false;
     }
 
-    // Also queue as fallback — VWO may assign variations after this point
+    // Strategy 1: Try immediately
+    tryTrackExperiments();
+
+    // Strategy 2: Queue for VWO callback
     win._vis_opt_queue = win._vis_opt_queue || [];
     win._vis_opt_queue.push(function() {
-      if (!experimentsTracked) {
-        trackExperiments();
-      }
+      tryTrackExperiments();
     });
+
+    // Strategy 3: Poll for combination_chosen (covers the gap where
+    // VWO already drained the queue but hasn't assigned variations yet)
+    if (!experimentsTracked) {
+      var pollCount = 0;
+      experimentPollInterval = win.setInterval(function() {
+        pollCount++;
+        if (tryTrackExperiments() || pollCount >= 30) {
+          win.clearInterval(experimentPollInterval!);
+          experimentPollInterval = null;
+        }
+      }, 500);
+    }
 
     // Bind DOM for auto-tracking goals
     bindDOM();

@@ -414,41 +414,66 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
         // VWO experiment properties — register as super properties so they
         // appear on every subsequent event (page view, add to cart, purchase).
         // Read from ppLib (set by VWO module) or sessionStorage (persisted).
-        try {
-          var vwoProps = (ppLib as any)._vwoExperimentProps;
-          if (!vwoProps) {
-            // VWO module may not have fired yet — check sessionStorage
+        var vwoRegistered = false;
+        var vwoPollInterval: number | null = null;
+
+        function readVWOProps(): Record<string, string> | null {
+          var props = ppLib._vwoExperimentProps;
+          if (props && typeof props === 'object') return props;
+          try {
             var stored = win.sessionStorage.getItem('pp_vwo_exp_props');
-            if (stored) vwoProps = JSON.parse(stored);
-          }
-          if (vwoProps && typeof vwoProps === 'object') {
-            mp.register(vwoProps);
-            if (typeof mp.people.set === 'function') {
-              mp.people.set(vwoProps);
+            if (stored) {
+              var parsed = ppLib.Security.json.parse(stored);
+              if (parsed && typeof parsed === 'object') return parsed;
             }
-            ppLib.log('info', '[ppMixpanel] VWO experiment properties registered');
-          }
-        } catch (e) {
-          ppLib.log('warn', '[ppMixpanel] Failed to register VWO experiment properties', e);
+          } catch (e) { /* no sessionStorage */ }
+          return null;
         }
 
-        // If VWO hasn't fired yet, listen for it
-        if (!(ppLib as any)._vwoExperimentProps) {
+        function registerVWOProps(): boolean {
+          if (vwoRegistered) return true;
+          try {
+            var props = readVWOProps();
+            if (props) {
+              mp.register(props);
+              if (typeof mp.people.set === 'function') {
+                mp.people.set(props);
+              }
+              vwoRegistered = true;
+              ppLib.log('info', '[ppMixpanel] VWO experiment properties registered');
+              // Clean up polling if queue callback succeeded first
+              if (vwoPollInterval !== null) {
+                win.clearInterval(vwoPollInterval);
+                vwoPollInterval = null;
+              }
+              return true;
+            }
+          } catch (e) {
+            ppLib.log('warn', '[ppMixpanel] Failed to register VWO experiment properties', e);
+          }
+          return false;
+        }
+
+        // Try immediately — VWO may have already set props
+        registerVWOProps();
+
+        // If VWO hasn't fired yet, use both queue and polling to catch it
+        if (!vwoRegistered) {
+          // Strategy 1: VWO queue callback
           win._vis_opt_queue = win._vis_opt_queue || [];
           win._vis_opt_queue.push(function() {
-            try {
-              var props = (ppLib as any)._vwoExperimentProps;
-              if (props) {
-                mp.register(props);
-                if (typeof mp.people.set === 'function') {
-                  mp.people.set(props);
-                }
-                ppLib.log('info', '[ppMixpanel] VWO experiment properties registered (deferred)');
-              }
-            } catch (e) {
-              ppLib.log('warn', '[ppMixpanel] Deferred VWO registration failed', e);
-            }
+            registerVWOProps();
           });
+
+          // Strategy 2: Poll for ppLib._vwoExperimentProps
+          var vwoPollCount = 0;
+          vwoPollInterval = win.setInterval(function() {
+            vwoPollCount++;
+            if (registerVWOProps() || vwoPollCount >= 30) {
+              win.clearInterval(vwoPollInterval!);
+              vwoPollInterval = null;
+            }
+          }, 500);
         }
 
         ppLib.log('info', '[ppMixpanel] Initialized successfully');

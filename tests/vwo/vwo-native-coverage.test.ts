@@ -570,4 +570,153 @@ describe('VWO native coverage', () => {
     const script = scripts[scripts.length - 1] as HTMLScriptElement;
     expect(script.getAttribute('nonce')).toBeNull();
   });
+
+  // ==========================================================================
+  // EXPERIMENT POLLING — Strategy 3: setInterval fallback
+  // ==========================================================================
+  it('polls for experiments when not immediately available', async () => {
+    vi.useFakeTimers();
+    await freshLoad();
+
+    // No experiments at init time
+    window.ppLib.vwo!.configure({ accountId: '123', trackToDataLayer: true });
+    window.ppLib.vwo!.init();
+
+    // No experiments tracked yet
+    expect((window.ppLib as any)._vwoExperimentProps).toBeUndefined();
+
+    // Simulate VWO assigning variations after 1 second
+    vi.advanceTimersByTime(500);
+    window._vwo_exp = {
+      '72': { combination_chosen: 1, comb_n: { '1': 'Control' } },
+    } as any;
+    vi.advanceTimersByTime(500);
+
+    // Polling should have picked it up
+    expect((window.ppLib as any)._vwoExperimentProps).toBeDefined();
+    expect((window.ppLib as any)._vwoExperimentProps.vwo_experiments).toBe('72:Control');
+
+    delete window._vwo_settings_timer;
+    vi.useRealTimers();
+  });
+
+  it('polling stops after 30 iterations without experiments', async () => {
+    vi.useFakeTimers();
+    const clearIntervalSpy = vi.spyOn(window, 'clearInterval');
+    await freshLoad();
+
+    window.ppLib.vwo!.configure({ accountId: '123' });
+    window.ppLib.vwo!.init();
+
+    // Advance past all 30 polls (30 * 500ms = 15s)
+    vi.advanceTimersByTime(15000);
+
+    expect(clearIntervalSpy).toHaveBeenCalled();
+    clearIntervalSpy.mockRestore();
+    delete window._vwo_settings_timer;
+    vi.useRealTimers();
+  });
+
+  it('skips polling when experiments are available immediately', async () => {
+    vi.useFakeTimers();
+    const setIntervalSpy = vi.spyOn(window, 'setInterval');
+    await freshLoad();
+
+    // Experiments already set before init
+    window._vwo_exp = {
+      '42': { combination_chosen: 2, comb_n: { '2': 'Variation 1' } },
+    } as any;
+
+    window.ppLib.vwo!.configure({ accountId: '123', trackToDataLayer: true });
+    window.ppLib.vwo!.init();
+
+    // Should have tracked immediately — no polling needed
+    expect((window.ppLib as any)._vwoExperimentProps).toBeDefined();
+    // setInterval should NOT have been called for experiment polling
+    // (it may be called by SmartCode settings timer, so check the call count is just 0 or 1)
+    const pollCalls = setIntervalSpy.mock.calls.filter(c => c[1] === 500);
+    expect(pollCalls.length).toBe(0);
+
+    setIntervalSpy.mockRestore();
+    delete window._vwo_settings_timer;
+    vi.useRealTimers();
+  });
+
+  it('registerExperimentsToMixpanel registers immediately when Mixpanel loaded', async () => {
+    await freshLoad();
+
+    // Mock Mixpanel as already loaded
+    const mockMp = {
+      __loaded: true,
+      register: vi.fn(),
+      people: { set: vi.fn() },
+    };
+    (window as any).mixpanel = mockMp;
+
+    window._vwo_exp = {
+      '42': { combination_chosen: 2, comb_n: { '2': 'Variation 1' } },
+    } as any;
+
+    window.ppLib.vwo!.configure({ accountId: '123', trackToDataLayer: true });
+    window.ppLib.vwo!.init();
+
+    // Execute queue callbacks
+    for (const fn of window._vis_opt_queue) fn();
+
+    // Should have registered directly to Mixpanel
+    expect(mockMp.register).toHaveBeenCalledWith(
+      expect.objectContaining({ vwo_experiments: '42:Variation 1' })
+    );
+    expect(mockMp.people.set).toHaveBeenCalledWith(
+      expect.objectContaining({ vwo_experiments: '42:Variation 1' })
+    );
+
+    delete (window as any).mixpanel;
+  });
+
+  it('registerExperimentsToMixpanel catch path', async () => {
+    await freshLoad();
+
+    // Make sessionStorage.setItem throw inside registerExperimentsToMixpanel
+    window._vwo_exp = {
+      '42': { combination_chosen: 2, comb_n: { '2': 'V1' } },
+    } as any;
+
+    // Override ppLib to throw when setting _vwoExperimentProps
+    const originalPpLib = window.ppLib;
+    Object.defineProperty(window.ppLib, '_vwoExperimentProps', {
+      set: () => { throw new Error('test'); },
+      get: () => undefined,
+      configurable: true,
+    });
+
+    window.ppLib.vwo!.configure({ accountId: '123', trackToDataLayer: true });
+    window.ppLib.vwo!.init();
+    for (const fn of window._vis_opt_queue) fn();
+
+    // Clean up
+    delete (window.ppLib as any)._vwoExperimentProps;
+  });
+
+  it('tryTrackExperiments returns true on second call (already tracked)', async () => {
+    vi.useFakeTimers();
+    await freshLoad();
+
+    window._vwo_exp = {
+      '42': { combination_chosen: 2, comb_n: { '2': 'V1' } },
+    } as any;
+
+    window.ppLib.vwo!.configure({ accountId: '123', trackToDataLayer: true });
+    window.ppLib.vwo!.init();
+
+    // Already tracked immediately → queue callback is a no-op
+    for (const fn of window._vis_opt_queue) fn();
+
+    // DataLayer should have only 1 set of impressions (not duplicated)
+    const impressions = window.dataLayer!.filter((e: any) => e.event === 'experiment_impression');
+    expect(impressions.length).toBe(1);
+
+    delete window._vwo_settings_timer;
+    vi.useRealTimers();
+  });
 });
