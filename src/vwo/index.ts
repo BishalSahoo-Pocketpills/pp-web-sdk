@@ -489,9 +489,22 @@ import { createVWOConfig } from '@src/vwo/config';
       injectSmartCode();
     }
 
-    // Track experiments when VWO is ready
+    // Track experiments — try immediately (VWO may already be ready)
+    // AND queue for later (in case VWO hasn't assigned variations yet)
+    var experimentsTracked = false;
+    var experiments = readExperiments();
+    if (experiments.length > 0) {
+      trackExperiments();
+      experimentsTracked = true;
+    }
+
+    // Also queue as fallback — VWO may assign variations after this point
     win._vis_opt_queue = win._vis_opt_queue || [];
-    win._vis_opt_queue.push(trackExperiments);
+    win._vis_opt_queue.push(function() {
+      if (!experimentsTracked) {
+        trackExperiments();
+      }
+    });
 
     // Bind DOM for auto-tracking goals
     bindDOM();
