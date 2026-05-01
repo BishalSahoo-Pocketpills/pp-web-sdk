@@ -246,23 +246,84 @@ import { createVWOConfig } from '@src/vwo/config';
    * Push experiment_impression events to window.dataLayer.
    */
   function trackExperiments(): void {
-    if (!CONFIG.trackToDataLayer) return;
-
     var experiments = readExperiments();
-    win.dataLayer = win.dataLayer || [];
 
-    for (var i = 0; i < experiments.length; i++) {
-      win.dataLayer.push({
-        event: 'experiment_impression',
-        experiment_id: experiments[i].campaignId,
-        variation_id: experiments[i].variationId,
-        variation_name: experiments[i].variationName
-      });
+    // Push to dataLayer (GA4/GTM)
+    if (CONFIG.trackToDataLayer) {
+      win.dataLayer = win.dataLayer || [];
+      for (var i = 0; i < experiments.length; i++) {
+        win.dataLayer.push({
+          event: 'experiment_impression',
+          experiment_id: experiments[i].campaignId,
+          variation_id: experiments[i].variationId,
+          variation_name: experiments[i].variationName
+        });
+      }
     }
 
+    // Register as Mixpanel super properties so experiment data
+    // appears on ALL subsequent events (page view, add to cart, purchase, etc.)
+    // This complements VWO's native "VWO" event — that event fires once,
+    // these super properties persist for the entire session.
     if (experiments.length > 0) {
-      ppLib.log('info', '[ppVWO] Tracked ' + experiments.length + ' experiment(s) to dataLayer');
+      registerExperimentsToMixpanel(experiments);
+      ppLib.log('info', '[ppVWO] Tracked ' + experiments.length + ' experiment(s) to dataLayer + Mixpanel');
     }
+  }
+
+  /**
+   * Register VWO experiments as Mixpanel super properties.
+   *
+   * Creates two types of properties:
+   *   - vwo_experiments: "campaign_123:Variation-1, campaign_456:Control" (combined summary)
+   *   - vwo_campaign_{id}: "Variation-1" (per-campaign, filterable individually)
+   *
+   * Uses mixpanel.register() so properties attach to every subsequent track() call.
+   * Uses mixpanel.people.set() so properties appear on the user profile.
+   */
+  function registerExperimentsToMixpanel(experiments: VWOExperiment[]): void {
+    try {
+      var mp = (win as any).mixpanel;
+      if (!mp || typeof mp.register !== 'function') {
+        // Mixpanel not loaded yet — retry when it's available
+        var attempts = 0;
+        var interval = win.setInterval(function() {
+          mp = (win as any).mixpanel;
+          if (mp && typeof mp.register === 'function') {
+            win.clearInterval(interval);
+            doRegister(mp, experiments);
+          } else if (++attempts >= 20) {
+            win.clearInterval(interval);
+          }
+        }, 500);
+        return;
+      }
+      doRegister(mp, experiments);
+    } catch (e) {
+      ppLib.log('warn', '[ppVWO] Failed to register experiments to Mixpanel', e);
+    }
+  }
+
+  function doRegister(mp: any, experiments: VWOExperiment[]): void {
+    var props: Record<string, string> = {};
+
+    // Combined summary string for quick segmentation
+    var summaryParts: string[] = [];
+    for (var i = 0; i < experiments.length; i++) {
+      var exp = experiments[i];
+      var label = exp.variationName || ('Variation ' + exp.variationId);
+      summaryParts.push(exp.campaignId + ':' + label);
+
+      // Per-campaign property for individual experiment filtering
+      props['vwo_campaign_' + exp.campaignId] = label;
+    }
+    props.vwo_experiments = summaryParts.join(', ');
+
+    mp.register(props);
+    if (typeof mp.people !== 'undefined' && typeof mp.people.set === 'function') {
+      mp.people.set(props);
+    }
+    ppLib.log('info', '[ppVWO] Registered ' + experiments.length + ' experiment(s) as Mixpanel super properties');
   }
 
   // =====================================================
