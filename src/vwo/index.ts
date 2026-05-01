@@ -272,58 +272,47 @@ import { createVWOConfig } from '@src/vwo/config';
   }
 
   /**
-   * Register VWO experiments as Mixpanel super properties.
-   *
-   * Creates two types of properties:
-   *   - vwo_experiments: "campaign_123:Variation-1, campaign_456:Control" (combined summary)
-   *   - vwo_campaign_{id}: "Variation-1" (per-campaign, filterable individually)
-   *
-   * Uses mixpanel.register() so properties attach to every subsequent track() call.
-   * Uses mixpanel.people.set() so properties appear on the user profile.
+   * Build VWO experiment properties and store on ppLib for cross-module access.
+   * The Mixpanel module reads ppLib._vwoExperimentProps in its loaded callback
+   * and registers them as super properties (guaranteed to be before any track calls).
+   * Also stores in sessionStorage so experiments persist across page navigations.
    */
   function registerExperimentsToMixpanel(experiments: VWOExperiment[]): void {
     try {
-      var mp = (win as any).mixpanel;
-      if (!mp || typeof mp.register !== 'function') {
-        // Mixpanel not loaded yet — retry when it's available
-        var attempts = 0;
-        var interval = win.setInterval(function() {
-          mp = (win as any).mixpanel;
-          if (mp && typeof mp.register === 'function') {
-            win.clearInterval(interval);
-            doRegister(mp, experiments);
-          } else if (++attempts >= 20) {
-            win.clearInterval(interval);
-          }
-        }, 500);
-        return;
+      var props: Record<string, string> = {};
+      var summaryParts: string[] = [];
+
+      for (var i = 0; i < experiments.length; i++) {
+        var exp = experiments[i];
+        var label = exp.variationName || ('Variation ' + exp.variationId);
+        summaryParts.push(exp.campaignId + ':' + label);
+        props['vwo_campaign_' + exp.campaignId] = label;
       }
-      doRegister(mp, experiments);
+      props.vwo_experiments = summaryParts.join(', ');
+
+      // Store on ppLib for Mixpanel module to read during its init
+      (ppLib as any)._vwoExperimentProps = props;
+
+      // Also persist in sessionStorage for SPA page navigations
+      // (VWO may not re-fire _vis_opt_queue on subsequent pages)
+      try {
+        win.sessionStorage.setItem('pp_vwo_exp_props', JSON.stringify(props));
+      } catch (e) { /* no sessionStorage */ }
+
+      // If Mixpanel is already fully loaded, register immediately
+      var mp = (win as any).mixpanel;
+      if (mp && mp.__loaded) {
+        mp.register(props);
+        if (mp.people && typeof mp.people.set === 'function') {
+          mp.people.set(props);
+        }
+        ppLib.log('info', '[ppVWO] Registered experiments to Mixpanel (immediate)');
+      } else {
+        ppLib.log('info', '[ppVWO] Experiment props stored — Mixpanel will register on init');
+      }
     } catch (e) {
-      ppLib.log('warn', '[ppVWO] Failed to register experiments to Mixpanel', e);
+      ppLib.log('warn', '[ppVWO] Failed to prepare experiment properties', e);
     }
-  }
-
-  function doRegister(mp: any, experiments: VWOExperiment[]): void {
-    var props: Record<string, string> = {};
-
-    // Combined summary string for quick segmentation
-    var summaryParts: string[] = [];
-    for (var i = 0; i < experiments.length; i++) {
-      var exp = experiments[i];
-      var label = exp.variationName || ('Variation ' + exp.variationId);
-      summaryParts.push(exp.campaignId + ':' + label);
-
-      // Per-campaign property for individual experiment filtering
-      props['vwo_campaign_' + exp.campaignId] = label;
-    }
-    props.vwo_experiments = summaryParts.join(', ');
-
-    mp.register(props);
-    if (typeof mp.people !== 'undefined' && typeof mp.people.set === 'function') {
-      mp.people.set(props);
-    }
-    ppLib.log('info', '[ppVWO] Registered ' + experiments.length + ' experiment(s) as Mixpanel super properties');
   }
 
   // =====================================================

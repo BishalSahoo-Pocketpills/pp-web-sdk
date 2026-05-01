@@ -411,6 +411,46 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
         // marketingAttribution is auto-injected by the global mixpanel.track
         // patch in the attribution service — no per-module registration needed.
 
+        // VWO experiment properties — register as super properties so they
+        // appear on every subsequent event (page view, add to cart, purchase).
+        // Read from ppLib (set by VWO module) or sessionStorage (persisted).
+        try {
+          var vwoProps = (ppLib as any)._vwoExperimentProps;
+          if (!vwoProps) {
+            // VWO module may not have fired yet — check sessionStorage
+            var stored = win.sessionStorage.getItem('pp_vwo_exp_props');
+            if (stored) vwoProps = JSON.parse(stored);
+          }
+          if (vwoProps && typeof vwoProps === 'object') {
+            mp.register(vwoProps);
+            if (typeof mp.people.set === 'function') {
+              mp.people.set(vwoProps);
+            }
+            ppLib.log('info', '[ppMixpanel] VWO experiment properties registered');
+          }
+        } catch (e) {
+          ppLib.log('warn', '[ppMixpanel] Failed to register VWO experiment properties', e);
+        }
+
+        // If VWO hasn't fired yet, listen for it
+        if (!(ppLib as any)._vwoExperimentProps) {
+          win._vis_opt_queue = win._vis_opt_queue || [];
+          win._vis_opt_queue.push(function() {
+            try {
+              var props = (ppLib as any)._vwoExperimentProps;
+              if (props) {
+                mp.register(props);
+                if (typeof mp.people.set === 'function') {
+                  mp.people.set(props);
+                }
+                ppLib.log('info', '[ppMixpanel] VWO experiment properties registered (deferred)');
+              }
+            } catch (e) {
+              ppLib.log('warn', '[ppMixpanel] Deferred VWO registration failed', e);
+            }
+          });
+        }
+
         ppLib.log('info', '[ppMixpanel] Initialized successfully');
       }
     });
