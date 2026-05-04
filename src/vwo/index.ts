@@ -8,6 +8,7 @@
 import type { PPLib } from '@src/types/common.types';
 import type { VWOConfig, VWOExperiment } from '@src/types/vwo.types';
 import { createVWOConfig } from '@src/vwo/config';
+import { createDebounceTracker } from '@src/common/debounce';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -337,27 +338,9 @@ import { createVWOConfig } from '@src/vwo/config';
   // DOM BINDING — auto-track goals via data attributes
   // =====================================================
 
-  var lastGoalMap: Record<string, number> = {};
-  var debounceWriteCount = 0;
+  var goalDebounce = createDebounceTracker(CONFIG);
   var viewObserver: IntersectionObserver | null = null;
   var domBound = false;
-
-  function isDuplicateGoal(key: string): boolean {
-    var now = Date.now();
-    if (++debounceWriteCount >= 100) {
-      debounceWriteCount = 0;
-      for (var k in lastGoalMap) {
-        if ((now - lastGoalMap[k]) >= CONFIG.debounceMs) {
-          delete lastGoalMap[k];
-        }
-      }
-    }
-    if (lastGoalMap[key] && (now - lastGoalMap[key]) < CONFIG.debounceMs) {
-      return true;
-    }
-    lastGoalMap[key] = now;
-    return false;
-  }
 
   function trackGoalFromElement(el: Element): void {
     var goalIdStr = (el.getAttribute(CONFIG.attributes.goal) || '').trim();
@@ -367,7 +350,7 @@ import { createVWOConfig } from '@src/vwo/config';
     if (isNaN(goalId)) return;
 
     var elId = (el.id || goalIdStr) + ':' + el.tagName;
-    if (isDuplicateGoal(elId)) return;
+    if (goalDebounce.isDuplicate(elId)) return;
 
     var revenueStr = (el.getAttribute(CONFIG.attributes.revenue) || '').trim();
     var revenue: number | undefined;

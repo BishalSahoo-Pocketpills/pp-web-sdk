@@ -7,6 +7,8 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { EcommerceConfig, EcommerceItem, EcommerceData } from '@src/types/ecommerce.types';
+import { createDebounceTracker } from '@src/common/debounce';
+import { createEventGuard } from '@src/common/event-guard';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -56,31 +58,8 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '@src/types/e
   // DEBOUNCE TRACKER
   // =====================================================
 
-  const lastEventMap: Record<string, number> = {};
-  let debounceWriteCount = 0;
-  let viewItemFired = false;
-
-  function isDuplicate(key: string): boolean {
-    const now = Date.now();
-    /*! v8 ignore start */
-    if (lastEventMap[key] && (now - lastEventMap[key]) < CONFIG.debounceMs) {
-    /*! v8 ignore stop */
-      return true;
-    }
-    lastEventMap[key] = now;
-    /*! v8 ignore start */
-    // Prune stale debounce entries every 100 writes to prevent unbounded growth
-    if (++debounceWriteCount >= 100) {
-      debounceWriteCount = 0;
-      for (const k in lastEventMap) {
-        if ((now - lastEventMap[k]) >= CONFIG.debounceMs) {
-          delete lastEventMap[k];
-        }
-      }
-    }
-    /*! v8 ignore stop */
-    return false;
-  }
+  const debounce = createDebounceTracker(CONFIG);
+  const eventGuard = createEventGuard(ppLib);
 
   function getElementKey(el: Element): string {
     /*! v8 ignore start */
@@ -300,9 +279,8 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '@src/types/e
         return;
       }
 
-      // Idempotency guard: only fire view_item once per page load
-      if (viewItemFired) return;
-      viewItemFired = true;
+      // Cross-module guard: only fire view_item once per page load
+      if (!eventGuard.claim('view_item')) return;
 
       const ecommerceData = buildEcommerceData(items);
       /*! v8 ignore start */
@@ -332,7 +310,7 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '@src/types/e
       // Debounce to prevent duplicate click + touchend
       const key = getElementKey(cta);
       /*! v8 ignore start */
-      if (isDuplicate(key)) return;
+      if (debounce.isDuplicate(key)) return;
       /*! v8 ignore stop */
 
       const item = resolveItemForCTA(cta);

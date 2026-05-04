@@ -1,5 +1,7 @@
 import type { PPLib } from '@src/types/common.types';
 import type { DataLayerConfig, DataLayerItemInput } from '@src/types/datalayer.types';
+import { createDebounceTracker } from '@src/common/debounce';
+import { createEventGuard } from '@src/common/event-guard';
 
 var ECOMMERCE_EVENTS: Record<string, boolean> = {
   view_item: true,
@@ -18,26 +20,9 @@ export function createDomBinder(
   itemBuilder: { normalizeItem: (input: DataLayerItemInput) => any; calculateValue: (items: any[]) => string }
 ) {
 
-  var lastEventMap: Record<string, number> = {};
-  var debounceWriteCount = 0;
+  var debounce = createDebounceTracker(CONFIG);
+  var eventGuard = createEventGuard(ppLib);
   var bound = false;
-
-  function isDuplicate(key: string): boolean {
-    var now = Date.now();
-    if (++debounceWriteCount >= 100) {
-      debounceWriteCount = 0;
-      for (var k in lastEventMap) {
-        if ((now - lastEventMap[k]) >= CONFIG.debounceMs) {
-          delete lastEventMap[k];
-        }
-      }
-    }
-    if (lastEventMap[key] && (now - lastEventMap[key]) < CONFIG.debounceMs) {
-      return true;
-    }
-    lastEventMap[key] = now;
-    return false;
-  }
 
   function getElementId(el: Element): string {
     var id = el.id || el.getAttribute(CONFIG.attributes.event) || '';
@@ -130,7 +115,7 @@ export function createDomBinder(
       if (!el) return;
 
       var elId = getElementId(el);
-        if (isDuplicate(elId)) return;
+        if (debounce.isDuplicate(elId)) return;
   
       var eventName = ppLib.Security.sanitize(readAttr(el, CONFIG.attributes.event));
       if (!eventName) return;
@@ -187,6 +172,12 @@ export function createDomBinder(
 
   function scanViewItems(): void {
     try {
+      // Cross-module guard: skip if ecommerce module already fired view_item
+      if (!eventGuard.claim('view_item')) {
+        ppLib.log('verbose', '[ppDataLayer] view_item already fired by another module');
+        return;
+      }
+
       var selector = '[' + CONFIG.attributes.viewItem + ']';
       var elements = doc.querySelectorAll(selector);
       if (elements.length === 0) {

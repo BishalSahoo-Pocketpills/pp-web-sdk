@@ -16,7 +16,7 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     coverage: {
       provider: 'v8',
-      include: ['src/*/index.ts'],
+      include: ['src/*/index.ts', 'src/common/debounce.ts', 'src/common/event-guard.ts'],
       exclude: ['src/_headers', 'src/types/**'],
       thresholds: {
         lines: 100,
