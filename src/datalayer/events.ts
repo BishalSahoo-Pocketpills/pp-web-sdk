@@ -28,9 +28,10 @@ export function createEventPusher(
     var enriched: Record<string, any> = {
       event: eventName,
       user: userBuilder.buildUser(),
-      user_data: userDataManager.getUserData(),
+      userData: userDataManager.getUserData(),
       page: pageBuilder.buildPage(),
-      pp_timestamp: new Date().toISOString()
+      pp_timestamp: Date.now(),
+      platform: CONFIG.defaults.platform
     };
 
     merge(enriched, extra || {});

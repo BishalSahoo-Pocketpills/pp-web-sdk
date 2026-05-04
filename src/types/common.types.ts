@@ -65,6 +65,11 @@ export interface PPLib {
   voucherify?: import('./voucherify.types').VoucherifyAPI;
   datalayer?: import('./datalayer.types').DataLayerAPI;
   vwo?: import('./vwo.types').VWOAPI;
+  // Session management
+  session?: import('../common/session').SessionService;
+  // DataLayer enricher system
+  registerEnricher?: (enricherFn: (pushFn: (...args: any[]) => number) => (...args: any[]) => number) => void;
+  _enrichers?: Array<(pushFn: (...args: any[]) => number) => (...args: any[]) => number>;
   // Internal bound flags (prevent double-binding across script reloads)
   _ecomBound?: boolean;
   _esBound?: boolean;

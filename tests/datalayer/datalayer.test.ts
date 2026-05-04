@@ -306,11 +306,11 @@ describe('User Data / SHA-256', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user_data.sha256_email_address).toBe(await sha256hex('Test@Example.com'));
-    expect(event.user_data.sha256_phone_number).toBe(await sha256hex('+15551234567'));
-    expect(event.user_data.address.sha256_first_name).toBe(await sha256hex('John'));
-    expect(event.user_data.address.sha256_last_name).toBe(await sha256hex('Doe'));
-    expect(event.user_data.address.sha256_street).toBe(await sha256hex('123 Main St'));
+    expect(event.userData.sha256_email_address).toBe(await sha256hex('Test@Example.com'));
+    expect(event.userData.sha256_phone_number).toBe(await sha256hex('+15551234567'));
+    expect(event.userData.address.sha256_first_name).toBe(await sha256hex('John'));
+    expect(event.userData.address.sha256_last_name).toBe(await sha256hex('Doe'));
+    expect(event.userData.address.sha256_street).toBe(await sha256hex('123 Main St'));
   });
 
   it('passes city, region, postal_code, country as plain text', async () => {
@@ -324,10 +324,10 @@ describe('User Data / SHA-256', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user_data.address.city).toBe('Toronto');
-    expect(event.user_data.address.region).toBe('ON');
-    expect(event.user_data.address.postal_code).toBe('M5V 1A1');
-    expect(event.user_data.address.country).toBe('CA');
+    expect(event.userData.address.city).toBe('Toronto');
+    expect(event.userData.address.region).toBe('ON');
+    expect(event.userData.address.postal_code).toBe('M5V 1A1');
+    expect(event.userData.address.country).toBe('CA');
   });
 
   it('skips hashing values that already look like SHA-256', async () => {
@@ -338,7 +338,7 @@ describe('User Data / SHA-256', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user_data.sha256_email_address).toBe(preHashed);
+    expect(event.userData.sha256_email_address).toBe(preHashed);
   });
 
   it('handles empty/undefined fields gracefully', async () => {
@@ -347,9 +347,9 @@ describe('User Data / SHA-256', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user_data.sha256_email_address).toBe('');
-    expect(event.user_data.sha256_phone_number).toBe('');
-    expect(event.user_data.address.sha256_first_name).toBe('');
+    expect(event.userData.sha256_email_address).toBe('');
+    expect(event.userData.sha256_phone_number).toBe('');
+    expect(event.userData.address.sha256_first_name).toBe('');
   });
 
   it('produces known SHA-256 digest for "test@test.com"', async () => {
@@ -360,7 +360,7 @@ describe('User Data / SHA-256', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user_data.sha256_email_address).toBe(expected);
+    expect(event.userData.sha256_email_address).toBe(expected);
   });
 
   it('caches user data across multiple pushes', async () => {
@@ -371,9 +371,9 @@ describe('User Data / SHA-256', () => {
 
     const e1 = window.dataLayer[window.dataLayer.length - 2];
     const e2 = window.dataLayer[window.dataLayer.length - 1];
-    expect(e1.user_data.sha256_email_address).toBe(e2.user_data.sha256_email_address);
-    expect(e1.user_data.address.city).toBe('Vancouver');
-    expect(e2.user_data.address.city).toBe('Vancouver');
+    expect(e1.userData.sha256_email_address).toBe(e2.userData.sha256_email_address);
+    expect(e1.userData.address.city).toBe('Vancouver');
+    expect(e2.userData.address.city).toBe('Vancouver');
   });
 
   it('setUserDataHashed passes pre-hashed values directly', () => {
@@ -393,11 +393,11 @@ describe('User Data / SHA-256', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user_data.sha256_email_address).toBe(hash);
-    expect(event.user_data.sha256_phone_number).toBe('c'.repeat(64));
-    expect(event.user_data.address.sha256_first_name).toBe('d'.repeat(64));
-    expect(event.user_data.address.city).toBe('Montreal');
-    expect(event.user_data.address.region).toBe('QC');
+    expect(event.userData.sha256_email_address).toBe(hash);
+    expect(event.userData.sha256_phone_number).toBe('c'.repeat(64));
+    expect(event.userData.address.sha256_first_name).toBe('d'.repeat(64));
+    expect(event.userData.address.city).toBe('Montreal');
+    expect(event.userData.address.region).toBe('QC');
   });
 
   it('setUserDataHashed handles missing address', () => {
@@ -408,9 +408,9 @@ describe('User Data / SHA-256', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user_data.sha256_email_address).toBe('e'.repeat(64));
-    expect(event.user_data.address.sha256_first_name).toBe('');
-    expect(event.user_data.address.city).toBe('');
+    expect(event.userData.sha256_email_address).toBe('e'.repeat(64));
+    expect(event.userData.address.sha256_first_name).toBe('');
+    expect(event.userData.address.city).toBe('');
   });
 
   it('setUserDataHashed with empty object defaults to empty strings', () => {
@@ -419,8 +419,8 @@ describe('User Data / SHA-256', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user_data.sha256_email_address).toBe('');
-    expect(event.user_data.sha256_phone_number).toBe('');
+    expect(event.userData.sha256_email_address).toBe('');
+    expect(event.userData.sha256_phone_number).toBe('');
   });
 
   it('returns empty hash when crypto.subtle is unavailable (HTTP context)', async () => {
@@ -431,7 +431,7 @@ describe('User Data / SHA-256', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user_data.sha256_email_address).toBe('');
+    expect(event.userData.sha256_email_address).toBe('');
 
     vi.stubGlobal('crypto', origCrypto);
   });
@@ -467,15 +467,15 @@ describe('Cookie Auto-populate', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user_data.sha256_email_address).toBe(await sha256hex('alice@example.com'));
-    expect(event.user_data.sha256_phone_number).toBe(await sha256hex('+15551234567'));
-    expect(event.user_data.address.sha256_first_name).toBe(await sha256hex('Alice'));
-    expect(event.user_data.address.sha256_last_name).toBe(await sha256hex('Smith'));
-    expect(event.user_data.address.sha256_street).toBe(await sha256hex('123 Main St'));
-    expect(event.user_data.address.city).toBe('Toronto');
-    expect(event.user_data.address.region).toBe('ON');
-    expect(event.user_data.address.postal_code).toBe('M5V 1A1');
-    expect(event.user_data.address.country).toBe('CA');
+    expect(event.userData.sha256_email_address).toBe(await sha256hex('alice@example.com'));
+    expect(event.userData.sha256_phone_number).toBe(await sha256hex('+15551234567'));
+    expect(event.userData.address.sha256_first_name).toBe(await sha256hex('Alice'));
+    expect(event.userData.address.sha256_last_name).toBe(await sha256hex('Smith'));
+    expect(event.userData.address.sha256_street).toBe(await sha256hex('123 Main St'));
+    expect(event.userData.address.city).toBe('Toronto');
+    expect(event.userData.address.region).toBe('ON');
+    expect(event.userData.address.postal_code).toBe('M5V 1A1');
+    expect(event.userData.address.country).toBe('CA');
   });
 
   it('falls back to firstName cookie when previousUser has no firstName', async () => {
@@ -490,9 +490,9 @@ describe('Cookie Auto-populate', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user_data.sha256_email_address).toBe(await sha256hex('test@example.com'));
-    expect(event.user_data.sha256_phone_number).toBe(await sha256hex('5551234567'));
-    expect(event.user_data.address.sha256_first_name).toBe(await sha256hex('Fallback'));
+    expect(event.userData.sha256_email_address).toBe(await sha256hex('test@example.com'));
+    expect(event.userData.sha256_phone_number).toBe(await sha256hex('5551234567'));
+    expect(event.userData.address.sha256_first_name).toBe(await sha256hex('Fallback'));
   });
 
   it('handles malformed previousUser cookie gracefully', async () => {
@@ -505,10 +505,10 @@ describe('Cookie Auto-populate', () => {
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     // email/phone empty since previousUser failed to parse
-    expect(event.user_data.sha256_email_address).toBe('');
-    expect(event.user_data.sha256_phone_number).toBe('');
+    expect(event.userData.sha256_email_address).toBe('');
+    expect(event.userData.sha256_phone_number).toBe('');
     // firstName falls back to individual cookie
-    expect(event.user_data.address.sha256_first_name).toBe(await sha256hex('Safe'));
+    expect(event.userData.address.sha256_first_name).toBe(await sha256hex('Safe'));
   });
 
   it('returns empty strings when no cookies are set', async () => {
@@ -517,15 +517,15 @@ describe('Cookie Auto-populate', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user_data.sha256_email_address).toBe('');
-    expect(event.user_data.sha256_phone_number).toBe('');
-    expect(event.user_data.address.sha256_first_name).toBe('');
-    expect(event.user_data.address.sha256_last_name).toBe('');
-    expect(event.user_data.address.sha256_street).toBe('');
-    expect(event.user_data.address.city).toBe('');
-    expect(event.user_data.address.region).toBe('');
-    expect(event.user_data.address.postal_code).toBe('');
-    expect(event.user_data.address.country).toBe('');
+    expect(event.userData.sha256_email_address).toBe('');
+    expect(event.userData.sha256_phone_number).toBe('');
+    expect(event.userData.address.sha256_first_name).toBe('');
+    expect(event.userData.address.sha256_last_name).toBe('');
+    expect(event.userData.address.sha256_street).toBe('');
+    expect(event.userData.address.city).toBe('');
+    expect(event.userData.address.region).toBe('');
+    expect(event.userData.address.postal_code).toBe('');
+    expect(event.userData.address.country).toBe('');
   });
 
   it('manual setUserData overrides previousUser cookie defaults', async () => {
@@ -542,9 +542,9 @@ describe('Cookie Auto-populate', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user_data.sha256_email_address).toBe(await sha256hex('bob@example.com'));
-    expect(event.user_data.address.sha256_first_name).toBe(await sha256hex('Bob'));
-    expect(event.user_data.address.sha256_last_name).toBe(await sha256hex('Jones'));
+    expect(event.userData.sha256_email_address).toBe(await sha256hex('bob@example.com'));
+    expect(event.userData.address.sha256_first_name).toBe(await sha256hex('Bob'));
+    expect(event.userData.address.sha256_last_name).toBe(await sha256hex('Jones'));
   });
 
   it('polls for previousUser cookie when not available at init', async () => {
@@ -554,7 +554,7 @@ describe('Cookie Auto-populate', () => {
     // Verify email is empty initially
     window.ppLib.datalayer.push('before_cookie');
     const before = window.dataLayer[window.dataLayer.length - 1];
-    expect(before.user_data.sha256_email_address).toBe('');
+    expect(before.userData.sha256_email_address).toBe('');
 
     // Now set the previousUser cookie (simulating a late-loading script)
     setCookie('previousUser', encodeURIComponent(JSON.stringify({
@@ -568,8 +568,8 @@ describe('Cookie Auto-populate', () => {
     // Subsequent event should now have the hashed data
     window.ppLib.datalayer.push('after_cookie');
     const after = window.dataLayer[window.dataLayer.length - 1];
-    expect(after.user_data.sha256_email_address).toBe(await sha256hex('late@example.com'));
-    expect(after.user_data.sha256_phone_number).toBe(await sha256hex('5559876543'));
+    expect(after.userData.sha256_email_address).toBe(await sha256hex('late@example.com'));
+    expect(after.userData.sha256_phone_number).toBe(await sha256hex('5559876543'));
   });
 
   it('stops polling when remaining attempts exhausted', async () => {
@@ -578,8 +578,8 @@ describe('Cookie Auto-populate', () => {
     // email/phone still empty — cookie never appeared
     window.ppLib.datalayer.push('still_empty');
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user_data.sha256_email_address).toBe('');
-    expect(event.user_data.sha256_phone_number).toBe('');
+    expect(event.userData.sha256_email_address).toBe('');
+    expect(event.userData.sha256_phone_number).toBe('');
   });
 
   it('skips polling when email/phone are already available', async () => {
@@ -593,8 +593,8 @@ describe('Cookie Auto-populate', () => {
 
     window.ppLib.datalayer.push('test_event');
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user_data.sha256_email_address).toBe(await sha256hex('already@example.com'));
-    expect(event.user_data.sha256_phone_number).toBe(await sha256hex('5551112222'));
+    expect(event.userData.sha256_email_address).toBe(await sha256hex('already@example.com'));
+    expect(event.userData.sha256_phone_number).toBe(await sha256hex('5551112222'));
   });
 });
 
@@ -736,7 +736,7 @@ describe('Core Event Push', () => {
     expect(event.event).toBe('custom_event');
     expect(event.key).toBe('value');
     expect(event.user).toBeDefined();
-    expect(event.user_data).toBeDefined();
+    expect(event.userData).toBeDefined();
     expect(event.page).toBeDefined();
     expect(event.pp_timestamp).toBeDefined();
   });
@@ -923,14 +923,14 @@ describe('Ecommerce Push', () => {
     expect(event.ecommerce.items).toHaveLength(1);
   });
 
-  it('ecommerce push includes user, user_data, page, timestamp', () => {
+  it('ecommerce push includes user, userData, page, timestamp', () => {
     setCookie('userId', '42');
     window.ppLib.datalayer.viewItem([{ item_name: 'Test' }]);
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     expect(event.user).toBeDefined();
     expect(event.user.pp_user_id).toBe('42');
-    expect(event.user_data).toBeDefined();
+    expect(event.userData).toBeDefined();
     expect(event.page).toBeDefined();
     expect(event.pp_timestamp).toBeDefined();
   });
@@ -1394,8 +1394,8 @@ describe('Integration', () => {
     expect(event.user.logged_in).toBe(true);
 
     // User data
-    expect(event.user_data.sha256_email_address).toBe(await sha256hex('int@test.com'));
-    expect(event.user_data.address.city).toBe('Toronto');
+    expect(event.userData.sha256_email_address).toBe(await sha256hex('int@test.com'));
+    expect(event.userData.address.city).toBe('Toronto');
 
     // Page
     expect(event.page.title).toBe('Integration Test');
@@ -1423,7 +1423,7 @@ describe('Integration', () => {
     expect(event.transaction_id).toBe('TXN-INT');
     expect(event.user.pp_user_id).toBe('55');
     expect(event.user.logged_in).toBe(true);
-    expect(event.user_data.sha256_email_address).toBe('f'.repeat(64));
+    expect(event.userData.sha256_email_address).toBe('f'.repeat(64));
     expect(event.ecommerce.items).toHaveLength(2);
     // (50*2 - 0) + (30*1 - 0) = 130
     expect(event.ecommerce.value).toBe('130');

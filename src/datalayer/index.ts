@@ -14,6 +14,7 @@ import { createUserDataManager } from '@src/datalayer/user-data';
 import { createItemBuilder } from '@src/datalayer/items';
 import { createEventPusher } from '@src/datalayer/events';
 import { createDomBinder } from '@src/datalayer/dom';
+import { createEventPropertiesEnricher } from '@src/datalayer/enrichers/event-properties';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -25,6 +26,11 @@ import { createDomBinder } from '@src/datalayer/dom';
   // =====================================================
 
   const CONFIG: DataLayerConfig = createDataLayerConfig();
+
+  // Register event-properties enricher with the global coordinator
+  if (ppLib.registerEnricher) {
+    ppLib.registerEnricher(createEventPropertiesEnricher(win, ppLib, CONFIG));
+  }
 
   // =====================================================
   // SUB-MODULES
@@ -104,7 +110,7 @@ import { createDomBinder } from '@src/datalayer/dom';
   function onReady(): void {
     readCookieUserData().then(function() {
       var ud = userDataManager.getUserData();
-      eventPusher.pushEvent('pageview', { platform: CONFIG.defaults.platform });
+      eventPusher.pushEvent('pageview');
       CONFIG.autoViewItem && domBinder.scanViewItems();
 
       // If previousUser cookie wasn't available yet, poll for it

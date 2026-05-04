@@ -14,6 +14,8 @@ import { createSecurity } from '@src/common/security';
 import { createStorage } from '@src/common/storage';
 import { createExtend } from '@src/common/utils';
 import { createAttributionService } from '@src/common/attribution';
+import { createSessionService } from '@src/common/session';
+import { createDataLayerEnricher } from '@src/common/datalayer-enricher';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -91,6 +93,29 @@ import { createAttributionService } from '@src/common/attribution';
   // =====================================================
 
   ppLib.attribution = createAttributionService(win, ppLib);
+
+  // =====================================================
+  // SESSION MANAGEMENT
+  // =====================================================
+
+  ppLib.session = createSessionService();
+
+  // =====================================================
+  // DATALAYER ENRICHER SYSTEM
+  // Composable HOF enrichment — modules register enrichers,
+  // coordinator wraps dataLayer.push once.
+  // =====================================================
+
+  var enricher = createDataLayerEnricher(win, ppLib);
+  ppLib.registerEnricher = enricher.registerEnricher;
+
+  // Register the attribution enricher
+  ppLib.registerEnricher(ppLib.attribution.getEnricher());
+
+  // Apply — wraps dataLayer.push. Reads ppLib._enrichers dynamically,
+  // so enrichers registered later (by datalayer, ecommerce, etc.) are
+  // automatically active on the next push.
+  enricher.applyEnrichers();
 
   // =====================================================
   // MODULE READY SYSTEM

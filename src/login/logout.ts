@@ -18,6 +18,11 @@ export function createLogoutUser(
     try {
       hardLogout = hardLogout === true;
 
+      // Clear analytics session
+      if (ppLib.session) {
+        ppLib.session.clearSession();
+      }
+
       // Remove session cookies
       ppLib.deleteCookie(CONFIG.cookieNames.userId);
       ppLib.deleteCookie(CONFIG.cookieNames.patientId);

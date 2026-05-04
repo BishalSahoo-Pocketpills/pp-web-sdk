@@ -325,8 +325,8 @@ export function createAttributionService(
     // Touch session
     touchSession();
 
-    // Patch global platform dispatch methods for automatic enrichment
-    patchPlatforms();
+    // Register Mixpanel super property (dataLayer enrichment is now via the enricher HOF)
+    registerMixpanelAttribution();
 
     ppLib.log('info', '[ppAttribution] Initialized — platform: ' + current.platform + ', source: ' + current.source +
       (hasNewParams ? ' (new params)' : sessionActive ? ' (existing session)' : ' (new session)'));
@@ -384,38 +384,34 @@ export function createAttributionService(
   }
 
   // ---------------------------------------------------------------------------
-  // Global platform patching — intercepts all event dispatches at the platform
-  // level so every caller (Analytics, DataLayer, EventSource, Mixpanel, or
-  // any future module) gets marketingAttribution automatically.
+  // DataLayer enricher HOF — composable enrichment via the coordinator.
+  // Replaces the former direct dataLayer.push monkey-patch.
   // ---------------------------------------------------------------------------
 
-  var platformsPatched = false;
-
-  function patchPlatforms(): void {
-    if (platformsPatched || !config.enrichEvents) return;
-    platformsPatched = true;
-
-    // Patch window.dataLayer.push — all GTM/GA4 events
-    try {
-      var dl: Array<Record<string, unknown>> = (win as unknown as Record<string, unknown>).dataLayer as Array<Record<string, unknown>> || [];
-      (win as unknown as Record<string, unknown>).dataLayer = dl;
-      var originalPush = dl.push.bind(dl);
-      dl.push = function(...args: Record<string, unknown>[]): number {
+  function getEnricher(): (pushFn: (...args: any[]) => number) => (...args: any[]) => number {
+    return function withAttribution(pushFn: (...args: any[]) => number) {
+      return function() {
+        var args = Array.prototype.slice.call(arguments) as any[];
         for (var i = 0; i < args.length; i++) {
           if (args[i] && typeof args[i] === 'object' && args[i].event && !args[i].marketingAttribution) {
             enrichEvent(args[i]);
           }
         }
-        return originalPush(...args);
+        return pushFn.apply(null, args);
       };
-      ppLib.log('info', '[ppAttribution] Patched dataLayer.push for auto-enrichment');
-    } catch (e) {
-      ppLib.log('warn', '[ppAttribution] Failed to patch dataLayer', e);
-    }
+    };
+  }
 
-    // Mixpanel: register marketingAttribution as a super property.
-    // Super properties are automatically included in every mixpanel.track() call
-    // by the Mixpanel SDK — no patching needed.
+  // ---------------------------------------------------------------------------
+  // Mixpanel super property registration
+  // ---------------------------------------------------------------------------
+
+  var mixpanelRegistered = false;
+
+  function registerMixpanelAttribution(): void {
+    if (mixpanelRegistered || !config.enrichEvents) return;
+    mixpanelRegistered = true;
+
     try {
       var registerMixpanel = function() {
         var mp = (win as unknown as Record<string, unknown>).mixpanel as Record<string, unknown> | undefined;
@@ -466,6 +462,7 @@ export function createAttributionService(
     init: init,
     get: getMarketingAttribution,
     enrich: enrichEvent,
+    getEnricher: getEnricher,
     getFirstTouch: getFirstTouch,
     getLastTouch: getLastTouch,
     getCurrent: function(): TouchAttribution | null { return cachedCurrent; },
