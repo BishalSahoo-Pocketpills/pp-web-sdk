@@ -38,6 +38,10 @@ describe('createEventPropertiesEnricher', () => {
     expect(arg.eventProperties.platform).toBe('web');
     expect(typeof arg.eventProperties.pp_timestamp).toBe('number');
     expect(arg.eventProperties.url).toBeDefined();
+    expect(arg.page).toBeDefined();
+    expect(arg.page.url).toBeDefined();
+    expect(typeof arg.page.title).toBe('string');
+    expect(typeof arg.page.referrer).toBe('string');
   });
 
   it('skips non-event objects', () => {

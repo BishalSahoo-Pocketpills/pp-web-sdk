@@ -30,6 +30,11 @@ export function createEventPropertiesEnricher(
             pp_timestamp: Date.now(),
             platform: CONFIG.defaults.platform
           };
+          arg.page = {
+            url: win.location.pathname || '/',
+            title: win.document.title || '',
+            referrer: win.document.referrer || ''
+          };
         }
       }
       return pushFn.apply(null, args);
