@@ -138,6 +138,20 @@ export function createEventPropertiesEnricher(
             title: win.document.title || '',
             referrer: win.document.referrer || ''
           };
+
+          // Raw ad platform click IDs and cookies for conversion tracking
+          var params = new URLSearchParams(win.location.search || '');
+          arg.attribution = {
+            fbclid: params.get('fbclid') || null,
+            fbc: ppLib.getCookie('_fbc') || null,
+            fbp: ppLib.getCookie('_fbp') || null,
+            gclid: params.get('gclid') || null,
+            gbraid: params.get('gbraid') || null,
+            wbraid: params.get('wbraid') || null,
+            ttclid: params.get('ttclid') || null,
+            epik: params.get('epik') || null,
+            rdt_cid: params.get('rdt_cid') || null
+          };
         }
       }
       return pushFn.apply(null, args);
