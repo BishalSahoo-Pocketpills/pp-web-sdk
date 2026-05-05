@@ -772,8 +772,6 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
         // Initialize shared marketing attribution service (extracts params once)
         if (ppLib.attribution) {
           ppLib.attribution.configure({
-            includeFirstTouch: SafeUtils.get(CONFIG, 'attribution.enableFirstTouch', true),
-            includeLastTouch: SafeUtils.get(CONFIG, 'attribution.enableLastTouch', true),
             persistFirstTouch: SafeUtils.get(CONFIG, 'attribution.persistAcrossSessions', false),
             sessionTimeoutMs: SafeUtils.get(CONFIG, 'attribution.sessionTimeout', 30) * 60 * 1000,
           });
