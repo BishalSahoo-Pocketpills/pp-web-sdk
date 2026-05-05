@@ -614,17 +614,21 @@ describe('Campaign / UTM Attribution', () => {
   });
 
   describe('resetCampaign()', () => {
-    it('sets all UTM params to $direct on session timeout', () => {
+    it('sets utm_source [last touch] to $direct and other utm_* keys to "none" on session timeout', () => {
       const loadedCallback = initAndGetLoadedCallback({ sessionTimeout: 1 });
       const mp = createMockMixpanel();
 
       mp.register({ 'last event time': Date.now() - 100, 'session ID': 'old' });
       invokeLoadedCallback(loadedCallback, mp);
 
-      const keywords = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
-      keywords.forEach((kw) => {
+      // Mixpanel convention: $direct means "no source", and the other utm_*
+      // dimensions default to "none" so direct visits produce queryable values.
+      expect(mp.people.set).toHaveBeenCalledWith(
+        expect.objectContaining({ 'utm_source [last touch]': '$direct' })
+      );
+      ['utm_medium', 'utm_campaign', 'utm_content', 'utm_term'].forEach((kw) => {
         expect(mp.people.set).toHaveBeenCalledWith(
-          expect.objectContaining({ [kw + ' [last touch]']: '$direct' })
+          expect.objectContaining({ [kw + ' [last touch]']: 'none' })
         );
       });
     });
@@ -657,7 +661,7 @@ describe('Campaign / UTM Attribution', () => {
       });
     });
 
-    it('returns false when no UTM params present (no utm keys registered)', () => {
+    it('registers $direct/none super-properties when no UTM params present', () => {
       const originalURL = document.URL;
       Object.defineProperty(document, 'URL', {
         value: 'http://localhost/test?foo=bar',
@@ -669,11 +673,26 @@ describe('Campaign / UTM Attribution', () => {
       const mp = createMockMixpanel();
       invokeLoadedCallback(loadedCallback, mp);
 
-      const registerCalls = mp.register.mock.calls.map((c) => c[0]);
-      const hasUtm = registerCalls.some(
-        (props) => props && props['utm_source [last touch]'] !== undefined
+      // Defaults are always emitted so direct visits produce stable
+      // utm_*[first touch] / utm_*[last touch] super-properties in Mixpanel.
+      expect(mp.register).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'utm_source [last touch]': '$direct',
+          'utm_medium [last touch]': 'none',
+          'utm_campaign [last touch]': 'none',
+          'utm_content [last touch]': 'none',
+          'utm_term [last touch]': 'none',
+        })
       );
-      expect(hasUtm).toBe(false);
+      expect(mp.register).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'utm_source [first touch]': '$direct',
+          'utm_medium [first touch]': 'none',
+          'utm_campaign [first touch]': 'none',
+          'utm_content [first touch]': 'none',
+          'utm_term [first touch]': 'none',
+        })
+      );
 
       Object.defineProperty(document, 'URL', {
         value: originalURL,
@@ -707,7 +726,11 @@ describe('Campaign / UTM Attribution', () => {
         })
       );
 
-      expect(mp.register_once).toHaveBeenCalledWith(
+      // First-touch super-properties are now registered with `register`
+      // (not `register_once`) because the attribution service owns the
+      // first-touch lock semantics — getFirstTouch() returns null until
+      // the first attributed visit, then the locked value forever after.
+      expect(mp.register).toHaveBeenCalledWith(
         expect.objectContaining({
           'utm_source [first touch]': 'google',
           'utm_medium [first touch]': 'cpc',
@@ -718,7 +741,7 @@ describe('Campaign / UTM Attribution', () => {
         expect.objectContaining({ 'utm_source [last touch]': 'google' })
       );
 
-      expect(mp.people.set_once).toHaveBeenCalledWith(
+      expect(mp.people.set).toHaveBeenCalledWith(
         expect.objectContaining({ 'utm_source [first touch]': 'google' })
       );
 
@@ -729,7 +752,69 @@ describe('Campaign / UTM Attribution', () => {
       });
     });
 
-    it('sets empty string for missing UTM params when some are present', () => {
+    it('reads normalized attribution (e.g. source=febpt) via the attribution service, not just utm_* URL params', () => {
+      // Simulates a user landing at /lp/?source=febpt where the URL has no
+      // utm_* prefix. The attribution service normalizes `source=` to
+      // utm_source via marketingAttribution; mixpanel super-properties
+      // should pick it up too.
+      const originalURL = document.URL;
+      Object.defineProperty(document, 'URL', {
+        value: 'http://localhost/lp/?source=febpt',
+        writable: true,
+        configurable: true,
+      });
+
+      const loadedCallback = initAndGetLoadedCallback();
+
+      // Stub the shared attribution service to return the normalized touch
+      // (production: attribution.init() does this from window.location.search).
+      window.ppLib.attribution.getLastTouch = vi.fn(() => ({
+        source: 'febpt',
+        medium: 'organic',
+        campaign: '',
+        platform: 'organic_search',
+        clickId: '',
+        landingPage: '/lp/',
+        referrer: 'tagassistant.google.com',
+        timestamp: '2026-05-05T00:00:00Z',
+      }));
+      window.ppLib.attribution.getFirstTouch = vi.fn(() => ({
+        source: 'febpt',
+        medium: 'organic',
+        campaign: '',
+        platform: 'organic_search',
+        clickId: '',
+        landingPage: '/lp/',
+        referrer: 'tagassistant.google.com',
+        timestamp: '2026-05-05T00:00:00Z',
+      }));
+
+      const mp = createMockMixpanel();
+      invokeLoadedCallback(loadedCallback, mp);
+
+      expect(mp.register).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'utm_source [last touch]': 'febpt',
+          'utm_medium [last touch]': 'organic',
+          'utm_campaign [last touch]': 'none',
+        })
+      );
+      expect(mp.register).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'utm_source [first touch]': 'febpt',
+          'utm_medium [first touch]': 'organic',
+          'utm_campaign [first touch]': 'none',
+        })
+      );
+
+      Object.defineProperty(document, 'URL', {
+        value: originalURL,
+        writable: true,
+        configurable: true,
+      });
+    });
+
+    it('falls back to "none" for missing UTM dimensions when some are present', () => {
       const originalURL = document.URL;
       Object.defineProperty(document, 'URL', {
         value: 'http://localhost/test?utm_source=google',
@@ -744,10 +829,10 @@ describe('Campaign / UTM Attribution', () => {
       expect(mp.register).toHaveBeenCalledWith(
         expect.objectContaining({
           'utm_source [last touch]': 'google',
-          'utm_medium [last touch]': '',
-          'utm_campaign [last touch]': '',
-          'utm_content [last touch]': '',
-          'utm_term [last touch]': '',
+          'utm_medium [last touch]': 'none',
+          'utm_campaign [last touch]': 'none',
+          'utm_content [last touch]': 'none',
+          'utm_term [last touch]': 'none',
         })
       );
 

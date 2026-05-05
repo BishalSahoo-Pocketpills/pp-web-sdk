@@ -211,45 +211,70 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
 
   const CAMPAIGN_KEYWORDS = 'utm_source utm_medium utm_campaign utm_content utm_term'.split(' ');
 
-  function resetCampaign(): void {
+  // Fallback convention (Mixpanel-style):
+  //   utm_source → '$direct'   (matches Mixpanel's stock attribution model)
+  //   everything else → 'none'
+  // Applied uniformly across [first touch] / [last touch] / session-reset
+  // so direct visits produce stable, queryable values rather than empty
+  // strings or missing keys.
+  function fallbackForKeyword(keyword: string): string {
+    return keyword === 'utm_source' ? '$direct' : 'none';
+  }
+
+  // Read source/medium/campaign from the SDK's attribution service so we
+  // pick up traffic that uses non-utm parameter names (source=, gclid, etc.)
+  // — same normalization as marketingAttribution. content/term aren't part
+  // of TouchAttribution, so URL extraction is consulted as a layered fallback.
+  // If both sources are empty, the canonical fallback (`$direct` for source,
+  // `none` for everything else) ensures the super-property always exists.
+  function buildTouchParams(
+    touch: import('@src/common/attribution').TouchAttribution | null,
+    suffix: '[first touch]' | '[last touch]'
+  ): Record<string, string> {
     const params: Record<string, string> = {};
+    const url = doc.URL;
     for (let i = 0; i < CAMPAIGN_KEYWORDS.length; i++) {
-      params[CAMPAIGN_KEYWORDS[i] + ' [last touch]'] = '$direct';
+      const kw = CAMPAIGN_KEYWORDS[i];
+      let value = '';
+      // 1) Normalized attribution service (handles source=, gclid → utm_*).
+      if (touch) {
+        if (kw === 'utm_source') value = touch.source || '';
+        else if (kw === 'utm_medium') value = touch.medium || '';
+        else if (kw === 'utm_campaign') value = touch.campaign || '';
+      }
+      // 2) URL extraction — covers utm_content/utm_term and visits where
+      //    attribution hasn't been initialized yet (first paint, edge cases).
+      if (!value) {
+        value = ppLib.getQueryParam(url, kw) || '';
+      }
+      // 3) Canonical default so the key is always present.
+      params[kw + ' ' + suffix] = value || fallbackForKeyword(kw);
     }
+    return params;
+  }
+
+  function resetCampaign(): void {
+    // Session reset: clear last-touch attribution to canonical defaults.
+    const params = buildTouchParams(null, '[last touch]');
     mixpanel.people.set(params);
     mixpanel.register(params);
   }
 
-  function checkIfUtmParamsPresent(url: string): boolean {
-    for (let i = 0; i < CAMPAIGN_KEYWORDS.length; i++) {
-      /*! v8 ignore start */
-      if (ppLib.getQueryParam(url, CAMPAIGN_KEYWORDS[i]).length) return true;
-      /*! v8 ignore stop */
-    }
-    return false;
-  }
-
   function campaignParams(): void {
-    let kw = '';
-    const lastParams: Record<string, string> = {};
-    const firstParams: Record<string, string> = {};
+    // Read attribution from the shared service. This handles `source=` /
+    // `gclid` / etc. → utm_* normalization that the previous URL-only
+    // implementation missed. First-touch lock semantics are owned by the
+    // attribution service: getFirstTouch() returns null until the first
+    // attributed visit, then the locked value forever after — so we can
+    // safely use register() (overwrite) without losing the lock.
+    const attr = ppLib.attribution;
+    const firstTouch = attr ? attr.getFirstTouch() : null;
+    const lastTouch = attr ? attr.getLastTouch() : null;
+
+    const lastParams = buildTouchParams(lastTouch, '[last touch]');
+    const firstParams = buildTouchParams(firstTouch, '[first touch]');
+
     const url = doc.URL;
-
-    /*! v8 ignore start */
-    if (checkIfUtmParamsPresent(url)) {
-    /*! v8 ignore stop */
-      for (let i = 0; i < CAMPAIGN_KEYWORDS.length; i++) {
-        kw = ppLib.getQueryParam(url, CAMPAIGN_KEYWORDS[i]);
-        if (kw.length) {
-          lastParams[CAMPAIGN_KEYWORDS[i] + ' [last touch]'] = kw;
-          firstParams[CAMPAIGN_KEYWORDS[i] + ' [first touch]'] = kw;
-        } else {
-          lastParams[CAMPAIGN_KEYWORDS[i] + ' [last touch]'] = '';
-          firstParams[CAMPAIGN_KEYWORDS[i] + ' [first touch]'] = '';
-        }
-      }
-    }
-
     const gclid = ppLib.getQueryParam(url, 'gclid');
     /*! v8 ignore start */
     if (gclid.length) {
@@ -265,9 +290,9 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
     }
 
     mixpanel.people.set(lastParams);
-    mixpanel.people.set_once(firstParams);
+    mixpanel.people.set(firstParams);
     mixpanel.register(lastParams);
-    mixpanel.register_once(firstParams);
+    mixpanel.register(firstParams);
   }
 
   // =====================================================

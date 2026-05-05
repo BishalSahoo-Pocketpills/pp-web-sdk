@@ -820,17 +820,21 @@ describe('Mixpanel native coverage', () => {
   // 11. Loaded callback — resetCampaign
   // ==========================================================================
   describe('loaded callback — resetCampaign', () => {
-    it('sets all UTM params to $direct on session timeout', async () => {
+    it('sets utm_source [last touch] to $direct and other utm_* keys to "none" on session timeout', async () => {
       const loadedCallback = await initAndGetLoadedCallback({ sessionTimeout: 1 });
       const mp = createMockMixpanel();
 
       mp.register({ 'last event time': Date.now() - 100, 'session ID': 'old' });
       invokeLoadedCallback(loadedCallback, mp);
 
-      const keywords = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
-      keywords.forEach((kw) => {
+      // Mixpanel convention: $direct means "no source", and the other utm_*
+      // dimensions default to "none" so direct visits produce queryable values.
+      expect(mp.people.set).toHaveBeenCalledWith(
+        expect.objectContaining({ 'utm_source [last touch]': '$direct' })
+      );
+      ['utm_medium', 'utm_campaign', 'utm_content', 'utm_term'].forEach((kw) => {
         expect(mp.people.set).toHaveBeenCalledWith(
-          expect.objectContaining({ [kw + ' [last touch]']: '$direct' })
+          expect.objectContaining({ [kw + ' [last touch]']: 'none' })
         );
       });
     });
@@ -1207,7 +1211,11 @@ describe('Mixpanel native coverage', () => {
         })
       );
 
-      expect(mp.register_once).toHaveBeenCalledWith(
+      // First-touch super-properties are now registered with `register`
+      // (not `register_once`) because the attribution service owns the
+      // first-touch lock semantics — getFirstTouch() returns null until
+      // the first attributed visit, then the locked value forever after.
+      expect(mp.register).toHaveBeenCalledWith(
         expect.objectContaining({
           'utm_source [first touch]': 'google',
           'utm_medium [first touch]': 'cpc',
@@ -1218,12 +1226,12 @@ describe('Mixpanel native coverage', () => {
         expect.objectContaining({ 'utm_source [last touch]': 'google' })
       );
 
-      expect(mp.people.set_once).toHaveBeenCalledWith(
+      expect(mp.people.set).toHaveBeenCalledWith(
         expect.objectContaining({ 'utm_source [first touch]': 'google' })
       );
     });
 
-    it('sets empty string for missing UTM params when some are present', async () => {
+    it('falls back to "none" for missing UTM dimensions when some are present', async () => {
       Object.defineProperty(document, 'URL', {
         value: 'http://localhost/test?utm_source=google',
         writable: true,
@@ -1237,15 +1245,15 @@ describe('Mixpanel native coverage', () => {
       expect(mp.register).toHaveBeenCalledWith(
         expect.objectContaining({
           'utm_source [last touch]': 'google',
-          'utm_medium [last touch]': '',
-          'utm_campaign [last touch]': '',
-          'utm_content [last touch]': '',
-          'utm_term [last touch]': '',
+          'utm_medium [last touch]': 'none',
+          'utm_campaign [last touch]': 'none',
+          'utm_content [last touch]': 'none',
+          'utm_term [last touch]': 'none',
         })
       );
     });
 
-    it('does not register UTM keys when no UTM params present', async () => {
+    it('registers $direct/none super-properties when no UTM params present', async () => {
       Object.defineProperty(document, 'URL', {
         value: 'http://localhost/test?foo=bar',
         writable: true,
@@ -1256,11 +1264,26 @@ describe('Mixpanel native coverage', () => {
       const mp = createMockMixpanel();
       invokeLoadedCallback(loadedCallback, mp);
 
-      const registerCalls = mp.register.mock.calls.map((c: any) => c[0]);
-      const hasUtm = registerCalls.some(
-        (props: any) => props && props['utm_source [last touch]'] !== undefined
+      // Defaults are always emitted so direct visits produce stable
+      // utm_*[first touch] / utm_*[last touch] super-properties in Mixpanel.
+      expect(mp.register).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'utm_source [last touch]': '$direct',
+          'utm_medium [last touch]': 'none',
+          'utm_campaign [last touch]': 'none',
+          'utm_content [last touch]': 'none',
+          'utm_term [last touch]': 'none',
+        })
       );
-      expect(hasUtm).toBe(false);
+      expect(mp.register).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'utm_source [first touch]': '$direct',
+          'utm_medium [first touch]': 'none',
+          'utm_campaign [first touch]': 'none',
+          'utm_content [first touch]': 'none',
+          'utm_term [first touch]': 'none',
+        })
+      );
     });
 
     it('registers gclid when present', async () => {
