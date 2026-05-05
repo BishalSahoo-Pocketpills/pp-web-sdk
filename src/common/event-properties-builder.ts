@@ -200,20 +200,14 @@ export function createEventPropertiesBuilder(
   // with the full-name label "Country: Canada". The two coexist by design;
   // analysts querying our SDK should use lowercase `country`.
   //
-  // Best-effort fallback when the SDK cookie is missing: parse
-  // navigator.language (e.g. "en-CA" → "CA"). Browsers without a region
-  // give "en" and we return "". This mirrors browser locale, not IP
-  // geolocation, so it can disagree with mp_country_code on VPN'd users.
-  function countryFromLocale(): string {
-    try {
-      var lang = (win.navigator && win.navigator.language) || '';
-      var dash = lang.indexOf('-');
-      if (dash === -1) return '';
-      return lang.substring(dash + 1).toUpperCase();
-    } catch (e) {
-      return '';
-    }
-  }
+  // Source: cookie only. We deliberately do NOT fall back to
+  // navigator.language — it reflects the browser's UI language (often
+  // "en-US" by default on Chrome regardless of physical location) and
+  // produces confidently-wrong values. When the cookie is empty we leave
+  // `country` empty rather than ship fake data; analysts can rely on
+  // Mixpanel's IP-based `mp_country_code` for those events. The cookie
+  // should be set server-side from real IP geolocation (e.g. via the
+  // CF-IPCountry header at the edge).
 
   function buildStable() {
     if (stableCache) return stableCache;
@@ -221,7 +215,7 @@ export function createEventPropertiesBuilder(
     stableCache = {
       browser: parseBrowser(ua),
       device_type: parseDeviceType(ua),
-      country: ppLib.getCookie(cookieNames.country) || countryFromLocale(),
+      country: ppLib.getCookie(cookieNames.country) || '',
       device_id: getOrCreateDeviceId()
     };
     return stableCache;
