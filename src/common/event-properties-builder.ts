@@ -192,11 +192,18 @@ export function createEventPropertiesBuilder(
     }
   }
 
-  // Best-effort country resolution when the SDK cookie is missing.
-  // navigator.language returns locales like 'en-CA' / 'fr-FR' — we extract
-  // the ISO country part. Browsers without a region give 'en' and we
-  // return ''. This mirrors browser locale, not IP geolocation, so it can
-  // disagree with Mixpanel's mp_country_code on VPN'd users.
+  // The SDK emits `country` as an ISO-2 code (e.g. "CA") for cross-tool
+  // joins (Mixpanel, Braze, GA, BigQuery exports). This is INTENTIONALLY
+  // distinct from the geo-derived properties Mixpanel auto-attaches to
+  // every event from server-side IP lookup — those appear in the raw
+  // payload as `mp_country_code` ("CA") and are shown in Mixpanel's UI
+  // with the full-name label "Country: Canada". The two coexist by design;
+  // analysts querying our SDK should use lowercase `country`.
+  //
+  // Best-effort fallback when the SDK cookie is missing: parse
+  // navigator.language (e.g. "en-CA" → "CA"). Browsers without a region
+  // give "en" and we return "". This mirrors browser locale, not IP
+  // geolocation, so it can disagree with mp_country_code on VPN'd users.
   function countryFromLocale(): string {
     try {
       var lang = (win.navigator && win.navigator.language) || '';
