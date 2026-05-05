@@ -44,7 +44,7 @@ export interface AttributionServiceConfig {
 // Platform detection from click IDs
 // ---------------------------------------------------------------------------
 
-var CLICK_ID_PLATFORM_MAP: ReadonlyArray<{ params: string[]; platform: string }> = [
+const CLICK_ID_PLATFORM_MAP: ReadonlyArray<{ params: string[]; platform: string }> = [
   { params: ['gclid', 'gclsrc', 'dclid', 'wbraid', 'gbraid'], platform: 'google_ads' },
   { params: ['fbclid'], platform: 'meta_ads' },
   { params: ['ttclid'], platform: 'tiktok_ads' },
@@ -56,8 +56,8 @@ var CLICK_ID_PLATFORM_MAP: ReadonlyArray<{ params: string[]; platform: string }>
 ];
 
 // Well-known referrer domains → platform classification
-var ORGANIC_SEARCH_DOMAINS = ['google.', 'bing.', 'yahoo.', 'duckduckgo.', 'baidu.', 'yandex.'];
-var ORGANIC_SOCIAL_DOMAINS = ['facebook.', 'instagram.', 'twitter.', 'x.com', 'linkedin.', 'tiktok.', 'pinterest.', 'reddit.'];
+const ORGANIC_SEARCH_DOMAINS = ['google.', 'bing.', 'yahoo.', 'duckduckgo.', 'baidu.', 'yandex.'];
+const ORGANIC_SOCIAL_DOMAINS = ['facebook.', 'instagram.', 'twitter.', 'x.com', 'linkedin.', 'tiktok.', 'pinterest.', 'reddit.'];
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -67,7 +67,7 @@ export function createAttributionService(
   win: Window & typeof globalThis,
   ppLib: PPLib,
 ) {
-  var config: AttributionServiceConfig = {
+  const config: AttributionServiceConfig = {
     includeFirstTouch: false,
     includeLastTouch: false,
     enrichEvents: true,
@@ -78,8 +78,8 @@ export function createAttributionService(
     storageKeySession: 'mktg_session',
   };
 
-  var cachedCurrent: TouchAttribution | null = null;
-  var initialized = false;
+  let cachedCurrent: TouchAttribution | null = null;
+  let initialized = false;
 
   // ---------------------------------------------------------------------------
   // Configuration
@@ -98,11 +98,11 @@ export function createAttributionService(
   // ---------------------------------------------------------------------------
 
   function extractParams(): Record<string, string> {
-    var params: Record<string, string> = {};
+    const params: Record<string, string> = {};
     try {
-      var searchParams = new URLSearchParams(win.location.search || '');
+      const searchParams = new URLSearchParams(win.location.search || '');
       searchParams.forEach(function(value, key) {
-        var sanitized = ppLib.Security.sanitize(value);
+        const sanitized = ppLib.Security.sanitize(value);
         if (sanitized) {
           params[key.toLowerCase()] = sanitized;
         }
@@ -119,9 +119,9 @@ export function createAttributionService(
 
   function detectPlatform(params: Record<string, string>, referrer: string): string {
     // Priority 1: Click ID detection
-    for (var i = 0; i < CLICK_ID_PLATFORM_MAP.length; i++) {
-      var entry = CLICK_ID_PLATFORM_MAP[i];
-      for (var j = 0; j < entry.params.length; j++) {
+    for (let i = 0; i < CLICK_ID_PLATFORM_MAP.length; i++) {
+      const entry = CLICK_ID_PLATFORM_MAP[i];
+      for (let j = 0; j < entry.params.length; j++) {
         if (params[entry.params[j]]) {
           return entry.platform;
         }
@@ -129,11 +129,11 @@ export function createAttributionService(
     }
 
     // Priority 2: utm_source mapping
-    var utmSource = params.utm_source;
+    const utmSource = params.utm_source;
     if (utmSource) {
-      var lower = utmSource.toLowerCase();
-      var medium = (params.utm_medium || '').toLowerCase();
-      var isPaid = medium === 'cpc' || medium === 'cpm' || medium === 'paid_social' || medium === 'paid' || medium === 'ppc';
+      const lower = utmSource.toLowerCase();
+      const medium = (params.utm_medium || '').toLowerCase();
+      const isPaid = medium === 'cpc' || medium === 'cpm' || medium === 'paid_social' || medium === 'paid' || medium === 'ppc';
 
       // Map known sources — distinguish paid vs organic using utm_medium
       if (lower === 'google') return isPaid ? 'google_ads' : 'google';
@@ -150,11 +150,11 @@ export function createAttributionService(
 
     // Priority 3: Referrer-based detection
     if (referrer && referrer !== 'direct' && referrer !== 'internal' && referrer !== 'unknown') {
-      var refLower = referrer.toLowerCase();
-      for (var s = 0; s < ORGANIC_SEARCH_DOMAINS.length; s++) {
+      const refLower = referrer.toLowerCase();
+      for (let s = 0; s < ORGANIC_SEARCH_DOMAINS.length; s++) {
         if (refLower.indexOf(ORGANIC_SEARCH_DOMAINS[s]) !== -1) return 'organic_search';
       }
-      for (var o = 0; o < ORGANIC_SOCIAL_DOMAINS.length; o++) {
+      for (let o = 0; o < ORGANIC_SOCIAL_DOMAINS.length; o++) {
         if (refLower.indexOf(ORGANIC_SOCIAL_DOMAINS[o]) !== -1) return 'organic_social';
       }
       return 'referral';
@@ -164,10 +164,10 @@ export function createAttributionService(
   }
 
   function extractClickId(params: Record<string, string>): string {
-    for (var i = 0; i < CLICK_ID_PLATFORM_MAP.length; i++) {
-      var entry = CLICK_ID_PLATFORM_MAP[i];
-      for (var j = 0; j < entry.params.length; j++) {
-        var val = params[entry.params[j]];
+    for (let i = 0; i < CLICK_ID_PLATFORM_MAP.length; i++) {
+      const entry = CLICK_ID_PLATFORM_MAP[i];
+      for (let j = 0; j < entry.params.length; j++) {
+        const val = params[entry.params[j]];
         if (val) return val;
       }
     }
@@ -176,11 +176,11 @@ export function createAttributionService(
 
   function classifyReferrer(): string {
     try {
-      var ref = win.document.referrer || '';
+      const ref = win.document.referrer || '';
       if (!ref) return 'direct';
 
-      var refHost = new URL(ref).hostname;
-      var currentHost = win.location.hostname;
+      const refHost = new URL(ref).hostname;
+      const currentHost = win.location.hostname;
 
       if (refHost === currentHost) return 'internal';
       return refHost;
@@ -205,28 +205,28 @@ export function createAttributionService(
   // ---------------------------------------------------------------------------
 
   // Custom param aliases — non-standard params that map to standard fields
-  var SOURCE_ALIASES = ['source', 'src', 'ref'];
-  var MEDIUM_ALIASES = ['medium', 'channel'];
-  var CAMPAIGN_ALIASES = ['campaign', 'camp', 'promo'];
+  const SOURCE_ALIASES = ['source', 'src', 'ref'];
+  const MEDIUM_ALIASES = ['medium', 'channel'];
+  const CAMPAIGN_ALIASES = ['campaign', 'camp', 'promo'];
 
   function resolveParam(params: Record<string, string>, primary: string, aliases: string[]): string {
     if (params[primary]) return params[primary];
-    for (var i = 0; i < aliases.length; i++) {
+    for (let i = 0; i < aliases.length; i++) {
       if (params[aliases[i]]) return params[aliases[i]];
     }
     return '';
   }
 
   function buildTouch(params: Record<string, string>): TouchAttribution {
-    var referrer = classifyReferrer();
-    var source = resolveParam(params, 'utm_source', SOURCE_ALIASES);
-    var medium = resolveParam(params, 'utm_medium', MEDIUM_ALIASES);
-    var campaign = resolveParam(params, 'utm_campaign', CAMPAIGN_ALIASES);
+    const referrer = classifyReferrer();
+    const source = resolveParam(params, 'utm_source', SOURCE_ALIASES);
+    const medium = resolveParam(params, 'utm_medium', MEDIUM_ALIASES);
+    const campaign = resolveParam(params, 'utm_campaign', CAMPAIGN_ALIASES);
 
     // Detect platform from click IDs, utm_source (not custom aliases), or referrer.
     // Custom aliases like ?source=febpt populate the source field but should NOT
     // override platform detection — platform should come from known signals only.
-    var platform = detectPlatform(params, referrer);
+    const platform = detectPlatform(params, referrer);
 
     return {
       source: source || (platform !== 'direct' ? platform.replace('_ads', '').replace('_', '') : 'direct'),
@@ -245,9 +245,9 @@ export function createAttributionService(
   // ---------------------------------------------------------------------------
 
   function isSessionActive(): boolean {
-    var session = ppLib.Storage.get(config.storageKeySession);
-    if (!session || !session.ts) return false;
-    var elapsed = Date.now() - session.ts;
+    const session = ppLib.Storage.get<{ ts: number }>(config.storageKeySession);
+    if (!session || typeof session.ts !== 'number') return false;
+    const elapsed = Date.now() - session.ts;
     return elapsed < config.sessionTimeoutMs;
   }
 
@@ -260,7 +260,7 @@ export function createAttributionService(
   // ---------------------------------------------------------------------------
 
   function storeFirstTouch(touch: TouchAttribution): void {
-    var existing = ppLib.Storage.get(config.storageKeyFirst, config.persistFirstTouch);
+    const existing = ppLib.Storage.get(config.storageKeyFirst, config.persistFirstTouch);
     if (!existing) {
       ppLib.Storage.set(config.storageKeyFirst, touch, config.persistFirstTouch);
       ppLib.log('info', '[ppAttribution] First touch stored: ' + touch.platform + ' / ' + touch.source);
@@ -286,11 +286,11 @@ export function createAttributionService(
 
   function hasNewTrafficParams(params: Record<string, string>): boolean {
     // Check if URL has any marketing-relevant params (UTM, click IDs, custom aliases)
-    var marketingKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+    const marketingKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
       'gclid', 'gclsrc', 'dclid', 'wbraid', 'gbraid', 'fbclid', 'ttclid',
       'msclkid', 'li_fat_id', 'twclid', 'epik', 'sccid',
       ...SOURCE_ALIASES, ...MEDIUM_ALIASES, ...CAMPAIGN_ALIASES];
-    for (var i = 0; i < marketingKeys.length; i++) {
+    for (let i = 0; i < marketingKeys.length; i++) {
       if (params[marketingKeys[i]]) return true;
     }
     return false;
@@ -300,10 +300,10 @@ export function createAttributionService(
     if (initialized) return;
     initialized = true;
 
-    var params = extractParams();
-    var current = buildTouch(params);
-    var hasNewParams = hasNewTrafficParams(params);
-    var sessionActive = isSessionActive();
+    const params = extractParams();
+    const current = buildTouch(params);
+    const hasNewParams = hasNewTrafficParams(params);
+    const sessionActive = isSessionActive();
 
     // Always update current session cache
     cachedCurrent = current;
@@ -318,7 +318,7 @@ export function createAttributionService(
       storeLastTouch(current);
     } else {
       // Restore cached current from existing last touch for consistency
-      var existingLast = getLastTouch();
+      const existingLast = getLastTouch();
       if (existingLast) cachedCurrent = existingLast;
     }
 
@@ -339,10 +339,10 @@ export function createAttributionService(
   function getMarketingAttribution(): MarketingAttribution | null {
     if (!config.enrichEvents) return null;
 
-    var current = cachedCurrent || getLastTouch();
+    const current = cachedCurrent || getLastTouch();
     if (!current) return null;
 
-    var attribution: MarketingAttribution = {
+    const attribution: MarketingAttribution = {
       source: current.source,
       medium: current.medium,
       campaign: current.campaign,
@@ -354,12 +354,12 @@ export function createAttributionService(
     };
 
     if (config.includeFirstTouch) {
-      var first = getFirstTouch();
+      const first = getFirstTouch();
       if (first) attribution.firstTouch = first;
     }
 
     if (config.includeLastTouch) {
-      var last = getLastTouch();
+      const last = getLastTouch();
       if (last) attribution.lastTouch = last;
     }
 
@@ -373,7 +373,7 @@ export function createAttributionService(
   function enrichEvent<T extends Record<string, unknown>>(event: T): T & { marketingAttribution?: MarketingAttribution } {
     if (!config.enrichEvents) return event;
 
-    var attribution = getMarketingAttribution();
+    const attribution = getMarketingAttribution();
     if (!attribution) return event;
 
     // Attach attribution as a new property — safe because callers pass
@@ -391,8 +391,8 @@ export function createAttributionService(
   function getEnricher(): (pushFn: (...args: any[]) => number) => (...args: any[]) => number {
     return function withAttribution(pushFn: (...args: any[]) => number) {
       return function() {
-        var args = Array.prototype.slice.call(arguments) as any[];
-        for (var i = 0; i < args.length; i++) {
+        const args = Array.prototype.slice.call(arguments) as any[];
+        for (let i = 0; i < args.length; i++) {
           if (args[i] && typeof args[i] === 'object' && args[i].event && !args[i].marketingAttribution) {
             enrichEvent(args[i]);
           }
@@ -406,21 +406,21 @@ export function createAttributionService(
   // Mixpanel super property registration
   // ---------------------------------------------------------------------------
 
-  var mixpanelRegistered = false;
+  let mixpanelRegistered = false;
 
   function registerMixpanelAttribution(): void {
     if (mixpanelRegistered || !config.enrichEvents) return;
     mixpanelRegistered = true;
 
     try {
-      var registerMixpanel = function() {
-        var mp = (win as unknown as Record<string, unknown>).mixpanel as Record<string, unknown> | undefined;
+      const registerMixpanel = function() {
+        const mp = (win as unknown as Record<string, unknown>).mixpanel as Record<string, unknown> | undefined;
         if (!mp || typeof mp.register !== 'function') return false;
 
-        var attribution = getMarketingAttribution();
+        const attribution = getMarketingAttribution();
         if (attribution) {
           (mp.register as Function)({ marketingAttribution: attribution });
-          var people = mp.people as Record<string, unknown> | undefined;
+          const people = mp.people as Record<string, unknown> | undefined;
           if (people && typeof people.set === 'function') {
             (people.set as Function)({ marketingAttribution: attribution });
           }
@@ -431,8 +431,8 @@ export function createAttributionService(
 
       // Mixpanel may not be loaded yet — retry with polling
       if (!registerMixpanel()) {
-        var attempts = 0;
-        var interval = win.setInterval(function() {
+        let attempts = 0;
+        const interval = win.setInterval(function() {
           if (registerMixpanel() || ++attempts >= 20) {
             win.clearInterval(interval);
           }

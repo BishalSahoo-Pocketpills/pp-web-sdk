@@ -162,9 +162,9 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
   // =====================================================
 
   /*! v8 ignore start */
-  var consentCacheResult: boolean | null = null;
-  var consentCacheTime: number = 0;
-  var CONSENT_CACHE_TTL = 60000; // 60 seconds
+  let consentCacheResult: boolean | null = null;
+  let consentCacheTime: number = 0;
+  const CONSENT_CACHE_TTL = 60000; // 60 seconds
 
   const Consent = {
     state: SafeUtils.get(CONFIG, 'consent.defaultState', 'approved') as string,
@@ -176,13 +176,13 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
           return true;
         }
 
-        var now = Date.now();
+        const now = Date.now();
         if (consentCacheResult !== null && (now - consentCacheTime) < CONSENT_CACHE_TTL) {
           return consentCacheResult;
         }
 
         /*! v8 ignore start */
-        var result: boolean | null = null;
+        let result: boolean | null = null;
 
         if (SafeUtils.get(CONFIG, 'consent.frameworks.custom.enabled', false)) {
           try {
@@ -1022,7 +1022,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
 
         // Clone properties to avoid mutating the caller's object
         // marketingAttribution is auto-injected by global platform patches
-        var enrichedProps = ppLib.extend({}, properties);
+        const enrichedProps = ppLib.extend({}, properties);
 
         /*! v8 ignore start */
         if (SafeUtils.get(CONFIG, 'platforms.gtm.enabled', true)) {
@@ -1056,8 +1056,8 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
       try {
         const persist = SafeUtils.get(CONFIG, 'attribution.persistAcrossSessions', false);
         return {
-          firstTouch: Storage.get('first_touch', persist) || null,
-          lastTouch: Storage.get('last_touch') || null
+          firstTouch: Storage.get<TrackedParams>('first_touch', persist) || null,
+          lastTouch: Storage.get<TrackedParams>('last_touch') || null
         };
       } catch (e) {
         Utils.log('error', 'Get attribution error', e);

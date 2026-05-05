@@ -14,31 +14,47 @@ export interface PPLibConfig {
 }
 
 export interface SafeUtils {
-  get: (obj: any, path: string, defaultValue?: any) => any;
-  set: (obj: any, path: string, value: any) => boolean;
-  toString: (val: any) => string;
-  exists: (val: any) => boolean;
-  toArray: (val: any) => any[];
-  forEach: (arr: any[], callback: (item: any, index: number, arr: any[]) => void) => void;
+  // Overloaded: literal-typed defaults (e.g. `''`, `0`) widen to their
+  // primitive types so callers don't have to annotate. Object/array
+  // defaults flow through generically. Without a default, the return is
+  // `unknown` so the caller must narrow.
+  get: {
+    (obj: unknown, path: string, defaultValue: string): string;
+    (obj: unknown, path: string, defaultValue: number): number;
+    (obj: unknown, path: string, defaultValue: boolean): boolean;
+    <T>(obj: unknown, path: string, defaultValue: T): T;
+    (obj: unknown, path: string): unknown;
+  };
+  set: (obj: object, path: string, value: unknown) => boolean;
+  toString: (val: unknown) => string;
+  exists: (val: unknown) => boolean;
+  toArray: <T = unknown>(val: T | T[] | null | undefined) => T[];
+  forEach: <T>(arr: T[], callback: (item: T, index: number, arr: T[]) => void) => void;
 }
 
 export interface SecurityJson {
-  parse: (str: string, fallback?: any) => any;
-  stringify: (obj: any) => string | null;
+  parse: {
+    (str: string, fallback: string): string;
+    (str: string, fallback: number): number;
+    (str: string, fallback: boolean): boolean;
+    <T>(str: string, fallback: T): T;
+    (str: string): unknown;
+  };
+  stringify: (obj: unknown) => string | null;
 }
 
 export interface Security {
-  sanitize: (input: any) => string;
+  sanitize: (input: unknown) => string;
   isValidUrl: (url: string) => boolean;
   json: SecurityJson;
-  validateData: (data: any) => boolean;
+  validateData: (data: unknown) => boolean;
 }
 
 export interface Storage {
   isAvailable: (type?: string) => boolean;
   getKey: (key: string) => string;
-  set: (key: string, value: any, persistent?: boolean) => boolean;
-  get: (key: string, persistent?: boolean) => any;
+  set: (key: string, value: unknown, persistent?: boolean) => boolean;
+  get: <T = unknown>(key: string, persistent?: boolean) => T | null;
   remove: (key: string, persistent?: boolean) => void;
   clear: () => void;
 }
@@ -53,8 +69,8 @@ export interface PPLib {
   getCookie: (name: string) => string | null;
   deleteCookie: (name: string) => void;
   getQueryParam: (url: string, findParam: string) => string;
-  log: (level: string, message: string, data?: any) => void;
-  extend: (target: any, source: any) => any;
+  log: (level: string, message: string, data?: unknown) => void;
+  extend: <T extends object, U>(target: T, source: U) => T & U;
   ready: (callback: (ppLib: PPLib) => void) => void;
   attribution: import('../common/attribution').AttributionService;
   login?: import('./login.types').LoginAPI;
@@ -67,9 +83,11 @@ export interface PPLib {
   vwo?: import('./vwo.types').VWOAPI;
   // Session management
   session?: import('../common/session').SessionService;
-  // DataLayer enricher system
-  registerEnricher?: (enricherFn: (pushFn: (...args: any[]) => number) => (...args: any[]) => number) => void;
-  _enrichers?: Array<(pushFn: (...args: any[]) => number) => (...args: any[]) => number>;
+  // DataLayer enricher system. The push args are intentionally unknown[] —
+  // callers from third-party tools (GTM, custom dataLayer pushes) feed
+  // arbitrary shapes; enrichers must validate before treating them as events.
+  registerEnricher?: (enricherFn: (pushFn: (...args: unknown[]) => number) => (...args: unknown[]) => number) => void;
+  _enrichers?: Array<(pushFn: (...args: unknown[]) => number) => (...args: unknown[]) => number>;
   // Shared event-properties builder (consumed by datalayer enricher and mixpanel.track wrapper)
   eventPropertiesBuilder?: import('../common/event-properties-builder').EventPropertiesBuilder;
   // Internal bound flags (prevent double-binding across script reloads)

@@ -43,21 +43,21 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
   function trackFacade(eventName: string, properties?: Record<string, unknown>): boolean {
     try {
       if (!CONFIG.enabled) return false;
-      var mp = (win as any).mixpanel;
+      const mp = (win as any).mixpanel;
       if (!mp || typeof mp.track !== 'function') return false;
       if (typeof eventName !== 'string' || !eventName) {
         ppLib.log('warn', '[ppMixpanel] track called with empty eventName');
         return false;
       }
 
-      var merged: Record<string, unknown>;
+      let merged: Record<string, unknown>;
       if (CONFIG.enrichTrack && ppLib.eventPropertiesBuilder) {
-        var enriched = ppLib.eventPropertiesBuilder.buildFlat();
+        const enriched = ppLib.eventPropertiesBuilder.buildFlat();
         // Caller-wins merge: enriched is the floor, caller's props override.
         merged = enriched;
         if (properties) {
-          var keys = Object.keys(properties);
-          for (var i = 0; i < keys.length; i++) {
+          const keys = Object.keys(properties);
+          for (let i = 0; i < keys.length; i++) {
             merged[keys[i]] = properties[keys[i]];
           }
         }
@@ -79,20 +79,35 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
 
   // Mixpanel JS SDK loader stub v1.2 (synced from cdn.mxpnl.com/libs/mixpanel-2-latest.min.js)
   // Last verified: 2026-03-17
+  //
+  // Restructured from the upstream `var`-based snippet to use `let`/`const`.
+  // The two block-scope hazards in the original — (1) `d` declared inside a
+  // `try` block but reassigned/used after it, and (2) `b`/`d`/`call2_args`/
+  // `call2` declared in a `for`-init but closed over by a sibling inner
+  // function `a()` — are resolved by hoisting those declarations to the
+  // enclosing scope. Behavior is identical: same stub queue, same method
+  // shadowing, same async script injection.
   function loadMixpanelSDK(): void {
     /*! v8 ignore start */
     if ((win as any).mixpanel && (win as any).mixpanel.__SV) return;
     /*! v8 ignore stop */
 
-    var c: any = doc;
+    const c: any = doc;
     /*! v8 ignore start */
-    var a: any = (win as any).mixpanel || [];
+    const a: any = (win as any).mixpanel || [];
 
     if (!a.__SV) {
     /*! v8 ignore stop */
-      var b: any = win;
+      let b: any = win;
+      // `d` starts as the hash-state extractor function (assigned inside the
+      // try below), then is reassigned to the first <script> element after
+      // the try. Hoisted out so it survives the block scope.
+      let d: any;
       try {
-        var d: any, m: any, j: any, k = b.location, f = k.hash;
+        let m: any;
+        let j: any;
+        const k = b.location;
+        const f = k.hash;
         d = function(a: any, b: any) {
           return (m = a.match(RegExp(b + '=([^&]*)'))) ? m[1] : null;
         };
@@ -103,22 +118,23 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
             history.replaceState(j.desiredHash || '', c.title, k.pathname + k.search)));
       } catch (n) {}
 
-      var l: any, h: any;
+      let l: any;
+      let h: any;
       (win as any).mixpanel = a;
       a._i = [];
       a.init = function(b: any, d: any, g: any) {
         function c(b: any, i: any) {
-          var a = i.split('.');
+          const a = i.split('.');
           2 == a.length && ((b = b[a[0]]), (i = a[1]));
           b[i] = function() {
             b.push([i].concat(Array.prototype.slice.call(arguments, 0)));
           };
         }
-        var e = a;
+        let e = a;
         'undefined' !== typeof g ? (e = a[g] = []) : (g = 'mixpanel');
         e.people = e.people || [];
         e.toString = function(b: any) {
-          var a = 'mixpanel';
+          let a = 'mixpanel';
           'mixpanel' !== g && (a += '.' + g);
           b || (a += ' (stub)');
           return a;
@@ -128,25 +144,25 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
         };
         l = 'disable time_event track track_pageview track_links track_forms track_with_groups add_group set_group remove_group register register_once alias unregister identify name_tag set_config reset opt_in_tracking opt_out_tracking has_opted_in_tracking has_opted_out_tracking clear_opt_in_out_tracking people.set people.set_once people.unset people.increment people.append people.union people.track_charge people.clear_charges people.delete_user people.remove'.split(' ');
         for (h = 0; h < l.length; h++) c(e, l[h]);
-        var f = 'set set_once union unset remove delete'.split(' ');
+        const f = 'set set_once union unset remove delete'.split(' ');
         e.get_group = function() {
+          // Hoisted out of the for-init so the inner `function a()` (declared
+          // outside the loop body) can close over them — preserves the
+          // original `var`-hoisting semantics under block scope.
+          const groupArgs = ['get_group'].concat(Array.prototype.slice.call(arguments, 0));
+          const groupShadow: any = {};
+          let call2_args: any;
+          let call2: any;
+
           function a(c: any) {
-            b[c] = function() {
+            groupShadow[c] = function() {
               call2_args = arguments;
               call2 = [c].concat(Array.prototype.slice.call(call2_args, 0));
-              e.push([d, call2]);
+              e.push([groupArgs, call2]);
             };
           }
-          for (
-            var b: any = {},
-              d = ['get_group'].concat(Array.prototype.slice.call(arguments, 0)),
-              call2_args: any,
-              call2: any,
-              c = 0;
-            c < f.length;
-            c++
-          ) a(f[c]);
-          return b;
+          for (let c = 0; c < f.length; c++) a(f[c]);
+          return groupShadow;
         };
         a._i.push([b, d, g]);
       };
@@ -338,20 +354,21 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
     //   - We only call mp.identify() for identified users (not $device: anonymous)
     //   - We compare before/after distinct_ids to detect actual migration
     //   - sessionStorage flag prevents re-checking after first page load
-    var preInitDistinctId: string | null = null;
+    let preInitDistinctId: string | null = null;
     if (CONFIG.crossSubdomainCookie && CONFIG.token) {
       try {
-        var migrationKey = 'pp_mp_migrated';
-        var alreadyMigrated = false;
+        const migrationKey = 'pp_mp_migrated';
+        let alreadyMigrated = false;
         try { alreadyMigrated = win.sessionStorage.getItem(migrationKey) === '1'; } catch (e) { /* no sessionStorage */ }
 
         if (!alreadyMigrated) {
-          var mpCookieName = 'mp_' + CONFIG.token + '_mixpanel';
-          var mpCookie = ppLib.getCookie(mpCookieName);
+          const mpCookieName = 'mp_' + CONFIG.token + '_mixpanel';
+          const mpCookie = ppLib.getCookie(mpCookieName);
           if (mpCookie) {
-            var parsed = ppLib.Security.json.parse(mpCookie);
-            if (parsed && parsed.distinct_id) {
-              preInitDistinctId = String(parsed.distinct_id);
+            const parsed = ppLib.Security.json.parse(mpCookie);
+            if (parsed && typeof parsed === 'object' && 'distinct_id' in parsed) {
+              const id = (parsed as { distinct_id: unknown }).distinct_id;
+              if (id !== undefined && id !== null) preInitDistinctId = String(id);
             }
           }
           try { win.sessionStorage.setItem(migrationKey, '1'); } catch (e) { /* no sessionStorage */ }
@@ -376,7 +393,7 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
         // If the user only had a subdomain cookie, Mixpanel won't find it and will
         // generate a new distinct_id. We detect this by comparing before/after.
         if (preInitDistinctId) {
-          var postInitDistinctId = mp.get_distinct_id ? mp.get_distinct_id() : null;
+          const postInitDistinctId = mp.get_distinct_id ? mp.get_distinct_id() : null;
 
           if (postInitDistinctId && postInitDistinctId !== preInitDistinctId) {
             // distinct_id changed → subdomain cookie wasn't picked up by parent domain init.
@@ -400,9 +417,9 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
         // identified users, or anonymous users we previously identified).
         try {
           if (ppLib.eventPropertiesBuilder) {
-            var bundle = ppLib.eventPropertiesBuilder.build();
-            var ppDistinctId = bundle.userProperties.pp_distinct_id;
-            var currentMpId = typeof mp.get_distinct_id === 'function' ? mp.get_distinct_id() : null;
+            const bundle = ppLib.eventPropertiesBuilder.build();
+            const ppDistinctId = bundle.userProperties.pp_distinct_id;
+            const currentMpId = typeof mp.get_distinct_id === 'function' ? mp.get_distinct_id() : null;
             if (ppDistinctId && currentMpId !== ppDistinctId) {
               mp.identify(ppDistinctId);
               ppLib.log('info', '[ppMixpanel] Unified Mixpanel distinct_id with pp_distinct_id (was: ' + currentMpId + ', now: ' + ppDistinctId + ')');
@@ -420,7 +437,7 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
 
         // Monkey-patch track() to always check session.
         // Uses stored original to prevent wrapper nesting across re-inits.
-        var originalTrack = mp.track._ppOriginal || mp.track;
+        const originalTrack = mp.track._ppOriginal || mp.track;
         mp.track = function() {
           SessionManager.check();
           mp.register({ 'last event time': Date.now() });
@@ -467,9 +484,10 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
           /*! v8 ignore start */
           if (expJson && typeof expJson === 'object') {
           /*! v8 ignore stop */
-            const data: Record<string, any> = {};
-            Object.keys(expJson).forEach(function(item: string) {
-              data[item] = expJson[item];
+            const expObj = expJson as Record<string, unknown>;
+            const data: Record<string, unknown> = {};
+            Object.keys(expObj).forEach(function(item: string) {
+              data[item] = expObj[item];
             });
             mp.people.set_once(data);
             mp.register(data);
@@ -485,17 +503,17 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
         // VWO experiment properties — register as super properties so they
         // appear on every subsequent event (page view, add to cart, purchase).
         // Read from ppLib (set by VWO module) or sessionStorage (persisted).
-        var vwoRegistered = false;
-        var vwoPollInterval: number | null = null;
+        let vwoRegistered = false;
+        let vwoPollInterval: number | null = null;
 
         function readVWOProps(): Record<string, string> | null {
-          var props = ppLib._vwoExperimentProps;
+          const props = ppLib._vwoExperimentProps;
           if (props && typeof props === 'object') return props;
           try {
-            var stored = win.sessionStorage.getItem('pp_vwo_exp_props');
+            const stored = win.sessionStorage.getItem('pp_vwo_exp_props');
             if (stored) {
-              var parsed = ppLib.Security.json.parse(stored);
-              if (parsed && typeof parsed === 'object') return parsed;
+              const parsed = ppLib.Security.json.parse(stored);
+              if (parsed && typeof parsed === 'object') return parsed as Record<string, string>;
             }
           } catch (e) { /* no sessionStorage */ }
           return null;
@@ -504,7 +522,7 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
         function registerVWOProps(): boolean {
           if (vwoRegistered) return true;
           try {
-            var props = readVWOProps();
+            const props = readVWOProps();
             if (props) {
               mp.register(props);
               if (typeof mp.people.set === 'function') {
@@ -537,7 +555,7 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
           });
 
           // Strategy 2: Poll for ppLib._vwoExperimentProps
-          var vwoPollCount = 0;
+          let vwoPollCount = 0;
           vwoPollInterval = win.setInterval(function() {
             vwoPollCount++;
             if (registerVWOProps() || vwoPollCount >= 30) {
