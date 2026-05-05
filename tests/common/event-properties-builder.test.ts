@@ -103,7 +103,7 @@ describe('createEventPropertiesBuilder', () => {
       });
     });
 
-    it('uses $direct/none fallbacks when first/last touch are missing', () => {
+    it('uses $direct/none fallbacks when first/last/current touch are missing', () => {
       const ppLib = makePPLib({
         attribution: { current: null, first: null, last: null, summary: null }
       });
@@ -115,9 +115,11 @@ describe('createEventPropertiesBuilder', () => {
       expect(bundle.eventProperties['utm_source [last touch]']).toBe('$direct');
       expect(bundle.eventProperties['utm_medium [last touch]']).toBe('none');
       expect(bundle.eventProperties['utm_campaign [last touch]']).toBe('none');
-      expect(bundle.eventProperties.utm_source).toBe('');
-      expect(bundle.eventProperties.utm_medium).toBe('');
-      expect(bundle.eventProperties.utm_campaign).toBe('');
+      // Current UTM keys also follow the $direct/none convention so direct
+      // visits produce stable values across all UTM dimensions.
+      expect(bundle.eventProperties.utm_source).toBe('$direct');
+      expect(bundle.eventProperties.utm_medium).toBe('none');
+      expect(bundle.eventProperties.utm_campaign).toBe('none');
       expect(bundle.eventProperties.initial_referrer).toBe('');
     });
 

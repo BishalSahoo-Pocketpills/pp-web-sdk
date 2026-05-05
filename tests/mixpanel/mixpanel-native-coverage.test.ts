@@ -661,12 +661,15 @@ describe('Mixpanel native coverage', () => {
       const logSpy = vi.spyOn(window.ppLib, 'log');
       invokeLoadedCallback(loadedCallback, mp);
 
-      // Should NOT call identify for anonymous users
-      expect(mp.identify).not.toHaveBeenCalled();
+      // Migration block must NOT identify with the $device: prefixed ID
+      // (Mixpanel forbids that). The separate unification step may still
+      // identify with the SDK's pp_distinct_id — that's expected and tested
+      // elsewhere.
+      expect(mp.identify).not.toHaveBeenCalledWith('$device:anon-abc');
       expect(logSpy).toHaveBeenCalledWith('info', expect.stringContaining('Anonymous subdomain user migrated'));
     });
 
-    it('does nothing when distinct_id is unchanged after init', async () => {
+    it('does nothing in the migration block when distinct_id is unchanged after init', async () => {
       setCookie('mp_test-token-abc_mixpanel', JSON.stringify({ distinct_id: 'same-id' }));
 
       const loadedCallback = await initAndGetLoadedCallback({
@@ -676,7 +679,9 @@ describe('Mixpanel native coverage', () => {
       mp.get_distinct_id = vi.fn(() => 'same-id');
       invokeLoadedCallback(loadedCallback, mp);
 
-      expect(mp.identify).not.toHaveBeenCalled();
+      // Migration block is a no-op when before/after IDs match. Unification
+      // step is independent.
+      expect(mp.identify).not.toHaveBeenCalledWith('same-id');
     });
 
     it('skips migration when already migrated (sessionStorage flag)', async () => {
@@ -690,8 +695,50 @@ describe('Mixpanel native coverage', () => {
       mp.get_distinct_id = vi.fn(() => 'different-id');
       invokeLoadedCallback(loadedCallback, mp);
 
-      // Should not identify since migration was already done
-      expect(mp.identify).not.toHaveBeenCalled();
+      // Migration block reads no cookie (sessionStorage flag set) so it
+      // never identifies with 'user-x'. Unification still runs.
+      expect(mp.identify).not.toHaveBeenCalledWith('user-x');
+    });
+
+    it('unifies Mixpanel distinct_id with SDK pp_distinct_id when they differ (logged-in user)', async () => {
+      // Logged-in: pp_distinct_id resolves to userId. Requires either
+      // app_is_authenticated=true, or both userId + patientId.
+      setCookie('userId', 'pp-user-42');
+      setCookie('app_is_authenticated', 'true');
+      const loadedCallback = await initAndGetLoadedCallback();
+      const mp = createMockMixpanel();
+      // Mixpanel auto-generated an anonymous device_id that doesn't match
+      // the SDK's pp_user_id.
+      mp.get_distinct_id = vi.fn(() => '$device:auto-mp-id');
+      invokeLoadedCallback(loadedCallback, mp);
+
+      // Unification step calls identify with SDK's pp_distinct_id, aligning
+      // Mixpanel with our identity system for cross-tool joins.
+      expect(mp.identify).toHaveBeenCalledWith('pp-user-42');
+    });
+
+    it('unifies Mixpanel distinct_id with SDK device_id for anonymous users', async () => {
+      const loadedCallback = await initAndGetLoadedCallback();
+      const mp = createMockMixpanel();
+      mp.get_distinct_id = vi.fn(() => '$device:auto-mp-id');
+      invokeLoadedCallback(loadedCallback, mp);
+
+      // Anonymous: pp_distinct_id falls back to device_id (the SDK's stored
+      // UUID), so identify() should be called with that exact value.
+      const ppDeviceId = window.localStorage.getItem('pp_device_id');
+      expect(ppDeviceId).toBeTruthy();
+      expect(mp.identify).toHaveBeenCalledWith(ppDeviceId);
+    });
+
+    it('skips unification when Mixpanel distinct_id already equals pp_distinct_id', async () => {
+      setCookie('userId', 'pp-user-42');
+      setCookie('app_is_authenticated', 'true');
+      const loadedCallback = await initAndGetLoadedCallback();
+      const mp = createMockMixpanel();
+      mp.get_distinct_id = vi.fn(() => 'pp-user-42'); // already matches
+      invokeLoadedCallback(loadedCallback, mp);
+
+      expect(mp.identify).not.toHaveBeenCalledWith('pp-user-42');
     });
 
     it('handles cookie read error gracefully', async () => {

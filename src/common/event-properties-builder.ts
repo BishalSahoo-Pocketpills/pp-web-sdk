@@ -192,13 +192,29 @@ export function createEventPropertiesBuilder(
     }
   }
 
+  // Best-effort country resolution when the SDK cookie is missing.
+  // navigator.language returns locales like 'en-CA' / 'fr-FR' — we extract
+  // the ISO country part. Browsers without a region give 'en' and we
+  // return ''. This mirrors browser locale, not IP geolocation, so it can
+  // disagree with Mixpanel's mp_country_code on VPN'd users.
+  function countryFromLocale(): string {
+    try {
+      var lang = (win.navigator && win.navigator.language) || '';
+      var dash = lang.indexOf('-');
+      if (dash === -1) return '';
+      return lang.substring(dash + 1).toUpperCase();
+    } catch (e) {
+      return '';
+    }
+  }
+
   function buildStable() {
     if (stableCache) return stableCache;
     var ua = (win.navigator && win.navigator.userAgent) || '';
     stableCache = {
       browser: parseBrowser(ua),
       device_type: parseDeviceType(ua),
-      country: ppLib.getCookie(cookieNames.country) || '',
+      country: ppLib.getCookie(cookieNames.country) || countryFromLocale(),
       device_id: getOrCreateDeviceId()
     };
     return stableCache;
@@ -232,10 +248,11 @@ export function createEventPropertiesBuilder(
       platform: defaultPlatform,
       is_logged_in: isLoggedIn,
 
-      // Current UTM (from URL)
-      utm_source: current ? current.source : '',
-      utm_medium: current ? current.medium : '',
-      utm_campaign: current ? current.campaign : '',
+      // Current UTM (from URL) — Mixpanel-style $direct/none fallbacks for
+      // consistency with [first touch] / [last touch] keys.
+      utm_source: current && current.source ? current.source : '$direct',
+      utm_medium: current && current.medium ? current.medium : 'none',
+      utm_campaign: current && current.campaign ? current.campaign : 'none',
 
       // First touch UTM (Mixpanel-style bracket keys with $direct/none fallbacks)
       'utm_source [first touch]': firstTouch && firstTouch.source ? firstTouch.source : '$direct',

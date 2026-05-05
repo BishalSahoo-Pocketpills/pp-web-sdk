@@ -408,6 +408,25 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
           // If distinct_id is the same, cookie was already on parent domain — no action needed.
         }
 
+        // Unify Mixpanel's distinct_id with the SDK's pp_distinct_id so
+        // cross-tool reports (Mixpanel ↔ Braze ↔ GA4) join cleanly without
+        // translation. Logged-in users get pp_user_id; anonymous users get
+        // the SDK's device_id. Skipped if the IDs already match (post-migration
+        // identified users, or anonymous users we previously identified).
+        try {
+          if (ppLib.eventPropertiesBuilder) {
+            var bundle = ppLib.eventPropertiesBuilder.build();
+            var ppDistinctId = bundle.userProperties.pp_distinct_id;
+            var currentMpId = typeof mp.get_distinct_id === 'function' ? mp.get_distinct_id() : null;
+            if (ppDistinctId && currentMpId !== ppDistinctId) {
+              mp.identify(ppDistinctId);
+              ppLib.log('info', '[ppMixpanel] Unified Mixpanel distinct_id with pp_distinct_id (was: ' + currentMpId + ', now: ' + ppDistinctId + ')');
+            }
+          }
+        } catch (e) {
+          ppLib.log('warn', '[ppMixpanel] distinct_id unification failed', e);
+        }
+
         // Update session timeout from config
         SessionManager.timeout = CONFIG.sessionTimeout;
 

@@ -130,7 +130,10 @@ describe('createEventPropertiesEnricher', () => {
     wrapped({ event: 'test' });
 
     const ep = mockPush.mock.calls[0][0].eventProperties;
-    expect(ep.utm_source).toBe('');
+    // Current UTM keys also follow the $direct/none convention.
+    expect(ep.utm_source).toBe('$direct');
+    expect(ep.utm_medium).toBe('none');
+    expect(ep.utm_campaign).toBe('none');
     expect(ep['utm_source [first touch]']).toBe('$direct');
     expect(ep['utm_medium [first touch]']).toBe('none');
     expect(ep['utm_campaign [first touch]']).toBe('none');
