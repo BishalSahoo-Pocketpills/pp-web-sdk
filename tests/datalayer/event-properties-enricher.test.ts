@@ -1,8 +1,9 @@
 import { createEventPropertiesEnricher } from '../../src/datalayer/enrichers/event-properties';
+import { createEventPropertiesBuilder } from '../../src/common/event-properties-builder';
 import type { PPLib } from '../../src/types/common.types';
 
 function makePPLib(cookies?: Record<string, string>): PPLib {
-  return {
+  const ppLib = {
     getCookie: vi.fn((name: string) => (cookies || {})[name] || null),
     session: {
       getOrCreateSessionId: vi.fn(() => 'test-session-id'),
@@ -15,7 +16,10 @@ function makePPLib(cookies?: Record<string, string>): PPLib {
       get: vi.fn(() => ({ source: 'google', medium: 'cpc', campaign: 'spring', platform: 'google_ads' })),
     },
     log: vi.fn(),
-  } as any;
+  } as unknown as PPLib;
+  // Wire up the shared builder the same way common module does in production.
+  ppLib.eventPropertiesBuilder = createEventPropertiesBuilder(window, ppLib);
+  return ppLib;
 }
 
 function makeConfig() {

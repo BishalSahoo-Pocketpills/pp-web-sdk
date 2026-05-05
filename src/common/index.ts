@@ -16,6 +16,7 @@ import { createExtend } from '@src/common/utils';
 import { createAttributionService } from '@src/common/attribution';
 import { createSessionService } from '@src/common/session';
 import { createDataLayerEnricher } from '@src/common/datalayer-enricher';
+import { createEventPropertiesBuilder } from '@src/common/event-properties-builder';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -108,6 +109,15 @@ import { createDataLayerEnricher } from '@src/common/datalayer-enricher';
 
   var enricher = createDataLayerEnricher(win, ppLib);
   ppLib.registerEnricher = enricher.registerEnricher;
+
+  // =====================================================
+  // SHARED EVENT-PROPERTIES BUILDER
+  // Single source of truth for per-event context. Consumed by the dataLayer
+  // enricher and the mixpanel.track wrapper so GTM and Mixpanel see the
+  // same canonical property shape.
+  // =====================================================
+
+  ppLib.eventPropertiesBuilder = createEventPropertiesBuilder(win, ppLib);
 
   // Attribution enrichment is now inside eventProperties (via the datalayer
   // module's event-properties enricher) — no separate root-level enricher needed.

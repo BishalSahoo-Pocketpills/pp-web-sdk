@@ -661,7 +661,14 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
           } else if (dataType === 'track' && win.mixpanel && win.mixpanel.track) {
           /*! v8 ignore stop */
             /*! v8 ignore start */
-            win.mixpanel.track(data.eventName || 'Unknown Event', data.properties || {});
+            // Route through the SDK facade so canonical event-properties
+            // context is merged in. Falls back to direct call if the
+            // mixpanel module isn't available (load-order guard).
+            if (ppLib.mixpanel && ppLib.mixpanel.track) {
+              ppLib.mixpanel.track(data.eventName || 'Unknown Event', data.properties || {});
+            } else {
+              win.mixpanel.track(data.eventName || 'Unknown Event', data.properties || {});
+            }
             /*! v8 ignore stop */
           }
 

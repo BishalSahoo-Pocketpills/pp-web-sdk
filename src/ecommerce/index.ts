@@ -250,7 +250,13 @@ import { createEventGuard } from '@src/common/event-guard';
         return;
       }
 
-      win.mixpanel.track(eventName, ecommerceData);
+      // Route through the SDK facade so canonical event-properties context
+      // (UTM touch, device, session, login, click IDs) is merged in.
+      if (ppLib.mixpanel && ppLib.mixpanel.track) {
+        ppLib.mixpanel.track(eventName, ecommerceData as unknown as Record<string, unknown>);
+      } else {
+        win.mixpanel.track(eventName, ecommerceData);
+      }
       ppLib.log('info', '[ppEcommerce] Mixpanel → ' + eventName, ecommerceData);
     } catch (e) {
       ppLib.log('error', '[ppEcommerce] Mixpanel send error', e);

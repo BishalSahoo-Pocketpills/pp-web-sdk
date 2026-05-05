@@ -70,6 +70,8 @@ export interface PPLib {
   // DataLayer enricher system
   registerEnricher?: (enricherFn: (pushFn: (...args: any[]) => number) => (...args: any[]) => number) => void;
   _enrichers?: Array<(pushFn: (...args: any[]) => number) => (...args: any[]) => number>;
+  // Shared event-properties builder (consumed by datalayer enricher and mixpanel.track wrapper)
+  eventPropertiesBuilder?: import('../common/event-properties-builder').EventPropertiesBuilder;
   // Internal bound flags (prevent double-binding across script reloads)
   _ecomBound?: boolean;
   _esBound?: boolean;

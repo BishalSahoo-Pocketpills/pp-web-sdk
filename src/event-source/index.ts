@@ -178,7 +178,13 @@ import type { EventSourceConfig, EventSourceData } from '@src/types/event-source
       }
       /*! v8 ignore stop */
 
-      win.mixpanel.track(CONFIG.mixpanelEventName, data);
+      // Route through the SDK facade so canonical event-properties context
+      // is merged in alongside the event-source payload.
+      if (ppLib.mixpanel && ppLib.mixpanel.track) {
+        ppLib.mixpanel.track(CONFIG.mixpanelEventName, data as unknown as Record<string, unknown>);
+      } else {
+        win.mixpanel.track(CONFIG.mixpanelEventName, data);
+      }
       ppLib.log('verbose', '[ppEventSource] Sent to Mixpanel', data);
     /*! v8 ignore start */
     } catch (e) {

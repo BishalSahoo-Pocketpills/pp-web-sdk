@@ -28,8 +28,50 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
       userId: 'userId',
       ipAddress: 'ipAddress',
       experiments: 'exp'
-    }
+    },
+    enrichTrack: true
   };
+
+  // =====================================================
+  // INTERNAL TRACK FACADE
+  // All SDK-internal Mixpanel events flow through this to pick up the
+  // shared event-properties context (UTM touch, device, session, login,
+  // marketing attribution, click IDs). Mixpanel super-properties are
+  // skipped by the builder to avoid payload duplication.
+  // =====================================================
+
+  function trackFacade(eventName: string, properties?: Record<string, unknown>): boolean {
+    try {
+      if (!CONFIG.enabled) return false;
+      var mp = (win as any).mixpanel;
+      if (!mp || typeof mp.track !== 'function') return false;
+      if (typeof eventName !== 'string' || !eventName) {
+        ppLib.log('warn', '[ppMixpanel] track called with empty eventName');
+        return false;
+      }
+
+      var merged: Record<string, unknown>;
+      if (CONFIG.enrichTrack && ppLib.eventPropertiesBuilder) {
+        var enriched = ppLib.eventPropertiesBuilder.buildFlat();
+        // Caller-wins merge: enriched is the floor, caller's props override.
+        merged = enriched;
+        if (properties) {
+          var keys = Object.keys(properties);
+          for (var i = 0; i < keys.length; i++) {
+            merged[keys[i]] = properties[keys[i]];
+          }
+        }
+      } else {
+        merged = properties || {};
+      }
+
+      mp.track(eventName, merged);
+      return true;
+    } catch (e) {
+      ppLib.log('error', '[ppMixpanel] track facade error', e);
+      return false;
+    }
+  }
 
   // =====================================================
   // MIXPANEL SDK LOADER
@@ -498,6 +540,8 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
     init: function(): void {
       initMixpanel();
     },
+
+    track: trackFacade,
 
     getMixpanelCookieData: getMixpanelCookieData,
 
