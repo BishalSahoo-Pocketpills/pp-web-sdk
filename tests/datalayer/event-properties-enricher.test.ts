@@ -69,14 +69,14 @@ describe('createEventPropertiesEnricher', () => {
     expect(ep.utm_campaign).toBe('spring');
 
     // UTM first touch
-    expect(ep.utm_source_first_touch).toBe('facebook');
-    expect(ep.utm_medium_first_touch).toBe('social');
-    expect(ep.utm_campaign_first_touch).toBe('launch');
+    expect(ep['utm_source [first touch]']).toBe('facebook');
+    expect(ep['utm_medium [first touch]']).toBe('social');
+    expect(ep['utm_campaign [first touch]']).toBe('launch');
 
     // UTM last touch
-    expect(ep.utm_source_last_touch).toBe('google');
-    expect(ep.utm_medium_last_touch).toBe('cpc');
-    expect(ep.utm_campaign_last_touch).toBe('spring');
+    expect(ep['utm_source [last touch]']).toBe('google');
+    expect(ep['utm_medium [last touch]']).toBe('cpc');
+    expect(ep['utm_campaign [last touch]']).toBe('spring');
 
     // User context
     expect(ep.country).toBe('CA');
@@ -127,8 +127,12 @@ describe('createEventPropertiesEnricher', () => {
 
     const ep = mockPush.mock.calls[0][0].eventProperties;
     expect(ep.utm_source).toBe('');
-    expect(ep.utm_source_first_touch).toBe('');
-    expect(ep.utm_source_last_touch).toBe('');
+    expect(ep['utm_source [first touch]']).toBe('$direct');
+    expect(ep['utm_medium [first touch]']).toBe('none');
+    expect(ep['utm_campaign [first touch]']).toBe('none');
+    expect(ep['utm_source [last touch]']).toBe('$direct');
+    expect(ep['utm_medium [last touch]']).toBe('none');
+    expect(ep['utm_campaign [last touch]']).toBe('none');
   });
 
   it('handles missing session service gracefully', () => {

@@ -112,15 +112,15 @@ export function createEventPropertiesEnricher(
             utm_medium: current ? current.medium : '',
             utm_campaign: current ? current.campaign : '',
 
-            // First touch UTM
-            utm_source_first_touch: firstTouch ? firstTouch.source : '',
-            utm_medium_first_touch: firstTouch ? firstTouch.medium : '',
-            utm_campaign_first_touch: firstTouch ? firstTouch.campaign : '',
+            // First touch UTM (Mixpanel-style bracket keys with $direct/none fallbacks)
+            'utm_source [first touch]': firstTouch && firstTouch.source ? firstTouch.source : '$direct',
+            'utm_medium [first touch]': firstTouch && firstTouch.medium ? firstTouch.medium : 'none',
+            'utm_campaign [first touch]': firstTouch && firstTouch.campaign ? firstTouch.campaign : 'none',
 
-            // Last touch UTM
-            utm_source_last_touch: lastTouch ? lastTouch.source : '',
-            utm_medium_last_touch: lastTouch ? lastTouch.medium : '',
-            utm_campaign_last_touch: lastTouch ? lastTouch.campaign : '',
+            // Last touch UTM (Mixpanel-style bracket keys with $direct/none fallbacks)
+            'utm_source [last touch]': lastTouch && lastTouch.source ? lastTouch.source : '$direct',
+            'utm_medium [last touch]': lastTouch && lastTouch.medium ? lastTouch.medium : 'none',
+            'utm_campaign [last touch]': lastTouch && lastTouch.campaign ? lastTouch.campaign : 'none',
 
             // User context
             country: ppLib.getCookie(CONFIG.cookieNames.country) || '',
