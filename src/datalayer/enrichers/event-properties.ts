@@ -127,7 +127,10 @@ export function createEventPropertiesEnricher(
             browser: parseBrowser(ua),
             device_type: parseDeviceType(ua),
             referrer: extractDomain(win.document.referrer),
-            initial_referrer: firstTouch ? firstTouch.referrer : ''
+            initial_referrer: firstTouch ? firstTouch.referrer : '',
+
+            // Marketing attribution
+            marketing_attribution: ppLib.attribution ? ppLib.attribution.get() : null
           };
 
           arg.page = {

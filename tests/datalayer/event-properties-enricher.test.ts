@@ -12,6 +12,7 @@ function makePPLib(cookies?: Record<string, string>): PPLib {
       getCurrent: vi.fn(() => ({ source: 'google', medium: 'cpc', campaign: 'spring', referrer: 'google.com' })),
       getFirstTouch: vi.fn(() => ({ source: 'facebook', medium: 'social', campaign: 'launch', referrer: 'facebook.com' })),
       getLastTouch: vi.fn(() => ({ source: 'google', medium: 'cpc', campaign: 'spring', referrer: 'google.com' })),
+      get: vi.fn(() => ({ source: 'google', medium: 'cpc', campaign: 'spring', platform: 'google_ads' })),
     },
     log: vi.fn(),
   } as any;

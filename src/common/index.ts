@@ -109,8 +109,8 @@ import { createDataLayerEnricher } from '@src/common/datalayer-enricher';
   var enricher = createDataLayerEnricher(win, ppLib);
   ppLib.registerEnricher = enricher.registerEnricher;
 
-  // Register the attribution enricher
-  ppLib.registerEnricher(ppLib.attribution.getEnricher());
+  // Attribution enrichment is now inside eventProperties (via the datalayer
+  // module's event-properties enricher) — no separate root-level enricher needed.
 
   // Apply — wraps dataLayer.push. Reads ppLib._enrichers dynamically,
   // so enrichers registered later (by datalayer, ecommerce, etc.) are
