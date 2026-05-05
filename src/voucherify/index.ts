@@ -86,7 +86,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   // API CLIENT
   // =====================================================
 
-  var memCache: Map<string, { data: unknown; timestamp: number }> = new Map();
+  const memCache: Map<string, { data: unknown; timestamp: number }> = new Map();
 
   function getCacheKey(endpoint: string, body: unknown): string {
     try {
@@ -99,7 +99,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   }
 
   function isCacheValid(key: string): boolean {
-    var entry = memCache.get(key);
+    const entry = memCache.get(key);
     if (!entry) return false;
     if ((Date.now() - entry.timestamp) >= CONFIG.cache.ttl) {
       memCache.delete(key);
@@ -109,13 +109,13 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   }
 
   async function fetchWithRetry(url: string, options: RequestInit): Promise<Response> {
-    var maxRetries = CONFIG.retry.maxRetries;
-    var baseDelay = CONFIG.retry.baseDelay;
-    var lastError: Error | undefined;
+    const maxRetries = CONFIG.retry.maxRetries;
+    const baseDelay = CONFIG.retry.baseDelay;
+    let lastError: Error | undefined;
 
-    for (var attempt = 0; attempt <= maxRetries; attempt++) {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        var response = await win.fetch(url, options);
+        const response = await win.fetch(url, options);
         // Do not retry on 4xx client errors
         if (response.ok || (response.status >= 400 && response.status < 500)) {
           return response;
@@ -136,14 +136,14 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   }
 
   async function apiRequest(endpoint: string, body: QualificationContext | ValidationContext | Record<string, unknown>): Promise<VoucherifyApiResponse> {
-    var cacheKey = getCacheKey(endpoint, body);
+    const cacheKey = getCacheKey(endpoint, body);
 
     if (isCacheValid(cacheKey)) {
       ppLib.log('info', '[ppVoucherify] Cache hit for ' + endpoint);
       return memCache.get(cacheKey)!.data as VoucherifyApiResponse;
     }
 
-    var apiResponse: Response;
+    let apiResponse: Response;
 
     if (CONFIG.cache.enabled) {
       if (!CONFIG.cache.baseUrl) {
@@ -161,7 +161,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
           (!CONFIG.api.clientSecretKey ? 'clientSecretKey' : ''));
       }
       /*! v8 ignore start — jsdom location.origin is always http://localhost */
-      var origin = CONFIG.api.origin || win.location.origin;
+      const origin = CONFIG.api.origin || win.location.origin;
       /*! v8 ignore stop */
       apiResponse = await fetchWithRetry(CONFIG.api.baseUrl + '/client/v1' + endpoint, {
         method: 'POST',
@@ -179,13 +179,13 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
       throw new Error('Voucherify ' + endpoint + ': ' + apiResponse.status);
     }
 
-    var data = await apiResponse.json();
+    const data = await apiResponse.json();
 
     memCache.set(cacheKey, { data: data, timestamp: Date.now() });
 
     // Evict stale entries when cache exceeds 50 entries to prevent unbounded growth
     if (memCache.size > 50) {
-      var pruneTime = Date.now();
+      const pruneTime = Date.now();
       memCache.forEach(function(entry, key) {
         if ((pruneTime - entry.timestamp) >= CONFIG.cache.ttl) {
           memCache.delete(key);
@@ -220,7 +220,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
    *   3. { qualifications: { data: [...] } } (nested qualifications)
    */
   function extractRedeemables(response: VoucherifyApiResponse): VoucherifyRedeemable[] {
-    var raw = (response && response.qualifications) || (response && response.redeemables) || [];
+    const raw = (response && response.qualifications) || (response && response.redeemables) || [];
     if (Array.isArray(raw)) return raw as VoucherifyRedeemable[];
     return ((raw as { data: VoucherifyRedeemable[] }).data || []);
   }
@@ -230,27 +230,27 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   // =====================================================
 
   function buildCustomer(): { source_id: string; metadata?: CustomerMetadata } | undefined {
-    var sourceId = ppLib.getCookie(CONFIG.context.customerSourceIdCookie);
+    const sourceId = ppLib.getCookie(CONFIG.context.customerSourceIdCookie);
     if (!sourceId) return undefined;
 
-    var customer: { source_id: string; metadata?: CustomerMetadata } = { source_id: ppLib.Security.sanitize(sourceId) };
-    var metadata: CustomerMetadata = {};
+    const customer: { source_id: string; metadata?: CustomerMetadata } = { source_id: ppLib.Security.sanitize(sourceId) };
+    const metadata: CustomerMetadata = {};
 
     if (CONFIG.context.includeLoginState) {
       metadata.is_logged_in = !!(ppLib.login && ppLib.login.isLoggedIn());
     }
 
     if (CONFIG.context.includeUtmParams) {
-      var url = win.location.href;
-      var utmParams = ['utm_source', 'utm_medium', 'utm_campaign'];
-      for (var i = 0; i < utmParams.length; i++) {
-        var val = ppLib.getQueryParam(url, utmParams[i]);
+      const url = win.location.href;
+      const utmParams = ['utm_source', 'utm_medium', 'utm_campaign'];
+      for (let i = 0; i < utmParams.length; i++) {
+        const val = ppLib.getQueryParam(url, utmParams[i]);
         if (val) metadata[utmParams[i]] = ppLib.Security.sanitize(val);
       }
     }
 
     // Include rule-resolved segment key in customer metadata
-    var ruleSegment = resolveSegmentFromRules();
+    const ruleSegment = resolveSegmentFromRules();
     if (ruleSegment) {
       metadata.pp_segment = ruleSegment;
 
@@ -266,9 +266,9 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   }
 
   function buildOrderItems(productIds: string[]): OrderItem[] {
-    var items: OrderItem[] = [];
-    for (var i = 0; i < productIds.length; i++) {
-      var sanitizedId = ppLib.Security.sanitize(productIds[i]);
+    const items: OrderItem[] = [];
+    for (let i = 0; i < productIds.length; i++) {
+      const sanitizedId = ppLib.Security.sanitize(productIds[i]);
       items.push({
         source_id: sanitizedId,
         product_id: sanitizedId,
@@ -280,15 +280,15 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   }
 
   function getProductsFromDOM(): DOMProduct[] {
-    var attr = CONFIG.pricing.productAttribute;
-    var priceAttr = CONFIG.pricing.priceAttribute;
-    var elements = doc.querySelectorAll('[' + attr + ']');
-    var products: DOMProduct[] = [];
+    const attr = CONFIG.pricing.productAttribute;
+    const priceAttr = CONFIG.pricing.priceAttribute;
+    const elements = doc.querySelectorAll('[' + attr + ']');
+    const products: DOMProduct[] = [];
 
-    for (var i = 0; i < elements.length; i++) {
-      var el = elements[i];
-      var id = ppLib.Security.sanitize(el.getAttribute(attr) || '');
-      var price = parseFloat(el.getAttribute(priceAttr) || '0');
+    for (let i = 0; i < elements.length; i++) {
+      const el = elements[i];
+      const id = ppLib.Security.sanitize(el.getAttribute(attr) || '');
+      const price = parseFloat(el.getAttribute(priceAttr) || '0');
       if (id) {
         products.push({ id: id, basePrice: price, element: el });
       } else {
@@ -303,7 +303,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   // PRICING ENGINE
   // =====================================================
 
-  var priceFormatter: Intl.NumberFormat | null = null;
+  let priceFormatter: Intl.NumberFormat | null = null;
 
   function getFormatter(): Intl.NumberFormat {
     if (!priceFormatter) {
@@ -327,7 +327,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
 
   function buildDiscountLabel(discountType: string, discountAmount: number, basePrice: number): string {
     if (discountType === 'PERCENT') {
-      var percent = Math.round((discountAmount / basePrice) * 100);
+      const percent = Math.round((discountAmount / basePrice) * 100);
       return percent + '% OFF';
     }
     if (discountType === 'AMOUNT' || discountType === 'FIXED') {
@@ -342,29 +342,29 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
     products: DOMProduct[],
     response: VoucherifyApiResponse
   ): PricingResult[] {
-    var results: PricingResult[] = [];
-    var redeemables = extractRedeemables(response);
+    const results: PricingResult[] = [];
+    const redeemables = extractRedeemables(response);
 
-    for (var i = 0; i < productIds.length; i++) {
-      var productId = productIds[i];
-      var domProduct = products.find(function(p) { return p.id === productId; });
-      var basePrice = domProduct ? domProduct.basePrice : 0;
-      var bestDiscount = 0;
-      var bestType: PricingResult['discountType'] = 'NONE';
-      var applicableVouchers: string[] = [];
-      var campaignName: string | undefined;
+    for (let i = 0; i < productIds.length; i++) {
+      const productId = productIds[i];
+      const domProduct = products.find(function(p) { return p.id === productId; });
+      const basePrice = domProduct ? domProduct.basePrice : 0;
+      let bestDiscount = 0;
+      let bestType: PricingResult['discountType'] = 'NONE';
+      const applicableVouchers: string[] = [];
+      let campaignName: string | undefined;
 
-      for (var j = 0; j < redeemables.length; j++) {
-        var redeemable = redeemables[j];
-        var discount = redeemable.result && redeemable.result.discount;
+      for (let j = 0; j < redeemables.length; j++) {
+        const redeemable = redeemables[j];
+        const discount = redeemable.result && redeemable.result.discount;
         if (!discount) continue;
 
         // UNIT discounts with ADD_MISSING_ITEMS add a free product (e.g. shipping),
         // they don't reduce the current product's price
         if (discount.type === 'UNIT' && discount.effect === 'ADD_MISSING_ITEMS') continue;
 
-        var discountAmount = 0;
-        var discountType: PricingResult['discountType'] = 'NONE';
+        let discountAmount = 0;
+        let discountType: PricingResult['discountType'] = 'NONE';
 
         if (discount.type === 'PERCENT') {
           discountType = 'PERCENT';
@@ -389,8 +389,8 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
         if (redeemable.id) applicableVouchers.push(redeemable.id);
       }
 
-      var discountedPrice = Math.max(0, basePrice - bestDiscount);
-      var discountLabel = bestType !== 'NONE' ? buildDiscountLabel(bestType, bestDiscount, basePrice) : '';
+      const discountedPrice = Math.max(0, basePrice - bestDiscount);
+      let discountLabel = bestType !== 'NONE' ? buildDiscountLabel(bestType, bestDiscount, basePrice) : '';
 
       results.push({
         productId: productId,
@@ -408,19 +408,19 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   }
 
   function injectPricing(products: DOMProduct[], pricingResults: PricingResult[]): void {
-    for (var i = 0; i < products.length; i++) {
-      var product = products[i];
-      var result = pricingResults.find(function(r) { return r.productId === product.id; });
+    for (let i = 0; i < products.length; i++) {
+      const product = products[i];
+      const result = pricingResults.find(function(r) { return r.productId === product.id; });
       if (!result) continue;
 
-      var el = product.element;
+      const el = product.element;
 
       // Inject original price
-      var originalEl = el.querySelector('[' + CONFIG.pricing.originalPriceAttribute + ']');
+      const originalEl = el.querySelector('[' + CONFIG.pricing.originalPriceAttribute + ']');
       if (originalEl) originalEl.textContent = formatPrice(product.basePrice);
 
       // Inject discounted price
-      var discountedEl = el.querySelector('[' + CONFIG.pricing.discountedPriceAttribute + ']');
+      const discountedEl = el.querySelector('[' + CONFIG.pricing.discountedPriceAttribute + ']');
       if (discountedEl) {
         discountedEl.textContent = result.discountedPrice < product.basePrice
           ? formatPrice(result.discountedPrice)
@@ -428,7 +428,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
       }
 
       // Inject discount label (optional)
-      var labelEl = el.querySelector('[' + CONFIG.pricing.discountLabelAttribute + ']');
+      const labelEl = el.querySelector('[' + CONFIG.pricing.discountLabelAttribute + ']');
       if (labelEl) {
         labelEl.textContent = result.discountLabel || '';
       }
@@ -441,7 +441,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
 
   // Ad platform click ID → ad_source segment mapping.
   // These are standardized URL parameters set by ad platforms — not configurable.
-  var CLICK_ID_MAP: Array<{ param: string; segment: string; source: string }> = [
+  const CLICK_ID_MAP: Array<{ param: string; segment: string; source: string }> = [
     { param: 'gclid',    segment: 'ad_source:google',    source: 'google' },
     { param: 'fbclid',   segment: 'ad_source:facebook',  source: 'facebook' },
     { param: 'ttclid',   segment: 'ad_source:tiktok',    source: 'tiktok' },
@@ -452,12 +452,12 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
 
   function detectAdSourceFromClickId(params: URLSearchParams): string | null {
     // Check for platform click IDs (gclid, fbclid, ttclid, etc.)
-    for (var i = 0; i < CLICK_ID_MAP.length; i++) {
+    for (let i = 0; i < CLICK_ID_MAP.length; i++) {
       if (params.has(CLICK_ID_MAP[i].param)) {
         // Special case: fbclid is shared by Facebook and Instagram.
         // Use utm_source to disambiguate when available.
         if (CLICK_ID_MAP[i].param === 'fbclid') {
-          var utmSrc = (params.get('utm_source') || '').toLowerCase().trim();
+          const utmSrc = (params.get('utm_source') || '').toLowerCase().trim();
           if (utmSrc === 'instagram') return 'ad_source:instagram';
         }
         return CLICK_ID_MAP[i].segment;
@@ -465,10 +465,10 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
     }
 
     // Check utm_source as fallback — maps to ad_source:{value} if it matches a known platform
-    var utmSource = params.get('utm_source');
+    const utmSource = params.get('utm_source');
     if (utmSource) {
-      var normalized = utmSource.toLowerCase().trim();
-      for (var j = 0; j < CLICK_ID_MAP.length; j++) {
+      const normalized = utmSource.toLowerCase().trim();
+      for (let j = 0; j < CLICK_ID_MAP.length; j++) {
         if (CLICK_ID_MAP[j].source === normalized) {
           return CLICK_ID_MAP[j].segment;
         }
@@ -483,19 +483,19 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   }
 
   function persistSegmentCookie(segment: string): void {
-    var maxAge = CONFIG.segments.cookieMaxAgeMinutes * 60;
+    const maxAge = CONFIG.segments.cookieMaxAgeMinutes * 60;
     doc.cookie = CONFIG.segments.cookieName + '=' + encodeURIComponent(segment) +
       ';path=/;max-age=' + maxAge + ';SameSite=Lax';
   }
 
   function resolveSegmentFromRules(): string | null {
-    var search = win.location.search;
-    var params = new URLSearchParams(search);
+    const search = win.location.search;
+    const params = new URLSearchParams(search);
 
     // Priority 1: Explicit segment param (e.g., ?vseg=ad_source:google)
-    var explicitSeg = params.get('vseg');
+    const explicitSeg = params.get('vseg');
     if (explicitSeg) {
-      var sanitized = ppLib.Security.sanitize(explicitSeg);
+      const sanitized = ppLib.Security.sanitize(explicitSeg);
       if (sanitized) {
         persistSegmentCookie(sanitized);
         return sanitized;
@@ -503,11 +503,11 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
     }
 
     // Priority 2: Configurable rules (param + value → segment)
-    var rules = CONFIG.segments.rules;
+    const rules = CONFIG.segments.rules;
     if (rules && rules.length > 0) {
-      for (var i = 0; i < rules.length; i++) {
-        var rule = rules[i];
-        var paramValue = params.get(rule.param);
+      for (let i = 0; i < rules.length; i++) {
+        const rule = rules[i];
+        const paramValue = params.get(rule.param);
         if (paramValue === rule.value) {
           persistSegmentCookie(rule.segment);
           return rule.segment;
@@ -516,7 +516,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
     }
 
     // Priority 3: Ad platform click IDs (gclid, fbclid, ttclid, etc.)
-    var adSegment = detectAdSourceFromClickId(params);
+    const adSegment = detectAdSourceFromClickId(params);
     if (adSegment) {
       persistSegmentCookie(adSegment);
       return adSegment;
@@ -524,7 +524,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
 
     // Priority 4: Persisted cookie from a prior visit
     // getCookie already decodes — sanitize for defense-in-depth (cookie can be tampered)
-    var cookieVal = ppLib.getCookie(CONFIG.segments.cookieName);
+    const cookieVal = ppLib.getCookie(CONFIG.segments.cookieName);
     if (cookieVal) return ppLib.Security.sanitize(cookieVal);
 
     return null;
@@ -532,17 +532,17 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
 
   function determineSegment(): string {
     if (CONFIG.segments.prioritizeOverMember) {
-      var ruleSegment = resolveSegmentFromRules();
+      const ruleSegment = resolveSegmentFromRules();
       if (ruleSegment) return ruleSegment;
-      var sourceId = ppLib.getCookie(CONFIG.context.customerSourceIdCookie);
+      const sourceId = ppLib.getCookie(CONFIG.context.customerSourceIdCookie);
       if (sourceId) return 'member';
       return 'anonymous';
     }
 
     // Default: member takes priority over rule-resolved segment
-    var sourceId = ppLib.getCookie(CONFIG.context.customerSourceIdCookie);
+    const sourceId = ppLib.getCookie(CONFIG.context.customerSourceIdCookie);
     if (sourceId) return 'member';
-    var ruleSegment = resolveSegmentFromRules();
+    const ruleSegment = resolveSegmentFromRules();
     if (ruleSegment) return ruleSegment;
     return 'anonymous';
   }
@@ -552,39 +552,39 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   }
 
   function addLoadingClass(products: DOMProduct[]): void {
-    for (var i = 0; i < products.length; i++) {
+    for (let i = 0; i < products.length; i++) {
       products[i].element.classList.add('pp-voucherify-loading');
     }
   }
 
   function removeLoadingClass(products: DOMProduct[]): void {
-    for (var i = 0; i < products.length; i++) {
+    for (let i = 0; i < products.length; i++) {
       products[i].element.classList.remove('pp-voucherify-loading');
     }
   }
 
   async function fetchPricingEdge(products: DOMProduct[], ids: string[]): Promise<PricingResult[]> {
-    var segment = determineSegment();
-    var basePrices = ids.map(function(id) {
-      var p = products.find(function(dp) { return dp.id === id; });
+    const segment = determineSegment();
+    const basePrices = ids.map(function(id) {
+      const p = products.find(function(dp) { return dp.id === id; });
       return p ? p.basePrice : 0;
     });
 
-    var url = CONFIG.edge.edgeUrl + '/api/prices/' + encodeURIComponent(segment) +
+    const url = CONFIG.edge.edgeUrl + '/api/prices/' + encodeURIComponent(segment) +
       '?products=' + encodeURIComponent(ids.join(',')) +
       '&basePrices=' + encodeURIComponent(basePrices.join(','));
 
-    var response = await win.fetch(url);
+    const response = await win.fetch(url);
     if (!response.ok) {
       throw new Error('Edge API error: ' + response.status);
     }
 
-    var data = await response.json() as EdgePricingResponse;
-    var pricingProducts = data.products || {};
+    const data = await response.json() as EdgePricingResponse;
+    const pricingProducts = data.products || {};
 
-    var results: PricingResult[] = [];
-    for (var i = 0; i < ids.length; i++) {
-      var entry = pricingProducts[ids[i]];
+    const results: PricingResult[] = [];
+    for (let i = 0; i < ids.length; i++) {
+      const entry = pricingProducts[ids[i]];
       if (entry) {
         results.push({
           productId: ids[i],
@@ -597,7 +597,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
           campaignName: entry.campaignName
         });
       } else {
-        var bp = basePrices[i];
+        const bp = basePrices[i];
         results.push({
           productId: ids[i],
           basePrice: bp,
@@ -613,7 +613,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   }
 
   async function edgeValidateVoucher(code: string, body: Record<string, unknown>): Promise<VoucherifyApiResponse> {
-    var response = await win.fetch(CONFIG.edge.edgeUrl + '/api/validate', {
+    const response = await win.fetch(CONFIG.edge.edgeUrl + '/api/validate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -623,7 +623,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   }
 
   async function edgeCheckQualifications(body: Record<string, unknown>): Promise<VoucherifyApiResponse> {
-    var response = await win.fetch(CONFIG.edge.edgeUrl + '/api/qualify', {
+    const response = await win.fetch(CONFIG.edge.edgeUrl + '/api/qualify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -632,20 +632,20 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
     return response.json() as Promise<VoucherifyApiResponse>;
   }
 
-  var inflightPricing: Promise<PricingResult[]> | null = null;
+  let inflightPricing: Promise<PricingResult[]> | null = null;
 
   async function fetchPricingImpl(productIds?: string[]): Promise<PricingResult[]> {
     try {
-      var products = getProductsFromDOM();
-      var ids = productIds || products.map(function(p) { return p.id; });
+      const products = getProductsFromDOM();
+      const ids = productIds || products.map(function(p) { return p.id; });
       if (ids.length === 0) return [];
 
       // Edge rewrite guard: if the Worker already injected prices into the HTML
       // (Phase 2 edge HTMLRewriter), skip the client-side fetch entirely.
       // The attribute data-pp-segment-resolved is set by the edge rewrite Worker.
-      var edgeResolved = doc.querySelector('[data-pp-segment-resolved]');
+      const edgeResolved = doc.querySelector('[data-pp-segment-resolved]');
       if (edgeResolved) {
-        var resolvedSegment = edgeResolved.getAttribute('data-pp-segment-resolved') || 'unknown';
+        const resolvedSegment = edgeResolved.getAttribute('data-pp-segment-resolved') || 'unknown';
         ppLib.log('info', '[ppVoucherify] Edge-rewritten pricing detected (segment: ' + resolvedSegment + ') — skipping client fetch');
         removeCloakAttribute();
         return [];
@@ -654,13 +654,13 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
       // CMS mode: anonymous users already have prices in HTML from CMS.
       // Rule-resolved segments always fetch from edge. Members use page opt-in.
       if (CONFIG.edge.mode === 'cms') {
-        var segment = determineSegment();
+        const segment = determineSegment();
 
         // Rule-resolved custom segment: always fetch from edge
         if (segment !== 'anonymous' && segment !== 'member') {
           addLoadingClass(products);
           try {
-            var segEdgeResults = await fetchPricingEdge(products, ids);
+            const segEdgeResults = await fetchPricingEdge(products, ids);
             injectPricing(products, segEdgeResults);
             removeCloakAttribute();
             ppLib.log('info', '[ppVoucherify] CMS mode: segment "' + segment + '" pricing fetched for ' + ids.length + ' product(s)');
@@ -678,14 +678,14 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
           return [];
         }
         // Member: check page opt-in attribute
-        var pageOptIn = doc.querySelector('[data-voucherify-member-pricing]');
+        const pageOptIn = doc.querySelector('[data-voucherify-member-pricing]');
         if (!pageOptIn) {
           return [];
         }
         // Member + opt-in: fetch from edge
         addLoadingClass(products);
         try {
-          var cmsEdgeResults = await fetchPricingEdge(products, ids);
+          const cmsEdgeResults = await fetchPricingEdge(products, ids);
           injectPricing(products, cmsEdgeResults);
           ppLib.log('info', '[ppVoucherify] CMS mode: member pricing fetched for ' + ids.length + ' product(s)');
           return cmsEdgeResults;
@@ -700,7 +700,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
       if (CONFIG.edge.mode === 'edge' && CONFIG.edge.edgeUrl) {
         addLoadingClass(products);
         try {
-          var edgeResults = await fetchPricingEdge(products, ids);
+          const edgeResults = await fetchPricingEdge(products, ids);
           injectPricing(products, edgeResults);
           removeCloakAttribute();
           removeLoadingClass(products);
@@ -713,18 +713,18 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
         }
       }
 
-      var customer = buildCustomer();
-      var items = buildOrderItems(ids);
+      const customer = buildCustomer();
+      const items = buildOrderItems(ids);
 
-      var body: Record<string, unknown> = {
+      const body: Record<string, unknown> = {
         order: { items: items },
         scenario: 'ALL'
       };
       if (customer) body.customer = customer;
 
-      var response = await apiQualifications(body);
+      const response = await apiQualifications(body);
 
-      var results = mapQualificationsToResults(ids, products, response);
+      const results = mapQualificationsToResults(ids, products, response);
 
       injectPricing(products, results);
       removeCloakAttribute();
@@ -748,9 +748,9 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   // OFFERS
   // =====================================================
 
-  var inflightOffers: Promise<OffersResult> | null = null;
+  let inflightOffers: Promise<OffersResult> | null = null;
 
-  var ALL_CATEGORIES: OfferCategory[] = ['coupon', 'promotion', 'loyalty', 'referral', 'gift'];
+  const ALL_CATEGORIES: OfferCategory[] = ['coupon', 'promotion', 'loyalty', 'referral', 'gift'];
 
   function emptyBundle(): OffersBundle {
     return { coupons: [], promotions: [], loyalty: [], referrals: [], gifts: [] };
@@ -761,12 +761,12 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   }
 
   async function fetchOffersEdge(segment: string): Promise<OffersBundle> {
-    var url = CONFIG.edge.edgeUrl + '/api/offers/' + encodeURIComponent(segment);
-    var response = await fetchWithRetry(url, { method: 'GET' });
+    const url = CONFIG.edge.edgeUrl + '/api/offers/' + encodeURIComponent(segment);
+    const response = await fetchWithRetry(url, { method: 'GET' });
     if (!response.ok) {
       throw new Error('Edge offers API error: ' + response.status);
     }
-    var data = await response.json();
+    const data = await response.json();
     return data.offers || emptyBundle();
   }
 
@@ -783,9 +783,9 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   }
 
   function buildOfferEntryFromRedeemable(r: VoucherifyRedeemable): OfferEntry {
-    var category = categorizeRedeemable(r);
-    var discount = r.result && r.result.discount;
-    var entry: OfferEntry = {
+    const category = categorizeRedeemable(r);
+    const discount = r.result && r.result.discount;
+    const entry: OfferEntry = {
       id: r.id,
       category: category,
       title: r.name || r.campaign_name || r.banner || r.campaign || '',
@@ -796,7 +796,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
     if (r.voucher && r.voucher.code) entry.code = r.voucher.code;
 
     if (discount) {
-      var discountLabel = '';
+      let discountLabel = '';
       if (discount.type === 'PERCENT' && discount.percent_off) {
         discountLabel = discount.percent_off + '% OFF';
         entry.description = 'Save ' + discount.percent_off + '% on your order';
@@ -834,9 +834,9 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   }
 
   function categorizeRedeemables(redeemables: VoucherifyRedeemable[]): OffersBundle {
-    var bundle = emptyBundle();
-    for (var i = 0; i < redeemables.length; i++) {
-      var entry = buildOfferEntryFromRedeemable(redeemables[i]);
+    let bundle = emptyBundle();
+    for (let i = 0; i < redeemables.length; i++) {
+      const entry = buildOfferEntryFromRedeemable(redeemables[i]);
       switch (entry.category) {
         case 'coupon': bundle.coupons.push(entry); break;
         case 'promotion': bundle.promotions.push(entry); break;
@@ -849,11 +849,11 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   }
 
   function mergeOffersBundles(base: OffersBundle, personal: OffersBundle): OffersBundle {
-    var seenIds: Record<string, boolean> = {};
-    var merged = emptyBundle();
+    const seenIds: Record<string, boolean> = {};
+    const merged = emptyBundle();
 
     function addUnique(target: OfferEntry[], source: OfferEntry[]) {
-      for (var i = 0; i < source.length; i++) {
+      for (let i = 0; i < source.length; i++) {
         if (!seenIds[source[i].id]) {
           seenIds[source[i].id] = true;
           target.push(source[i]);
@@ -876,7 +876,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   }
 
   function filterBundle(bundle: OffersBundle, categories: OfferCategory[], maxPerCategory: number): OffersBundle {
-    var filtered = emptyBundle();
+    const filtered = emptyBundle();
     if (categories.indexOf('coupon') >= 0) filtered.coupons = bundle.coupons.slice(0, maxPerCategory);
     if (categories.indexOf('promotion') >= 0) filtered.promotions = bundle.promotions.slice(0, maxPerCategory);
     if (categories.indexOf('loyalty') >= 0) filtered.loyalty = bundle.loyalty.slice(0, maxPerCategory);
@@ -886,32 +886,32 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   }
 
   function renderOffers(bundle: OffersBundle): void {
-    var containerAttr = CONFIG.offers.containerAttribute;
-    var containers = doc.querySelectorAll('[' + containerAttr + ']');
+    const containerAttr = CONFIG.offers.containerAttribute;
+    const containers = doc.querySelectorAll('[' + containerAttr + ']');
 
-    for (var c = 0; c < containers.length; c++) {
-      var container = containers[c];
-      var categoryFilter = container.getAttribute(containerAttr) || 'all';
-      var requestedCategories: OfferCategory[] = categoryFilter === 'all'
+    for (let c = 0; c < containers.length; c++) {
+      const container = containers[c];
+      const categoryFilter = container.getAttribute(containerAttr) || 'all';
+      const requestedCategories: OfferCategory[] = categoryFilter === 'all'
         ? ALL_CATEGORIES
         : categoryFilter.split(',').map(function(s) { return s.trim() as OfferCategory; });
 
       // Find template
-      var template = container.querySelector('[' + CONFIG.offers.templateAttribute + ']') as HTMLElement | null;
+      const template = container.querySelector('[' + CONFIG.offers.templateAttribute + ']') as HTMLElement | null;
       if (template) {
         template.style.display = 'none';
       }
 
       // Remove previous clones
-      var oldClones = container.querySelectorAll('.pp-voucherify-offer-clone');
-      for (var r = 0; r < oldClones.length; r++) {
+      const oldClones = container.querySelectorAll('.pp-voucherify-offer-clone');
+      for (let r = 0; r < oldClones.length; r++) {
         oldClones[r].parentNode!.removeChild(oldClones[r]);
       }
 
       // Collect matching offers
-      var offers: OfferEntry[] = [];
-      for (var k = 0; k < requestedCategories.length; k++) {
-        var cat = requestedCategories[k];
+      let offers: OfferEntry[] = [];
+      for (let k = 0; k < requestedCategories.length; k++) {
+        const cat = requestedCategories[k];
         switch (cat) {
           case 'coupon': offers = offers.concat(bundle.coupons); break;
           case 'promotion': offers = offers.concat(bundle.promotions); break;
@@ -923,22 +923,22 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
 
       // Clone template for each offer
       if (template) {
-        for (var i = 0; i < offers.length; i++) {
-          var offer = offers[i];
-          var clone = template.cloneNode(true) as HTMLElement;
+        for (let i = 0; i < offers.length; i++) {
+          const offer = offers[i];
+          const clone = template.cloneNode(true) as HTMLElement;
           clone.removeAttribute(CONFIG.offers.templateAttribute);
           clone.classList.add('pp-voucherify-offer-clone');
           clone.classList.add('pp-voucherify-offer-' + offer.category);
           clone.style.display = '';
 
           // Populate slots
-          var titleEl = clone.querySelector('[' + CONFIG.offers.offerTitleAttribute + ']');
+          const titleEl = clone.querySelector('[' + CONFIG.offers.offerTitleAttribute + ']');
           if (titleEl) titleEl.textContent = offer.title;
 
-          var descEl = clone.querySelector('[' + CONFIG.offers.offerDescriptionAttribute + ']');
+          const descEl = clone.querySelector('[' + CONFIG.offers.offerDescriptionAttribute + ']');
           if (descEl) descEl.textContent = offer.description;
 
-          var codeEl = clone.querySelector('[' + CONFIG.offers.offerCodeAttribute + ']') as HTMLElement | null;
+          const codeEl = clone.querySelector('[' + CONFIG.offers.offerCodeAttribute + ']') as HTMLElement | null;
           if (codeEl) {
             if (offer.code) {
               codeEl.textContent = offer.code;
@@ -948,16 +948,16 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
             }
           }
 
-          var discountEl = clone.querySelector('[' + CONFIG.offers.offerDiscountAttribute + ']');
+          const discountEl = clone.querySelector('[' + CONFIG.offers.offerDiscountAttribute + ']');
           if (discountEl) discountEl.textContent = (offer.discount && offer.discount.label) || '';
 
-          var categoryEl = clone.querySelector('[' + CONFIG.offers.offerCategoryAttribute + ']');
+          const categoryEl = clone.querySelector('[' + CONFIG.offers.offerCategoryAttribute + ']');
           if (categoryEl) categoryEl.textContent = offer.category;
 
-          var loyaltyEl = clone.querySelector('[' + CONFIG.offers.offerLoyaltyBalanceAttribute + ']');
+          const loyaltyEl = clone.querySelector('[' + CONFIG.offers.offerLoyaltyBalanceAttribute + ']');
           if (loyaltyEl) loyaltyEl.textContent = offer.loyalty ? String(offer.loyalty.balance) + ' pts' : '';
 
-          var giftEl = clone.querySelector('[' + CONFIG.offers.offerGiftBalanceAttribute + ']');
+          const giftEl = clone.querySelector('[' + CONFIG.offers.offerGiftBalanceAttribute + ']');
           if (giftEl) giftEl.textContent = offer.gift ? formatPrice(offer.gift.balance / 100) : '';
 
           container.appendChild(clone);
@@ -965,7 +965,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
       }
 
       // Toggle empty state
-      var emptyEl = container.querySelector('[' + CONFIG.offers.emptyStateAttribute + ']') as HTMLElement | null;
+      const emptyEl = container.querySelector('[' + CONFIG.offers.emptyStateAttribute + ']') as HTMLElement | null;
       if (emptyEl) {
         emptyEl.style.display = offers.length === 0 ? '' : 'none';
       }
@@ -973,25 +973,25 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   }
 
   function addOffersLoadingClass(): void {
-    var containers = doc.querySelectorAll('[' + CONFIG.offers.containerAttribute + ']');
-    for (var i = 0; i < containers.length; i++) {
+    const containers = doc.querySelectorAll('[' + CONFIG.offers.containerAttribute + ']');
+    for (let i = 0; i < containers.length; i++) {
       containers[i].classList.add('pp-voucherify-offers-loading');
     }
   }
 
   function removeOffersLoadingClass(): void {
-    var containers = doc.querySelectorAll('[' + CONFIG.offers.containerAttribute + ']');
-    for (var i = 0; i < containers.length; i++) {
+    const containers = doc.querySelectorAll('[' + CONFIG.offers.containerAttribute + ']');
+    for (let i = 0; i < containers.length; i++) {
       containers[i].classList.remove('pp-voucherify-offers-loading');
     }
   }
 
   async function fetchOffersImpl(options?: FetchOffersOptions): Promise<OffersResult> {
     try {
-      var segment = determineSegment();
-      var categories = (options && options.categories != null) ? options.categories : CONFIG.offers.categories;
-      var maxPerCategory = (options && options.maxPerCategory != null) ? options.maxPerCategory : CONFIG.offers.maxPerCategory;
-      var personalize = (options && options.personalize != null) ? options.personalize : CONFIG.offers.personalizeForMember;
+      const segment = determineSegment();
+      const categories = (options && options.categories != null) ? options.categories : CONFIG.offers.categories;
+      const maxPerCategory = (options && options.maxPerCategory != null) ? options.maxPerCategory : CONFIG.offers.maxPerCategory;
+      const personalize = (options && options.personalize != null) ? options.personalize : CONFIG.offers.personalizeForMember;
 
       // CMS mode: anonymous → return empty (offers from CMS already in HTML if needed)
       if (CONFIG.edge.mode === 'cms') {
@@ -999,7 +999,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
           return emptyResult(segment);
         }
         // Member: check page opt-in
-        var memberOptIn = doc.querySelector('[data-voucherify-member-offers]');
+        const memberOptIn = doc.querySelector('[data-voucherify-member-offers]');
         if (!memberOptIn) {
           return emptyResult(segment);
         }
@@ -1007,34 +1007,34 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
 
       addOffersLoadingClass();
 
-      var bundle: OffersBundle;
+      let bundle: OffersBundle;
       try {
         if (CONFIG.edge.mode === 'edge' || CONFIG.edge.mode === 'cms') {
           bundle = await fetchOffersEdge(segment);
         } else {
           // direct mode
-          var customer = buildCustomer();
-          var offerBody: Record<string, unknown> = { scenario: 'ALL' };
+          const customer = buildCustomer();
+          const offerBody: Record<string, unknown> = { scenario: 'ALL' };
           if (customer) offerBody.customer = customer;
-          var response = await apiQualifications(offerBody);
+          const response = await apiQualifications(offerBody);
           bundle = categorizeRedeemables(extractRedeemables(response as VoucherifyApiResponse));
         }
 
         // Personal wallet merge
         if (personalize && segment === 'member') {
-          var walletCustomer = buildCustomer();
+          const walletCustomer = buildCustomer();
           if (walletCustomer) {
-            var walletBody: Record<string, unknown> = { scenario: 'CUSTOMER_WALLET', customer: walletCustomer };
-            var walletResponse = await apiQualifications(walletBody);
-            var personalBundle = categorizeRedeemables(extractRedeemables(walletResponse as VoucherifyApiResponse));
+            const walletBody: Record<string, unknown> = { scenario: 'CUSTOMER_WALLET', customer: walletCustomer };
+            const walletResponse = await apiQualifications(walletBody);
+            const personalBundle = categorizeRedeemables(extractRedeemables(walletResponse as VoucherifyApiResponse));
             bundle = mergeOffersBundles(bundle, personalBundle);
           }
         }
 
-        var filtered = filterBundle(bundle, categories, maxPerCategory);
+        const filtered = filterBundle(bundle, categories, maxPerCategory);
 
         // Auto-render if containers exist
-        var hasContainers = doc.querySelectorAll('[' + CONFIG.offers.containerAttribute + ']').length > 0;
+        const hasContainers = doc.querySelectorAll('[' + CONFIG.offers.containerAttribute + ']').length > 0;
         if (hasContainers) {
           renderOffers(filtered);
         }
@@ -1087,7 +1087,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   // INITIALIZATION
   // =====================================================
 
-  var initialized = false;
+  let initialized = false;
 
   function init(): void {
     if (initialized) return;
@@ -1157,12 +1157,12 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
 
     validateVoucher: function(code: string, context?: Partial<ValidationContext>): Promise<ValidationResult> {
       try {
-        var sanitizedCode = ppLib.Security.sanitize(code);
+        const sanitizedCode = ppLib.Security.sanitize(code);
         if (!sanitizedCode) {
           return Promise.resolve({ valid: false, code: code, reason: 'Empty voucher code' });
         }
 
-        var body: Record<string, unknown> = {
+        const body: Record<string, unknown> = {
           redeemables: [{ object: 'voucher', id: sanitizedCode }]
         };
 
@@ -1173,7 +1173,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
           body.order = context.order;
         }
 
-        var validateFn: (b: Record<string, unknown>) => Promise<VoucherifyApiResponse>;
+        let validateFn: (b: Record<string, unknown>) => Promise<VoucherifyApiResponse>;
         if (CONFIG.edge.mode === 'edge' && CONFIG.edge.edgeUrl) {
           validateFn = function(b: Record<string, unknown>) {
             return edgeValidateVoucher(sanitizedCode, b).catch(function() {
@@ -1186,9 +1186,9 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
         }
 
         return validateFn(body).then(function(response: VoucherifyApiResponse) {
-          var redeemables = extractRedeemables(response);
-          var redeemable = redeemables[0];
-          var result = redeemable && redeemable.result;
+          const redeemables = extractRedeemables(response);
+          const redeemable = redeemables[0];
+          const result = redeemable && redeemable.result;
 
           return {
             valid: !!(redeemable && redeemable.status === 'APPLICABLE'),
@@ -1209,9 +1209,9 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
     },
 
     checkQualifications: function(context?: QualificationContext): Promise<QualificationResult> {
-      var body = context || { scenario: 'ALL' };
+      const body = context || { scenario: 'ALL' };
 
-      var qualifyFn: (b: Record<string, unknown>) => Promise<VoucherifyApiResponse>;
+      let qualifyFn: (b: Record<string, unknown>) => Promise<VoucherifyApiResponse>;
       if (CONFIG.edge.mode === 'edge' && CONFIG.edge.edgeUrl) {
         qualifyFn = function(b: Record<string, unknown>) {
           return edgeCheckQualifications(b).catch(function() {

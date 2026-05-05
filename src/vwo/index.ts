@@ -53,13 +53,13 @@ import { createDebounceTracker } from '@src/common/debounce';
    */
   function parseForcedVariations(): Record<string, string> {
     try {
-      var paramValue = ppLib.getQueryParam(win.location.href, CONFIG.queryParam);
+      const paramValue = ppLib.getQueryParam(win.location.href, CONFIG.queryParam);
 
       if (paramValue) {
-        var forced: Record<string, string> = {};
-        var pairs = paramValue.split(',');
-        for (var i = 0; i < pairs.length; i++) {
-          var parts = pairs[i].split(':');
+        const forced: Record<string, string> = {};
+        const pairs = paramValue.split(',');
+        for (let i = 0; i < pairs.length; i++) {
+          const parts = pairs[i].split(':');
           if (parts.length === 2 && parts[0] && parts[1]) {
             forced[parts[0].trim()] = parts[1].trim();
           }
@@ -70,7 +70,7 @@ import { createDebounceTracker } from '@src/common/debounce';
       }
 
       // Fall back to sessionStorage
-      var stored = sessionStorageGet(CONFIG.sessionStorageKey);
+      const stored = sessionStorageGet(CONFIG.sessionStorageKey);
       if (stored) {
         return JSON.parse(stored);
       }
@@ -95,14 +95,14 @@ import { createDebounceTracker } from '@src/common/debounce';
    * to VWO's internal queue.
    */
   function applyForcedVariations(): void {
-    var forced = parseForcedVariations();
-    var keys = Object.keys(forced);
+    const forced = parseForcedVariations();
+    const keys = Object.keys(forced);
 
     if (keys.length === 0) return;
 
     win._vis_opt_queue = win._vis_opt_queue || [];
 
-    for (var i = 0; i < keys.length; i++) {
+    for (let i = 0; i < keys.length; i++) {
       win._vis_opt_queue.push(createSetCombinationFn(keys[i], forced[keys[i]]));
     }
 
@@ -119,22 +119,22 @@ import { createDebounceTracker } from '@src/common/debounce';
    * avoiding deeply nested anonymous closures that cause V8 coverage merge artifacts.
    */
   function createSmartCode(): typeof win._vwo_code {
-    var account_id = CONFIG.accountId;
-    var settings_tolerance = CONFIG.settingsTolerance;
-    var library_tolerance = CONFIG.libraryTolerance;
-    var use_existing_jquery = false;
-    var is_spa = CONFIG.isSPA ? 1 : 0;
-    var hide_element = CONFIG.hideElement;
-    var f = false;
-    var d = doc;
+    const account_id = CONFIG.accountId;
+    const settings_tolerance = CONFIG.settingsTolerance;
+    const library_tolerance = CONFIG.libraryTolerance;
+    const use_existing_jquery = false;
+    const is_spa = CONFIG.isSPA ? 1 : 0;
+    const hide_element = CONFIG.hideElement;
+    let f = false;
+    const d = doc;
 
-    var code = {
+    const code = {
       use_existing_jquery: function() { return use_existing_jquery; },
       library_tolerance: function() { return library_tolerance; },
       finish: function() {
         if (!f) {
           f = true;
-          var a = d.getElementById('_vis_opt_path_hides');
+          const a = d.getElementById('_vis_opt_path_hides');
           if (a && a.parentNode) {
             // Smooth fade-in instead of abrupt snap
             a.textContent = hide_element
@@ -152,7 +152,7 @@ import { createDebounceTracker } from '@src/common/debounce';
       finished: function() { return f; },
       code_loaded: function() {},
       load: function(scriptUrl: string) {
-        var b = d.createElement('script');
+        const b = d.createElement('script');
         b.src = scriptUrl;
         b.type = 'text/javascript';
         if (CONFIG.nonce) b.setAttribute('nonce', CONFIG.nonce);
@@ -162,15 +162,15 @@ import { createDebounceTracker } from '@src/common/debounce';
         d.getElementsByTagName('head')[0].appendChild(b);
       },
       init: function() {
-        var settings_timer = win.setTimeout(function() {
+        const settings_timer = win.setTimeout(function() {
           win._vwo_code.finish();
         }, settings_tolerance);
 
-        var a = d.createElement('style');
-        var b = hide_element
+        const a = d.createElement('style');
+        const b = hide_element
           ? hide_element + '{opacity:0 !important;filter:alpha(opacity=0) !important;background:none !important;}'
           : '';
-        var h = d.getElementsByTagName('head')[0];
+        const h = d.getElementsByTagName('head')[0];
         a.setAttribute('id', '_vis_opt_path_hides');
         a.setAttribute('type', 'text/css');
         a.appendChild(d.createTextNode(b));
@@ -205,21 +205,21 @@ import { createDebounceTracker } from '@src/common/debounce';
    * Read active experiments from VWO's internal state.
    */
   function readExperiments(): VWOExperiment[] {
-    var experiments: VWOExperiment[] = [];
+    const experiments: VWOExperiment[] = [];
 
     try {
-      var vwoExp = win._vwo_exp;
+      const vwoExp = win._vwo_exp;
       if (!vwoExp) return experiments;
 
-      var ids = Object.keys(vwoExp);
-      for (var i = 0; i < ids.length; i++) {
-        var id = ids[i];
-        var exp = vwoExp[id];
+      const ids = Object.keys(vwoExp);
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        const exp = vwoExp[id];
 
         if (!exp || !exp.combination_chosen) continue;
 
-        var variationId = String(exp.combination_chosen);
-        var variationName = '';
+        const variationId = String(exp.combination_chosen);
+        let variationName = '';
 
         // Resolve variation name from comb_n map
         if (exp.comb_n && exp.comb_n[variationId]) {
@@ -247,12 +247,12 @@ import { createDebounceTracker } from '@src/common/debounce';
    * Push experiment_impression events to window.dataLayer.
    */
   function trackExperiments(): void {
-    var experiments = readExperiments();
+    const experiments = readExperiments();
 
     // Push to dataLayer (GA4/GTM)
     if (CONFIG.trackToDataLayer) {
       win.dataLayer = win.dataLayer || [];
-      for (var i = 0; i < experiments.length; i++) {
+      for (let i = 0; i < experiments.length; i++) {
         win.dataLayer.push({
           event: 'experiment_impression',
           experiment_id: experiments[i].campaignId,
@@ -280,12 +280,12 @@ import { createDebounceTracker } from '@src/common/debounce';
    */
   function registerExperimentsToMixpanel(experiments: VWOExperiment[]): void {
     try {
-      var props: Record<string, string> = {};
-      var summaryParts: string[] = [];
+      const props: Record<string, string> = {};
+      const summaryParts: string[] = [];
 
-      for (var i = 0; i < experiments.length; i++) {
-        var exp = experiments[i];
-        var label = exp.variationName || ('Variation ' + exp.variationId);
+      for (let i = 0; i < experiments.length; i++) {
+        const exp = experiments[i];
+        const label = exp.variationName || ('Variation ' + exp.variationId);
         summaryParts.push(exp.campaignId + ':' + label);
         props['vwo_campaign_' + exp.campaignId] = label;
       }
@@ -299,7 +299,7 @@ import { createDebounceTracker } from '@src/common/debounce';
       sessionStorageSet('pp_vwo_exp_props', JSON.stringify(props));
 
       // If Mixpanel is already fully loaded, register immediately
-      var mp = (win as any).mixpanel;
+      const mp = (win as any).mixpanel;
       if (mp && mp.__loaded) {
         mp.register(props);
         if (mp.people && typeof mp.people.set === 'function') {
@@ -338,22 +338,22 @@ import { createDebounceTracker } from '@src/common/debounce';
   // DOM BINDING — auto-track goals via data attributes
   // =====================================================
 
-  var goalDebounce = createDebounceTracker(CONFIG);
-  var viewObserver: IntersectionObserver | null = null;
-  var domBound = false;
+  const goalDebounce = createDebounceTracker(CONFIG);
+  let viewObserver: IntersectionObserver | null = null;
+  let domBound = false;
 
   function trackGoalFromElement(el: Element): void {
-    var goalIdStr = (el.getAttribute(CONFIG.attributes.goal) || '').trim();
+    const goalIdStr = (el.getAttribute(CONFIG.attributes.goal) || '').trim();
     if (!goalIdStr) return;
 
-    var goalId = parseInt(goalIdStr, 10);
+    const goalId = parseInt(goalIdStr, 10);
     if (isNaN(goalId)) return;
 
-    var elId = (el.id || goalIdStr) + ':' + el.tagName;
+    const elId = (el.id || goalIdStr) + ':' + el.tagName;
     if (goalDebounce.isDuplicate(elId)) return;
 
-    var revenueStr = (el.getAttribute(CONFIG.attributes.revenue) || '').trim();
-    var revenue: number | undefined;
+    const revenueStr = (el.getAttribute(CONFIG.attributes.revenue) || '').trim();
+    let revenue: number | undefined;
     if (revenueStr) {
       revenue = parseFloat(revenueStr);
       if (isNaN(revenue)) revenue = undefined;
@@ -364,13 +364,13 @@ import { createDebounceTracker } from '@src/common/debounce';
 
   function handleGoalClick(e: Event): void {
     try {
-      var target = e.target as Element;
+      const target = e.target as Element;
       if (!target || !target.closest) return;
 
-      var el = target.closest('[' + CONFIG.attributes.goal + ']');
+      let el = target.closest('[' + CONFIG.attributes.goal + ']');
       if (!el) return;
 
-      var trigger = (el.getAttribute(CONFIG.attributes.trigger) || 'click').trim();
+      const trigger = (el.getAttribute(CONFIG.attributes.trigger) || 'click').trim();
       if (trigger !== 'click') return;
 
       trackGoalFromElement(el);
@@ -381,10 +381,10 @@ import { createDebounceTracker } from '@src/common/debounce';
 
   function handleGoalSubmit(e: Event): void {
     try {
-      var form = e.target as Element;
+      const form = e.target as Element;
       if (!form) return;
 
-      var el: Element | null = null;
+      let el: Element | null = null;
       if (form.hasAttribute && form.hasAttribute(CONFIG.attributes.goal)) {
         el = form;
       } else if (form.closest) {
@@ -392,7 +392,7 @@ import { createDebounceTracker } from '@src/common/debounce';
       }
       if (!el) return;
 
-      var trigger = (el.getAttribute(CONFIG.attributes.trigger) || '').trim();
+      const trigger = (el.getAttribute(CONFIG.attributes.trigger) || '').trim();
       if (trigger !== 'submit') return;
 
       trackGoalFromElement(el);
@@ -408,8 +408,8 @@ import { createDebounceTracker } from '@src/common/debounce';
         return;
       }
 
-      var selector = '[' + CONFIG.attributes.goal + '][' + CONFIG.attributes.trigger + '="view"]';
-      var elements = doc.querySelectorAll(selector);
+      const selector = '[' + CONFIG.attributes.goal + '][' + CONFIG.attributes.trigger + '="view"]';
+      const elements = doc.querySelectorAll(selector);
       if (elements.length === 0) return;
 
       // Disconnect previous observer if re-scanning
@@ -418,7 +418,7 @@ import { createDebounceTracker } from '@src/common/debounce';
       }
 
       viewObserver = new win.IntersectionObserver(function(entries) {
-        for (var i = 0; i < entries.length; i++) {
+        for (let i = 0; i < entries.length; i++) {
           if (entries[i].isIntersecting) {
             trackGoalFromElement(entries[i].target);
             viewObserver!.unobserve(entries[i].target);
@@ -426,7 +426,7 @@ import { createDebounceTracker } from '@src/common/debounce';
         }
       }, { threshold: 0.5 });
 
-      for (var i = 0; i < elements.length; i++) {
+      for (let i = 0; i < elements.length; i++) {
         viewObserver.observe(elements[i]);
       }
 
@@ -475,8 +475,8 @@ import { createDebounceTracker } from '@src/common/debounce';
     // 2. _vis_opt_queue: VWO hasn't loaded yet, will process queue later
     // 3. Polling: VWO loaded and drained queue before us, but hasn't
     //    set combination_chosen yet — poll until it appears
-    var experimentsTracked = false;
-    var experimentPollInterval: number | null = null;
+    let experimentsTracked = false;
+    let experimentPollInterval: number | null = null;
 
     function tryTrackExperiments(): boolean {
       if (experimentsTracked) return true;
@@ -505,7 +505,7 @@ import { createDebounceTracker } from '@src/common/debounce';
     // Strategy 3: Poll for combination_chosen (covers the gap where
     // VWO already drained the queue but hasn't assigned variations yet)
     if (!experimentsTracked) {
-      var pollCount = 0;
+      let pollCount = 0;
       experimentPollInterval = win.setInterval(function() {
         pollCount++;
         if (tryTrackExperiments() || pollCount >= 30) {
@@ -543,10 +543,10 @@ import { createDebounceTracker } from '@src/common/debounce';
 
     getVariation: function(campaignId: string): string | null {
       try {
-        var vwoExp = win._vwo_exp;
+        const vwoExp = win._vwo_exp;
         if (!vwoExp || !vwoExp[campaignId]) return null;
 
-        var exp = vwoExp[campaignId];
+        const exp = vwoExp[campaignId];
         if (!exp.combination_chosen) return null;
 
         return String(exp.combination_chosen);
@@ -560,7 +560,7 @@ import { createDebounceTracker } from '@src/common/debounce';
 
     forceVariation: function(campaignId: string, variationId: string): void {
       try {
-        var forced = parseForcedVariations();
+        const forced = parseForcedVariations();
         forced[campaignId] = variationId;
 
         sessionStorageSet(CONFIG.sessionStorageKey, JSON.stringify(forced));
@@ -583,10 +583,10 @@ import { createDebounceTracker } from '@src/common/debounce';
 
     isFeatureEnabled: function(campaignId: string): boolean {
       try {
-        var vwoExp = win._vwo_exp;
+        const vwoExp = win._vwo_exp;
         if (!vwoExp || !vwoExp[campaignId]) return false;
 
-        var exp = vwoExp[campaignId];
+        const exp = vwoExp[campaignId];
         if (!exp.combination_chosen) return false;
 
         // Variation 1 is control (feature disabled), anything else is enabled

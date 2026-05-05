@@ -5,16 +5,16 @@ export function createUserBuilder(
   ppLib: PPLib,
   CONFIG: DataLayerConfig
 ) {
-  var overrides: Partial<DataLayerUser> = {};
+  let overrides: Partial<DataLayerUser> = {};
 
   function setUser(user: Partial<DataLayerUser>): void {
     overrides = user;
   }
 
   function buildUser(): DataLayerUser {
-    var userId = ppLib.getCookie(CONFIG.cookieNames.userId) || '';
-    var patientId = ppLib.getCookie(CONFIG.cookieNames.patientId) || '';
-    var appAuth = ppLib.getCookie(CONFIG.cookieNames.appAuth) || '';
+    const userId = ppLib.getCookie(CONFIG.cookieNames.userId) || '';
+    const patientId = ppLib.getCookie(CONFIG.cookieNames.patientId) || '';
+    const appAuth = ppLib.getCookie(CONFIG.cookieNames.appAuth) || '';
 
     return {
       pp_user_id: overrides.pp_user_id !== undefined ? overrides.pp_user_id : userId,

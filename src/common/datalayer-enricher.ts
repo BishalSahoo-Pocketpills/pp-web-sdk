@@ -13,7 +13,7 @@ import type { PPLib } from '@src/types/common.types';
 export type EnricherFn = (pushFn: (...args: any[]) => number) => (...args: any[]) => number;
 
 export function createDataLayerEnricher(win: Window & typeof globalThis, ppLib: PPLib) {
-  var applied = false;
+  let applied = false;
 
   function registerEnricher(enricherFn: EnricherFn): void {
     ppLib._enrichers = ppLib._enrichers || [];
@@ -25,15 +25,15 @@ export function createDataLayerEnricher(win: Window & typeof globalThis, ppLib: 
     if (applied) return;
     applied = true;
 
-    var dl: any[] = win.dataLayer = win.dataLayer || [];
-    var originalPush = dl.push.bind(dl);
+    const dl: any[] = win.dataLayer = win.dataLayer || [];
+    const originalPush = dl.push.bind(dl);
 
     // Re-entrancy guard — prevents infinite recursion if an enricher
     // calls dataLayer.push internally
-    var processing = false;
+    let processing = false;
 
     dl.push = function() {
-      var args = Array.prototype.slice.call(arguments) as any[];
+      const args = Array.prototype.slice.call(arguments) as any[];
       if (processing) {
         return originalPush.apply(dl, args);
       }
@@ -41,9 +41,9 @@ export function createDataLayerEnricher(win: Window & typeof globalThis, ppLib: 
       processing = true;
       try {
         // Compose all registered enrichers dynamically (reads at call time)
-        var enrichers: EnricherFn[] = ppLib._enrichers || [];
-        var composed = originalPush;
-        for (var i = 0; i < enrichers.length; i++) {
+        const enrichers: EnricherFn[] = ppLib._enrichers || [];
+        let composed = originalPush;
+        for (let i = 0; i < enrichers.length; i++) {
           composed = enrichers[i](composed);
         }
         return composed.apply(dl, args);

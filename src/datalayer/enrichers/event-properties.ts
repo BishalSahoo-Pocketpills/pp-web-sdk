@@ -31,16 +31,16 @@ export function createEventPropertiesEnricher(
 
   return function withEventProperties(pushFn: (...args: any[]) => number) {
     return function() {
-      var args = Array.prototype.slice.call(arguments) as any[];
-      for (var i = 0; i < args.length; i++) {
-        var arg = args[i];
+      const args = Array.prototype.slice.call(arguments) as any[];
+      for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
         if (arg && typeof arg === 'object' && arg.event) {
-          var builder = ppLib.eventPropertiesBuilder;
+          const builder = ppLib.eventPropertiesBuilder;
           /*! v8 ignore start */
           if (!builder) continue;
           /*! v8 ignore stop */
 
-          var bundle = builder.build();
+          const bundle = builder.build();
           arg.userProperties = bundle.userProperties;
           arg.eventProperties = bundle.eventProperties;
           arg.page = bundle.page;

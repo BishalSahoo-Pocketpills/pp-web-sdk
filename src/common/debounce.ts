@@ -11,17 +11,17 @@ export interface DebounceTracker {
  * the value via configure() and the tracker reflects the change immediately.
  */
 export function createDebounceTracker(config: { debounceMs: number }, pruneThreshold?: number): DebounceTracker {
-  var threshold = pruneThreshold || 100;
-  var lastEventMap: Record<string, number> = {};
-  var writeCount = 0;
+  const threshold = pruneThreshold || 100;
+  const lastEventMap: Record<string, number> = {};
+  let writeCount = 0;
 
   function isDuplicate(key: string): boolean {
-    var ms = config.debounceMs;
-    var now = Date.now();
+    const ms = config.debounceMs;
+    const now = Date.now();
 
     if (++writeCount >= threshold) {
       writeCount = 0;
-      for (var k in lastEventMap) {
+      for (const k in lastEventMap) {
         if ((now - lastEventMap[k]) >= ms) {
           delete lastEventMap[k];
         }

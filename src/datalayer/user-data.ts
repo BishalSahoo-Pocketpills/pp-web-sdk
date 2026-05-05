@@ -1,6 +1,6 @@
 import type { DataLayerUserData, DataLayerUserDataAddress, UserDataInput, UserDataHashedInput } from '@src/types/datalayer.types';
 
-var SHA256_PATTERN = /^[a-f0-9]{64}$/i;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 
 function emptyUserData(): DataLayerUserData {
   return {
@@ -20,10 +20,10 @@ function emptyUserData(): DataLayerUserData {
 
 async function sha256(value: string): Promise<string> {
   try {
-    var encoder = new TextEncoder();
-    var data = encoder.encode(value.toLowerCase().trim());
-    var hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    var hashArray = Array.from(new Uint8Array(hashBuffer));
+    const encoder = new TextEncoder();
+    const data = encoder.encode(value.toLowerCase().trim());
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
   } catch (e) {
     return '';
@@ -37,10 +37,10 @@ async function hashIfNeeded(value: string | undefined): Promise<string> {
 }
 
 export function createUserDataManager() {
-  var cached: DataLayerUserData = emptyUserData();
+  let cached: DataLayerUserData = emptyUserData();
 
   async function setUserData(raw: UserDataInput): Promise<void> {
-    var result = emptyUserData();
+    const result = emptyUserData();
 
     result.sha256_email_address = await hashIfNeeded(raw.email);
     result.sha256_phone_number = await hashIfNeeded(raw.phone);
@@ -56,7 +56,7 @@ export function createUserDataManager() {
   }
 
   function setUserDataHashed(data: UserDataHashedInput): void {
-    var result = emptyUserData();
+    const result = emptyUserData();
 
     result.sha256_email_address = data.sha256_email_address || '';
     result.sha256_phone_number = data.sha256_phone_number || '';

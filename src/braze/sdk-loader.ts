@@ -61,17 +61,17 @@ export function createSdkLoader(
     /*! v8 ignore stop */
 
     for (let i = 0; i < stubQueue.length; i++) {
-      var entry = stubQueue[i];
-      var method = entry.method;
-      var args = entry.args;
+      const entry = stubQueue[i];
+      const method = entry.method;
+      const args = entry.args;
 
       try {
         // Handle nested getUser().method() calls
         /*! v8 ignore start */
         if (method.indexOf('getUser().') === 0) {
         /*! v8 ignore stop */
-          var userMethod = method.replace('getUser().', '');
-          var user = braze.getUser();
+          const userMethod = method.replace('getUser().', '');
+          const user = braze.getUser();
           /*! v8 ignore start */
           if (user && typeof user[userMethod] === 'function') {
           /*! v8 ignore stop */
@@ -96,7 +96,7 @@ export function createSdkLoader(
 
     createStub();
 
-    var script = doc.createElement('script');
+    const script = doc.createElement('script');
     script.type = 'text/javascript';
     script.async = true;
     script.src = CONFIG.sdk.cdnUrl;
@@ -104,7 +104,7 @@ export function createSdkLoader(
 
     script.onload = function() {
       try {
-        var braze = win.braze;
+        const braze = win.braze;
         braze.initialize(CONFIG.sdk.apiKey, {
           baseUrl: CONFIG.sdk.baseUrl,
           enableLogging: CONFIG.sdk.enableLogging,
@@ -126,7 +126,7 @@ export function createSdkLoader(
       ppLib.log('error', '[ppBraze] Failed to load SDK from ' + CONFIG.sdk.cdnUrl + ' (ad blocker?)');
     };
 
-    var first = doc.getElementsByTagName('script')[0];
+    const first = doc.getElementsByTagName('script')[0];
     /*! v8 ignore start */
     if (first && first.parentNode) {
       first.parentNode.insertBefore(script, first);

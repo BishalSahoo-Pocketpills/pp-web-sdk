@@ -8,16 +8,16 @@ export function createEventHandler(
   CONFIG: BrazeConfig
 ) {
   const lastEventMap: Record<string, number> = {};
-  var debounceWriteCount = 0;
-  var bound = false;
+  let debounceWriteCount = 0;
+  let bound = false;
 
   function isDuplicate(key: string): boolean {
-    var now = Date.now();
+    const now = Date.now();
     /*! v8 ignore start */
     // Prune stale entries every 100 writes to prevent unbounded growth
     if (++debounceWriteCount >= 100) {
       debounceWriteCount = 0;
-      for (var k in lastEventMap) {
+      for (const k in lastEventMap) {
         if ((now - lastEventMap[k]) >= CONFIG.event.debounceMs) {
           delete lastEventMap[k];
         }
@@ -32,24 +32,24 @@ export function createEventHandler(
   }
 
   function getElementKey(el: Element): string {
-    var eventName = el.getAttribute(CONFIG.event.eventAttribute) || '';
+    const eventName = el.getAttribute(CONFIG.event.eventAttribute) || '';
     /*! v8 ignore start */
-    var tag = (el as any).tagName || '';
+    const tag = (el as any).tagName || '';
     /*! v8 ignore stop */
-    var text = ((el as any).textContent || '').substring(0, 50).trim();
+    const text = ((el as any).textContent || '').substring(0, 50).trim();
     return tag + ':' + eventName + ':' + text;
   }
 
   function extractProps(el: Element): Record<string, string> {
-    var props: Record<string, string> = {};
-    var attrs = el.attributes;
+    const props: Record<string, string> = {};
+    const attrs = el.attributes;
 
-    for (var i = 0; i < attrs.length; i++) {
-      var attr = attrs[i];
+    for (let i = 0; i < attrs.length; i++) {
+      const attr = attrs[i];
       /*! v8 ignore start */
       if (attr.name.indexOf(CONFIG.event.propPrefix) === 0) {
       /*! v8 ignore stop */
-        var propName = attr.name.substring(CONFIG.event.propPrefix.length);
+        const propName = attr.name.substring(CONFIG.event.propPrefix.length);
         /*! v8 ignore start */
         if (propName) {
         /*! v8 ignore stop */
@@ -63,14 +63,14 @@ export function createEventHandler(
 
   function handleInteraction(e: Event): void {
     try {
-      var target = e.target as Element;
-      var el = target.closest('[' + CONFIG.event.eventAttribute + ']');
+      const target = e.target as Element;
+      const el = target.closest('[' + CONFIG.event.eventAttribute + ']');
 
       /*! v8 ignore start */
       if (!el) return;
       /*! v8 ignore stop */
 
-      var eventName = el.getAttribute(CONFIG.event.eventAttribute);
+      const eventName = el.getAttribute(CONFIG.event.eventAttribute);
       /*! v8 ignore start */
       if (!eventName) {
         ppLib.log('warn', '[ppBraze] Element found with [' + CONFIG.event.eventAttribute + '] but attribute value is empty');
@@ -78,7 +78,7 @@ export function createEventHandler(
       }
       /*! v8 ignore stop */
 
-      var sanitizedName = ppLib.Security.sanitize(eventName);
+      const sanitizedName = ppLib.Security.sanitize(eventName);
       /*! v8 ignore start */
       if (!sanitizedName) {
         ppLib.log('warn', '[ppBraze] Event name was rejected by sanitization: ' + eventName);
@@ -87,13 +87,13 @@ export function createEventHandler(
       /*! v8 ignore stop */
 
       // Debounce
-      var key = getElementKey(el);
+      const key = getElementKey(el);
       /*! v8 ignore start */
       if (isDuplicate(key)) return;
       /*! v8 ignore stop */
 
       // Extract dynamic properties
-      var properties = extractProps(el);
+      const properties = extractProps(el);
 
       // Add page context
       /*! v8 ignore start */

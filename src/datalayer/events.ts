@@ -17,15 +17,15 @@ export function createEventPusher(
   }
 
   function merge(target: Record<string, any>, source: Record<string, any>): void {
-    var keys = Object.keys(source);
-    for (var i = 0; i < keys.length; i++) {
+    const keys = Object.keys(source);
+    for (let i = 0; i < keys.length; i++) {
       target[keys[i]] = source[keys[i]];
     }
   }
 
   function pushEvent(eventName: string, extra?: Record<string, any>): void {
-    var dl = ensureDataLayer();
-    var enriched: Record<string, any> = {
+    const dl = ensureDataLayer();
+    const enriched: Record<string, any> = {
       event: eventName,
       user: userBuilder.buildUser(),
       userData: userDataManager.getUserData(),
@@ -48,30 +48,30 @@ export function createEventPusher(
   }
 
   function pushEcommerceEvent(eventName: string, inputItems: DataLayerItemInput[], extra?: Record<string, any>): void {
-    var dl = ensureDataLayer();
+    const dl = ensureDataLayer();
 
     // Clear previous ecommerce data
     dl.push({ ecommerce: null });
 
-    var items: DataLayerItem[] = [];
-    var seenIds: Record<string, boolean> = {};
-    for (var i = 0; i < inputItems.length; i++) {
-      var normalized = itemBuilder.normalizeItem(inputItems[i]);
-      var dedupeKey = normalized.item_id || normalized.item_name || '';
+    const items: DataLayerItem[] = [];
+    const seenIds: Record<string, boolean> = {};
+    for (let i = 0; i < inputItems.length; i++) {
+      const normalized = itemBuilder.normalizeItem(inputItems[i]);
+      const dedupeKey = normalized.item_id || normalized.item_name || '';
       if (dedupeKey && seenIds[dedupeKey]) continue;
       if (dedupeKey) seenIds[dedupeKey] = true;
       items.push(normalized);
     }
 
-    var value = itemBuilder.calculateValue(items);
+    const value = itemBuilder.calculateValue(items);
 
-    var ecommerceData: Record<string, any> = {
+    const ecommerceData: Record<string, any> = {
       items: items,
       value: value,
       currency: CONFIG.defaults.currency
     };
 
-    var merged: Record<string, any> = { ecommerce: ecommerceData };
+    const merged: Record<string, any> = { ecommerce: ecommerceData };
     merge(merged, extra || {});
 
     pushEvent(eventName, merged);

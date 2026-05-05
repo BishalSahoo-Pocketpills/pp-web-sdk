@@ -21,7 +21,7 @@ import { createEventPropertiesBuilder } from '@src/common/event-properties-build
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
 
-  var ppLib: PPLib = win.ppLib = win.ppLib || {} as PPLib;
+  const ppLib: PPLib = win.ppLib = win.ppLib || {} as PPLib;
   ppLib.version = __PP_SDK_VERSION__;
 
   // =====================================================
@@ -107,7 +107,7 @@ import { createEventPropertiesBuilder } from '@src/common/event-properties-build
   // coordinator wraps dataLayer.push once.
   // =====================================================
 
-  var enricher = createDataLayerEnricher(win, ppLib);
+  const enricher = createDataLayerEnricher(win, ppLib);
   ppLib.registerEnricher = enricher.registerEnricher;
 
   // =====================================================

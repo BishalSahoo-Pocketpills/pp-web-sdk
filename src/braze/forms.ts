@@ -12,16 +12,16 @@ export function createFormHandler(
   }
 ) {
   const lastSubmitMap: Record<string, number> = {};
-  var debounceWriteCount = 0;
-  var bound = false;
+  let debounceWriteCount = 0;
+  let bound = false;
 
   function isDuplicate(formName: string): boolean {
-    var now = Date.now();
+    const now = Date.now();
     /*! v8 ignore start */
     // Prune stale entries every 100 writes to prevent unbounded growth
     if (++debounceWriteCount >= 100) {
       debounceWriteCount = 0;
-      for (var k in lastSubmitMap) {
+      for (const k in lastSubmitMap) {
         if ((now - lastSubmitMap[k]) >= CONFIG.form.debounceMs) {
           delete lastSubmitMap[k];
         }
@@ -36,17 +36,17 @@ export function createFormHandler(
   }
 
   function extractFields(form: HTMLFormElement): Record<string, string> {
-    var fields: Record<string, string> = {};
-    var elements = form.querySelectorAll('[' + CONFIG.form.fieldAttribute + ']');
+    const fields: Record<string, string> = {};
+    const elements = form.querySelectorAll('[' + CONFIG.form.fieldAttribute + ']');
 
-    for (var i = 0; i < elements.length; i++) {
-      var el = elements[i] as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
-      var attrName = el.getAttribute(CONFIG.form.fieldAttribute);
+    for (let i = 0; i < elements.length; i++) {
+      const el = elements[i] as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+      const attrName = el.getAttribute(CONFIG.form.fieldAttribute);
       /*! v8 ignore start */
       if (!attrName) continue;
       /*! v8 ignore stop */
 
-      var value = el.value || '';
+      const value = el.value || '';
       /*! v8 ignore start */
       if (value) {
       /*! v8 ignore stop */
@@ -59,14 +59,14 @@ export function createFormHandler(
 
   function handleSubmit(e: Event): void {
     try {
-      var target = e.target as Element;
-      var form = target.closest('[' + CONFIG.form.formAttribute + ']') as HTMLFormElement;
+      const target = e.target as Element;
+      const form = target.closest('[' + CONFIG.form.formAttribute + ']') as HTMLFormElement;
 
       /*! v8 ignore start */
       if (!form) return;
       /*! v8 ignore stop */
 
-      var formName = form.getAttribute(CONFIG.form.formAttribute) || '';
+      const formName = form.getAttribute(CONFIG.form.formAttribute) || '';
       /*! v8 ignore start */
       if (!formName) {
         ppLib.log('warn', '[ppBraze] Form element found but [' + CONFIG.form.formAttribute + '] attribute is empty');
@@ -74,7 +74,7 @@ export function createFormHandler(
       }
       /*! v8 ignore stop */
 
-      var sanitizedName = ppLib.Security.sanitize(formName);
+      const sanitizedName = ppLib.Security.sanitize(formName);
       /*! v8 ignore start */
       if (!sanitizedName) {
         ppLib.log('warn', '[ppBraze] Form name was rejected by sanitization: ' + formName);
@@ -95,7 +95,7 @@ export function createFormHandler(
       }
 
       // Extract fields
-      var fields = extractFields(form);
+      const fields = extractFields(form);
 
       // Check requireEmail — if enabled and no valid email, reject
       /*! v8 ignore start */
@@ -111,11 +111,11 @@ export function createFormHandler(
       /*! v8 ignore start */
       if (CONFIG.form.identifyByEmail && fields.email) {
       /*! v8 ignore stop */
-        var emailVal = fields.email.trim();
+        const emailVal = fields.email.trim();
         /*! v8 ignore start */
         if (emailVal) {
         /*! v8 ignore stop */
-          var existingUserId = ppLib.getCookie(CONFIG.identity.userIdCookie);
+          const existingUserId = ppLib.getCookie(CONFIG.identity.userIdCookie);
           /*! v8 ignore start */
           if (!existingUserId || existingUserId === '-1') {
           /*! v8 ignore stop */
@@ -132,13 +132,13 @@ export function createFormHandler(
       }
 
       // Determine event name
-      var eventOverride = form.getAttribute(CONFIG.form.formEventAttribute);
-      var eventName = eventOverride
+      const eventOverride = form.getAttribute(CONFIG.form.formEventAttribute);
+      const eventName = eventOverride
         ? ppLib.Security.sanitize(eventOverride)
         : 'form_submitted_' + sanitizedName;
 
       // Build event properties with page context
-      var properties: Record<string, string> = {
+      const properties: Record<string, string> = {
         form_name: sanitizedName,
         page_url: win.location.href,
         page_path: win.location.pathname,
@@ -163,7 +163,7 @@ export function createFormHandler(
     if (bound) return;
     bound = true;
 
-    var listenerOptions: AddEventListenerOptions = CONFIG.form.preventDefault
+    const listenerOptions: AddEventListenerOptions = CONFIG.form.preventDefault
       ? { capture: false, passive: false }
       : { capture: false, passive: true };
 

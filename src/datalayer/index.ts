@@ -46,15 +46,15 @@ import { createEventPropertiesEnricher } from '@src/datalayer/enrichers/event-pr
   // Deferred cookie reading — called after window.load so cookies
   // set by other scripts (e.g. previousUser) are available.
   function readCookieUserData(): Promise<void> {
-    var prevUser: Record<string, string> = {};
+    let prevUser: Record<string, string> = {};
     try {
-      var prevRaw = ppLib.getCookie(CONFIG.cookieNames.previousUser) || '';
+      const prevRaw = ppLib.getCookie(CONFIG.cookieNames.previousUser) || '';
       prevUser = prevRaw ? JSON.parse(decodeURIComponent(prevRaw)) : {};
     } catch (e) {
       ppLib.log('error', '[ppDataLayer] Failed to parse previousUser cookie', e);
     }
 
-    var userData = {
+    const userData = {
       email: prevUser.email || '',
       phone: prevUser.phone || '',
       first_name: prevUser.firstName || ppLib.getCookie(CONFIG.cookieNames.firstName) || '',
@@ -74,7 +74,7 @@ import { createEventPropertiesEnricher } from '@src/datalayer/enrichers/event-pr
   // =====================================================
 
   function buildAuthOverride(data: { pp_user_id?: string; pp_patient_id?: string }): Partial<DataLayerUser> {
-    var override: Partial<DataLayerUser> = { logged_in: true };
+    const override: Partial<DataLayerUser> = { logged_in: true };
     override.pp_user_id = data.pp_user_id || override.pp_user_id;
     override.pp_patient_id = data.pp_patient_id || override.pp_patient_id;
     return override;
@@ -109,7 +109,7 @@ import { createEventPropertiesEnricher } from '@src/datalayer/enrichers/event-pr
   // Read cookies + push pageview + scanViewItems after window.load
   function onReady(): void {
     readCookieUserData().then(function() {
-      var ud = userDataManager.getUserData();
+      const ud = userDataManager.getUserData();
       eventPusher.pushEvent('pageview');
       CONFIG.autoViewItem && domBinder.scanViewItems();
 
@@ -126,7 +126,7 @@ import { createEventPropertiesEnricher } from '@src/datalayer/enrichers/event-pr
    * Combined with the CONFIG.initDelay (default 1500ms), total max wait
    * is ~11.5s from window.load. Covers scripts loaded via GTM containers.
    */
-  var pollTimerId: number | null = null;
+  let pollTimerId: number | null = null;
 
   function onPollFound(): void {
     pollTimerId = null;
@@ -137,7 +137,7 @@ import { createEventPropertiesEnricher } from '@src/datalayer/enrichers/event-pr
   function pollPreviousUser(remaining: number): void {
     if (remaining > 0) {
       pollTimerId = win.setTimeout(function() {
-        var raw = ppLib.getCookie(CONFIG.cookieNames.previousUser) || '';
+        const raw = ppLib.getCookie(CONFIG.cookieNames.previousUser) || '';
         if (raw) {
           onPollFound();
         } else {
@@ -194,7 +194,7 @@ import { createEventPropertiesEnricher } from '@src/datalayer/enrichers/event-pr
     // ---- Core events ----
 
     pageview: function(data?: Record<string, any>) {
-      var extra: Record<string, any> = { platform: CONFIG.defaults.platform };
+      const extra: Record<string, any> = { platform: CONFIG.defaults.platform };
       ppLib.extend(extra, data || {});
       eventPusher.pushEvent('pageview', extra);
     },

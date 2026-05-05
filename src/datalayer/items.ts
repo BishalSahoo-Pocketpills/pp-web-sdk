@@ -6,7 +6,7 @@ export function createItemBuilder(
   CONFIG: DataLayerConfig
 ) {
   function normalizeItem(input: DataLayerItemInput): DataLayerItem {
-    var item: DataLayerItem = {
+    const item: DataLayerItem = {
       item_id: input.item_id || '',
       item_name: input.item_name || '',
       item_brand: input.item_brand || CONFIG.defaults.itemBrand,
@@ -24,10 +24,10 @@ export function createItemBuilder(
   }
 
   function calculateValue(items: DataLayerItem[]): string {
-    var total = 0;
-    for (var i = 0; i < items.length; i++) {
-      var price = parseFloat(items[i].price) || 0;
-      var discount = parseFloat(items[i].discount) || 0;
+    let total = 0;
+    for (let i = 0; i < items.length; i++) {
+      const price = parseFloat(items[i].price) || 0;
+      const discount = parseFloat(items[i].discount) || 0;
       total += price * items[i].quantity - discount;
     }
     return String(Math.round(total * 100) / 100);

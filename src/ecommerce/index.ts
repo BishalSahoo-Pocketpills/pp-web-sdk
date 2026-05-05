@@ -134,7 +134,7 @@ import { createEventGuard } from '@src/common/event-guard';
       const item = parseItem(elements[i]);
       /*! v8 ignore start */
       if (item) {
-        var dedupeKey = item.item_id || item.item_name || '';
+        const dedupeKey = item.item_id || item.item_name || '';
         if (!seenIds[dedupeKey]) {
           seenIds[dedupeKey] = true;
           items.push(item);
@@ -167,10 +167,10 @@ import { createEventGuard } from '@src/common/event-guard';
   // =====================================================
 
   function deduplicateItems(items: EcommerceItem[]): EcommerceItem[] {
-    var seen: Record<string, boolean> = {};
-    var unique: EcommerceItem[] = [];
+    const seen: Record<string, boolean> = {};
+    const unique: EcommerceItem[] = [];
     for (let i = 0; i < items.length; i++) {
-      var key = items[i].item_id || items[i].item_name || '';
+      const key = items[i].item_id || items[i].item_name || '';
       if (key && seen[key]) continue;
       if (key) seen[key] = true;
       unique.push(items[i]);
@@ -183,7 +183,7 @@ import { createEventGuard } from '@src/common/event-guard';
     if (!items || items.length === 0) return null;
     /*! v8 ignore stop */
 
-    var dedupedItems = deduplicateItems(items);
+    const dedupedItems = deduplicateItems(items);
 
     // Calculate total value from all items
     let totalValue = 0;
@@ -216,7 +216,7 @@ import { createEventGuard } from '@src/common/event-guard';
       win.dataLayer = win.dataLayer || [];
       win.dataLayer.splice(0, Math.max(0, win.dataLayer.length - 500));
 
-      var payload: Record<string, any> = {
+      const payload: Record<string, any> = {
         event: eventName,
         platform: CONFIG.defaults.platform,
         ecommerce: ecommerceData

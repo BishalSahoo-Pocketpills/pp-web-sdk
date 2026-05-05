@@ -100,10 +100,10 @@ export interface EventPropertiesBuilder {
   getLastTouchUtm: () => RawUtmTouch;
 }
 
-var DEVICE_ID_KEY = 'pp_device_id';
-var UTM_FIRST_TOUCH_KEY = 'pp_utm_first_touch';
-var UTM_LAST_TOUCH_KEY = 'pp_utm_last_touch';
-var UTM_KEYS: ReadonlyArray<keyof RawUtmTouch> = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
+const DEVICE_ID_KEY = 'pp_device_id';
+const UTM_FIRST_TOUCH_KEY = 'pp_utm_first_touch';
+const UTM_LAST_TOUCH_KEY = 'pp_utm_last_touch';
+const UTM_KEYS: ReadonlyArray<keyof RawUtmTouch> = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
 
 function emptyUtm(): RawUtmTouch {
   return { utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '' };
@@ -111,7 +111,7 @@ function emptyUtm(): RawUtmTouch {
 
 // Properties already registered as Mixpanel super-properties elsewhere in the
 // SDK. Skipping them in buildFlat() avoids redundant per-event payload bloat.
-var MIXPANEL_SUPER_PROP_KEYS: Record<string, true> = {
+const MIXPANEL_SUPER_PROP_KEYS: Record<string, true> = {
   'marketing_attribution': true,
   'utm_source [first touch]': true,
   'utm_medium [first touch]': true,
@@ -135,15 +135,15 @@ export function createEventPropertiesBuilder(
   ppLib: PPLib
 ): EventPropertiesBuilder {
 
-  var cookieNames: EventPropertiesBuilderCookieNames = defaultCookieNames();
-  var defaultPlatform: string = 'web';
+  let cookieNames: EventPropertiesBuilderCookieNames = defaultCookieNames();
+  let defaultPlatform: string = 'web';
 
   // Stable per-session fields — derived once, reset on configure().
-  var stableCache: { browser: string; device_type: string; country: string; device_id: string } | null = null;
+  let stableCache: { browser: string; device_type: string; country: string; device_id: string } | null = null;
 
   function configure(next: EventPropertiesBuilderOpts): void {
     if (next.cookieNames) {
-      var prev = cookieNames;
+      const prev = cookieNames;
       cookieNames = {
         userId: next.cookieNames.userId || prev.userId,
         patientId: next.cookieNames.patientId || prev.patientId,
@@ -159,16 +159,16 @@ export function createEventPropertiesBuilder(
 
   function getOrCreateDeviceId(): string {
     try {
-      var stored = win.localStorage.getItem(DEVICE_ID_KEY);
+      const stored = win.localStorage.getItem(DEVICE_ID_KEY);
       if (stored) return stored;
 
-      var id: string;
+      let id: string;
       try {
         if (typeof win.crypto !== 'undefined' && typeof win.crypto.randomUUID === 'function') {
           id = win.crypto.randomUUID();
         } else {
           id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-            var r = Math.random() * 16 | 0;
+            const r = Math.random() * 16 | 0;
             return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
           });
         }
@@ -196,7 +196,7 @@ export function createEventPropertiesBuilder(
 
   function parseDeviceType(ua: string): string {
     if (!ua) return '';
-    var lower = ua.toLowerCase();
+    const lower = ua.toLowerCase();
     if (lower.indexOf('ipad') !== -1) return 'tablet';
     if (lower.indexOf('tablet') !== -1 || lower.indexOf('kindle') !== -1) return 'tablet';
     if (lower.indexOf('mobi') !== -1 || lower.indexOf('android') !== -1 && lower.indexOf('mobile') !== -1) return 'mobile';
@@ -240,13 +240,13 @@ export function createEventPropertiesBuilder(
   // ---------------------------------------------------------------------------
 
   function readUtmFromUrl(): RawUtmTouch {
-    var result = emptyUtm();
+    const result = emptyUtm();
     try {
       // Prefer document.URL — matches the rest of the SDK's URL access and
       // honors the test pattern of stubbing document.URL via defineProperty.
-      var url = (win.document && win.document.URL) || win.location.href || '';
-      for (var i = 0; i < UTM_KEYS.length; i++) {
-        var k = UTM_KEYS[i];
+      const url = (win.document && win.document.URL) || win.location.href || '';
+      for (let i = 0; i < UTM_KEYS.length; i++) {
+        const k = UTM_KEYS[i];
         result[k] = ppLib.getQueryParam(url, k) || '';
       }
     } catch (e) {
@@ -257,16 +257,16 @@ export function createEventPropertiesBuilder(
 
   function readStoredUtm(storageKey: string): RawUtmTouch {
     try {
-      var raw = win.localStorage.getItem(storageKey);
+      const raw = win.localStorage.getItem(storageKey);
       if (!raw) return emptyUtm();
-      var parsed = ppLib.Security && ppLib.Security.json
+      const parsed = ppLib.Security && ppLib.Security.json
         ? ppLib.Security.json.parse(raw, null)
         : JSON.parse(raw);
       if (!parsed || typeof parsed !== 'object') return emptyUtm();
-      var out = emptyUtm();
-      for (var i = 0; i < UTM_KEYS.length; i++) {
-        var k = UTM_KEYS[i];
-        var v = (parsed as Record<string, unknown>)[k];
+      const out = emptyUtm();
+      for (let i = 0; i < UTM_KEYS.length; i++) {
+        const k = UTM_KEYS[i];
+        const v = (parsed as Record<string, unknown>)[k];
         out[k] = typeof v === 'string' ? v : '';
       }
       return out;
@@ -286,20 +286,20 @@ export function createEventPropertiesBuilder(
   // Capture the current visit's utm_* into last-touch (always overwritten when
   // present) and first-touch (set once, locked thereafter). Skipped on visits
   // with no utm_* params so a direct return doesn't clobber stored attribution.
-  var utmCaptured = false;
+  let utmCaptured = false;
   function captureUtmTouches(): void {
     if (utmCaptured) return;
     utmCaptured = true;
-    var current = readUtmFromUrl();
-    var hasAny = false;
-    for (var i = 0; i < UTM_KEYS.length; i++) {
+    const current = readUtmFromUrl();
+    let hasAny = false;
+    for (let i = 0; i < UTM_KEYS.length; i++) {
       if (current[UTM_KEYS[i]]) { hasAny = true; break; }
     }
     if (!hasAny) return;
     persistUtm(UTM_LAST_TOUCH_KEY, current);
-    var existingFirst = readStoredUtm(UTM_FIRST_TOUCH_KEY);
-    var firstAlreadySet = false;
-    for (var j = 0; j < UTM_KEYS.length; j++) {
+    const existingFirst = readStoredUtm(UTM_FIRST_TOUCH_KEY);
+    let firstAlreadySet = false;
+    for (let j = 0; j < UTM_KEYS.length; j++) {
       if (existingFirst[UTM_KEYS[j]]) { firstAlreadySet = true; break; }
     }
     if (!firstAlreadySet) persistUtm(UTM_FIRST_TOUCH_KEY, current);
@@ -331,7 +331,7 @@ export function createEventPropertiesBuilder(
 
   function buildStable() {
     if (stableCache) return stableCache;
-    var ua = (win.navigator && win.navigator.userAgent) || '';
+    const ua = (win.navigator && win.navigator.userAgent) || '';
     stableCache = {
       browser: parseBrowser(ua),
       device_type: parseDeviceType(ua),
@@ -342,31 +342,31 @@ export function createEventPropertiesBuilder(
   }
 
   function build(): BuiltEventBundle {
-    var stable = buildStable();
+    const stable = buildStable();
     captureUtmTouches();
 
-    var userId = ppLib.getCookie(cookieNames.userId) || '';
-    var patientId = ppLib.getCookie(cookieNames.patientId) || '';
-    var appAuth = ppLib.getCookie(cookieNames.appAuth) || '';
-    var isLoggedIn = appAuth === 'true' || (!!userId && userId !== '-1' && !!patientId);
+    const userId = ppLib.getCookie(cookieNames.userId) || '';
+    const patientId = ppLib.getCookie(cookieNames.patientId) || '';
+    const appAuth = ppLib.getCookie(cookieNames.appAuth) || '';
+    const isLoggedIn = appAuth === 'true' || (!!userId && userId !== '-1' && !!patientId);
 
     // Literal utm_* params — intentionally NOT routed through the attribution
     // service's normalization, so e.g. `?source=febpt` does NOT populate
     // utm_source. The attribution service still normalizes for
     // marketing_attribution below.
-    var currentUtm = readUtmFromUrl();
-    var firstUtm = readStoredUtm(UTM_FIRST_TOUCH_KEY);
-    var lastUtm = readStoredUtm(UTM_LAST_TOUCH_KEY);
+    const currentUtm = readUtmFromUrl();
+    const firstUtm = readStoredUtm(UTM_FIRST_TOUCH_KEY);
+    const lastUtm = readStoredUtm(UTM_LAST_TOUCH_KEY);
 
-    var firstTouchAttr = ppLib.attribution ? ppLib.attribution.getFirstTouch() : null;
+    const firstTouchAttr = ppLib.attribution ? ppLib.attribution.getFirstTouch() : null;
 
-    var userProperties: BuiltUserProperties = {
+    const userProperties: BuiltUserProperties = {
       userId: userId,
       patientId: patientId,
       pp_distinct_id: isLoggedIn ? userId : stable.device_id
     };
 
-    var eventProperties: BuiltEventProperties = {
+    const eventProperties: BuiltEventProperties = {
       current_url: win.location.href,
       url: win.location.pathname || '/',
       device_id: stable.device_id,
@@ -406,14 +406,14 @@ export function createEventPropertiesBuilder(
       marketing_attribution: ppLib.attribution ? ppLib.attribution.get() : null
     };
 
-    var page: BuiltPage = {
+    const page: BuiltPage = {
       url: win.location.pathname || '/',
       title: win.document.title || '',
       referrer: win.document.referrer || ''
     };
 
-    var params = new URLSearchParams(win.location.search || '');
-    var attribution: BuiltAttribution = {
+    const params = new URLSearchParams(win.location.search || '');
+    const attribution: BuiltAttribution = {
       fbclid: params.get('fbclid') || null,
       fbc: ppLib.getCookie('_fbc') || null,
       fbp: ppLib.getCookie('_fbp') || null,
@@ -429,30 +429,30 @@ export function createEventPropertiesBuilder(
   }
 
   function buildFlat(): Record<string, unknown> {
-    var bundle = build();
-    var flat: Record<string, unknown> = {};
+    const bundle = build();
+    const flat: Record<string, unknown> = {};
 
     // userProperties first, then eventProperties — eventProperties wins on
     // overlapping keys (none today, but safe ordering for future fields).
-    var userObj = bundle.userProperties as unknown as Record<string, unknown>;
-    var userKeys = Object.keys(userObj);
-    for (var i = 0; i < userKeys.length; i++) {
+    const userObj = bundle.userProperties as unknown as Record<string, unknown>;
+    const userKeys = Object.keys(userObj);
+    for (let i = 0; i < userKeys.length; i++) {
       flat[userKeys[i]] = userObj[userKeys[i]];
     }
-    var eventObj = bundle.eventProperties as unknown as Record<string, unknown>;
-    var eventKeys = Object.keys(eventObj);
-    for (var j = 0; j < eventKeys.length; j++) {
-      var k = eventKeys[j];
+    const eventObj = bundle.eventProperties as unknown as Record<string, unknown>;
+    const eventKeys = Object.keys(eventObj);
+    for (let j = 0; j < eventKeys.length; j++) {
+      const k = eventKeys[j];
       if (MIXPANEL_SUPER_PROP_KEYS[k]) continue; // skip super-prop duplication
       flat[k] = eventObj[k];
     }
 
     // Ad-platform click IDs — useful per-event for downstream conversion attribution.
-    var attrObj = bundle.attribution as unknown as Record<string, unknown>;
-    var attrKeys = Object.keys(attrObj);
-    for (var n = 0; n < attrKeys.length; n++) {
-      var ak = attrKeys[n];
-      var av = attrObj[ak];
+    const attrObj = bundle.attribution as unknown as Record<string, unknown>;
+    const attrKeys = Object.keys(attrObj);
+    for (let n = 0; n < attrKeys.length; n++) {
+      const ak = attrKeys[n];
+      const av = attrObj[ak];
       if (av !== null && av !== undefined) flat[ak] = av;
     }
 

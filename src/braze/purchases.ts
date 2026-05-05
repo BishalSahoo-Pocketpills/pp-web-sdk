@@ -13,17 +13,17 @@ export function createPurchaseHandler(
   const QUANTITY_ATTR = 'data-braze-quantity';
 
   const lastPurchaseMap: Record<string, number> = {};
-  var debounceWriteCount = 0;
-  var bound = false;
-  var bridged = false;
+  let debounceWriteCount = 0;
+  let bound = false;
+  let bridged = false;
 
   function isDuplicate(key: string): boolean {
-    var now = Date.now();
+    const now = Date.now();
     /*! v8 ignore start */
     // Prune stale entries every 100 writes to prevent unbounded growth
     if (++debounceWriteCount >= 100) {
       debounceWriteCount = 0;
-      for (var k in lastPurchaseMap) {
+      for (const k in lastPurchaseMap) {
         if ((now - lastPurchaseMap[k]) >= CONFIG.event.debounceMs) {
           delete lastPurchaseMap[k];
         }
@@ -39,15 +39,15 @@ export function createPurchaseHandler(
 
   function handlePurchaseClick(e: Event): void {
     try {
-      var target = e.target as Element;
-      var el = target.closest('[' + PURCHASE_ATTR + ']');
+      const target = e.target as Element;
+      const el = target.closest('[' + PURCHASE_ATTR + ']');
 
       /*! v8 ignore start */
       if (!el) return;
       /*! v8 ignore stop */
 
-      var productId = el.getAttribute(PURCHASE_ATTR);
-      var priceStr = el.getAttribute(PRICE_ATTR);
+      const productId = el.getAttribute(PURCHASE_ATTR);
+      const priceStr = el.getAttribute(PRICE_ATTR);
 
       /*! v8 ignore start */
       if (!productId || !priceStr) {
@@ -58,12 +58,12 @@ export function createPurchaseHandler(
       }
       /*! v8 ignore stop */
 
-      var sanitizedId = ppLib.Security.sanitize(productId);
+      const sanitizedId = ppLib.Security.sanitize(productId);
       /*! v8 ignore start */
       if (!sanitizedId) return;
       /*! v8 ignore stop */
 
-      var price = parseFloat(priceStr);
+      const price = parseFloat(priceStr);
       /*! v8 ignore start */
       if (isNaN(price)) {
       /*! v8 ignore stop */
@@ -72,14 +72,14 @@ export function createPurchaseHandler(
       }
 
       // Debounce
-      var key = sanitizedId + ':' + price;
+      const key = sanitizedId + ':' + price;
       /*! v8 ignore start */
       if (isDuplicate(key)) return;
       /*! v8 ignore stop */
 
-      var currency = ppLib.Security.sanitize(el.getAttribute(CURRENCY_ATTR) || CONFIG.purchase.defaultCurrency);
-      var quantityStr = el.getAttribute(QUANTITY_ATTR);
-      var quantity = quantityStr ? parseInt(quantityStr, 10) : 1;
+      const currency = ppLib.Security.sanitize(el.getAttribute(CURRENCY_ATTR) || CONFIG.purchase.defaultCurrency);
+      const quantityStr = el.getAttribute(QUANTITY_ATTR);
+      let quantity = quantityStr ? parseInt(quantityStr, 10) : 1;
       /*! v8 ignore start */
       if (isNaN(quantity) || quantity < 1) quantity = 1;
       /*! v8 ignore stop */
@@ -99,7 +99,7 @@ export function createPurchaseHandler(
     properties?: Record<string, any>
   ): void {
     try {
-      var sanitizedId = ppLib.Security.sanitize(productId);
+      const sanitizedId = ppLib.Security.sanitize(productId);
       /*! v8 ignore start */
       if (!sanitizedId) {
         ppLib.log('warn', '[ppBraze] trackPurchase requires a non-empty productId');
@@ -114,17 +114,17 @@ export function createPurchaseHandler(
         return;
       }
 
-      var cur = currency ? ppLib.Security.sanitize(currency) : CONFIG.purchase.defaultCurrency;
-      var qty = (quantity && quantity >= 1) ? quantity : 1;
+      const cur = currency ? ppLib.Security.sanitize(currency) : CONFIG.purchase.defaultCurrency;
+      const qty = (quantity && quantity >= 1) ? quantity : 1;
 
       // Sanitize properties if provided
-      var sanitizedProps: Record<string, string> | undefined;
+      let sanitizedProps: Record<string, string> | undefined;
       /*! v8 ignore start */
       if (properties && typeof properties === 'object') {
       /*! v8 ignore stop */
         sanitizedProps = {};
-        var keys = Object.keys(properties);
-        for (var i = 0; i < keys.length; i++) {
+        const keys = Object.keys(properties);
+        for (let i = 0; i < keys.length; i++) {
           sanitizedProps[keys[i]] = ppLib.Security.sanitize(String(properties[keys[i]]));
         }
       }
@@ -148,21 +148,21 @@ export function createPurchaseHandler(
     if (bridged) return;
     bridged = true;
 
-    var originalPush = win.dataLayer && win.dataLayer.push;
+    const originalPush = win.dataLayer && win.dataLayer.push;
     win.dataLayer = win.dataLayer || [];
 
-    var origPush = Array.prototype.push;
+    const origPush = Array.prototype.push;
     win.dataLayer.push = function() {
-      var result = origPush.apply(win.dataLayer, arguments as any);
+      const result = origPush.apply(win.dataLayer, arguments as any);
 
-      for (var i = 0; i < arguments.length; i++) {
-        var entry = arguments[i];
+      for (let i = 0; i < arguments.length; i++) {
+        const entry = arguments[i];
         /*! v8 ignore start */
         if (entry && entry.event === 'add_to_cart' && entry.ecommerce && entry.ecommerce.items) {
         /*! v8 ignore stop */
-          var items = entry.ecommerce.items;
-          for (var j = 0; j < items.length; j++) {
-            var item = items[j];
+          const items = entry.ecommerce.items;
+          for (let j = 0; j < items.length; j++) {
+            const item = items[j];
             /*! v8 ignore start */
             if (item.item_id && item.price) {
             /*! v8 ignore stop */

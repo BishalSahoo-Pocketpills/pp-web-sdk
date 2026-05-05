@@ -137,13 +137,13 @@ import type { EventSourceConfig, EventSourceData } from '@src/types/event-source
     }
 
     // VWO goal attributes
-    var vwoGoal = el.getAttribute(CONFIG.vwoGoalAttribute);
+    const vwoGoal = el.getAttribute(CONFIG.vwoGoalAttribute);
     /*! v8 ignore start */
     if (vwoGoal) {
     /*! v8 ignore stop */
       data.vwo_goal_id = ppLib.Security.sanitize(vwoGoal);
     }
-    var vwoRevenue = el.getAttribute(CONFIG.vwoRevenueAttribute);
+    const vwoRevenue = el.getAttribute(CONFIG.vwoRevenueAttribute);
     /*! v8 ignore start */
     if (vwoRevenue) {
     /*! v8 ignore stop */
@@ -232,7 +232,7 @@ import type { EventSourceConfig, EventSourceData } from '@src/types/event-source
       if (!data.vwo_goal_id) return;
       /*! v8 ignore stop */
 
-      var goalId = parseInt(data.vwo_goal_id, 10);
+      const goalId = parseInt(data.vwo_goal_id, 10);
       if (isNaN(goalId)) return;
 
       /*! v8 ignore start */
@@ -242,7 +242,7 @@ import type { EventSourceConfig, EventSourceData } from '@src/types/event-source
       }
       /*! v8 ignore stop */
 
-      var revenue: number | undefined;
+      let revenue: number | undefined;
       /*! v8 ignore start */
       if (data.vwo_revenue) {
         revenue = parseFloat(data.vwo_revenue);

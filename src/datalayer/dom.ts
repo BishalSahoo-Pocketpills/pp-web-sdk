@@ -3,7 +3,7 @@ import type { DataLayerConfig, DataLayerItemInput } from '@src/types/datalayer.t
 import { createDebounceTracker } from '@src/common/debounce';
 import { createEventGuard } from '@src/common/event-guard';
 
-var ECOMMERCE_EVENTS: Record<string, boolean> = {
+const ECOMMERCE_EVENTS: Record<string, boolean> = {
   view_item: true,
   add_to_cart: true,
   begin_checkout: true,
@@ -20,13 +20,13 @@ export function createDomBinder(
   itemBuilder: { normalizeItem: (input: DataLayerItemInput) => any; calculateValue: (items: any[]) => string }
 ) {
 
-  var debounce = createDebounceTracker(CONFIG);
-  var eventGuard = createEventGuard(ppLib);
-  var bound = false;
+  const debounce = createDebounceTracker(CONFIG);
+  const eventGuard = createEventGuard(ppLib);
+  let bound = false;
 
   function getElementId(el: Element): string {
-    var id = el.id || el.getAttribute(CONFIG.attributes.event) || '';
-    var tag = el.tagName || '';
+    const id = el.id || el.getAttribute(CONFIG.attributes.event) || '';
+    const tag = el.tagName || '';
     return tag + ':' + id;
   }
 
@@ -35,16 +35,16 @@ export function createDomBinder(
   }
 
   function extractItemFromElement(el: Element): DataLayerItemInput {
-    var item: DataLayerItemInput = {};
+    const item: DataLayerItemInput = {};
 
-    var itemId = readAttr(el, CONFIG.attributes.itemId);
-    var itemName = readAttr(el, CONFIG.attributes.itemName);
-    var itemBrand = readAttr(el, CONFIG.attributes.itemBrand);
-    var itemCategory = readAttr(el, CONFIG.attributes.itemCategory);
-    var price = readAttr(el, CONFIG.attributes.price);
-    var quantity = readAttr(el, CONFIG.attributes.quantity);
-    var discount = readAttr(el, CONFIG.attributes.discount);
-    var coupon = readAttr(el, CONFIG.attributes.coupon);
+    const itemId = readAttr(el, CONFIG.attributes.itemId);
+    const itemName = readAttr(el, CONFIG.attributes.itemName);
+    const itemBrand = readAttr(el, CONFIG.attributes.itemBrand);
+    const itemCategory = readAttr(el, CONFIG.attributes.itemCategory);
+    const price = readAttr(el, CONFIG.attributes.price);
+    const quantity = readAttr(el, CONFIG.attributes.quantity);
+    const discount = readAttr(el, CONFIG.attributes.discount);
+    const coupon = readAttr(el, CONFIG.attributes.coupon);
 
     if (itemId) item.item_id = itemId;
     if (itemName) item.item_name = itemName;
@@ -65,17 +65,17 @@ export function createDomBinder(
     }
 
     // Container pattern: find nearest ancestor with item data
-    var container = el.closest('[' + CONFIG.attributes.itemId + '], [' + CONFIG.attributes.itemName + ']');
+    const container = el.closest('[' + CONFIG.attributes.itemId + '], [' + CONFIG.attributes.itemName + ']');
     return container || el;
   }
 
   function handleEcommerceEvent(eventName: string, el: Element): void {
-    var itemEl = resolveItemElement(el);
-    var itemInput = extractItemFromElement(itemEl);
-    var extra: Record<string, any> = {};
+    const itemEl = resolveItemElement(el);
+    const itemInput = extractItemFromElement(itemEl);
+    const extra: Record<string, any> = {};
 
     if (eventName === 'purchase') {
-      var txnId = readAttr(el, CONFIG.attributes.transactionId);
+      const txnId = readAttr(el, CONFIG.attributes.transactionId);
       if (txnId) extra.transaction_id = txnId;
     }
 
@@ -83,14 +83,14 @@ export function createDomBinder(
   }
 
   function handleCoreEvent(eventName: string, el: Element): void {
-    var data: Record<string, any> = {};
+    const data: Record<string, any> = {};
 
-    var method = readAttr(el, CONFIG.attributes.method);
-    var pageType = readAttr(el, CONFIG.attributes.pageType);
-    var signupFlow = readAttr(el, CONFIG.attributes.signupFlow);
-    var searchTerm = readAttr(el, CONFIG.attributes.searchTerm);
-    var resultsCount = readAttr(el, CONFIG.attributes.resultsCount);
-    var searchType = readAttr(el, CONFIG.attributes.searchType);
+    const method = readAttr(el, CONFIG.attributes.method);
+    const pageType = readAttr(el, CONFIG.attributes.pageType);
+    const signupFlow = readAttr(el, CONFIG.attributes.signupFlow);
+    const searchTerm = readAttr(el, CONFIG.attributes.searchTerm);
+    const resultsCount = readAttr(el, CONFIG.attributes.resultsCount);
+    const searchType = readAttr(el, CONFIG.attributes.searchType);
 
     if (method) data.method = method;
     if (pageType) data.page_type = pageType;
@@ -108,20 +108,20 @@ export function createDomBinder(
 
   function handleInteraction(e: Event): void {
     try {
-      var target = e.target as Element;
+      const target = e.target as Element;
         if (!target || !target.closest) return;
   
-      var el = target.closest('[' + CONFIG.attributes.event + ']');
+      const el = target.closest('[' + CONFIG.attributes.event + ']');
       if (!el) return;
 
-      var elId = getElementId(el);
+      const elId = getElementId(el);
         if (debounce.isDuplicate(elId)) return;
   
-      var eventName = ppLib.Security.sanitize(readAttr(el, CONFIG.attributes.event));
+      const eventName = ppLib.Security.sanitize(readAttr(el, CONFIG.attributes.event));
       if (!eventName) return;
 
       // Anchor hitCallback: intercept navigation
-      var isAnchor = el.tagName === 'A' && (el as HTMLAnchorElement).href;
+      const isAnchor = el.tagName === 'A' && (el as HTMLAnchorElement).href;
       if (isAnchor) {
         e.preventDefault();
       }
@@ -135,13 +135,13 @@ export function createDomBinder(
 
       // Delayed navigation for anchors
       if (isAnchor) {
-        var anchor = el as HTMLAnchorElement;
-        var href = anchor.href;
-        var anchorTarget = anchor.target;
+        const anchor = el as HTMLAnchorElement;
+        const href = anchor.href;
+        const anchorTarget = anchor.target;
         win.setTimeout(function() {
           try {
             if (anchorTarget === '_blank') {
-              var popup = win.open(href, '_blank', 'noopener');
+              const popup = win.open(href, '_blank', 'noopener');
               if (!popup) {
                 win.location.href = href;
               }
@@ -178,19 +178,19 @@ export function createDomBinder(
         return;
       }
 
-      var selector = '[' + CONFIG.attributes.viewItem + ']';
-      var elements = doc.querySelectorAll(selector);
+      const selector = '[' + CONFIG.attributes.viewItem + ']';
+      const elements = doc.querySelectorAll(selector);
       if (elements.length === 0) {
         ppLib.log('verbose', '[ppDataLayer] No item elements found for auto view_item');
         return;
       }
 
-      var items: DataLayerItemInput[] = [];
-      var seenIds: Record<string, boolean> = {};
-      for (var i = 0; i < elements.length; i++) {
-        var item = extractItemFromElement(elements[i]);
+      const items: DataLayerItemInput[] = [];
+      const seenIds: Record<string, boolean> = {};
+      for (let i = 0; i < elements.length; i++) {
+        const item = extractItemFromElement(elements[i]);
         if (item.item_id || item.item_name) {
-          var dedupeKey = item.item_id || item.item_name || '';
+          const dedupeKey = item.item_id || item.item_name || '';
           if (!seenIds[dedupeKey]) {
             seenIds[dedupeKey] = true;
             items.push(item);

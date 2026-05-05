@@ -38,21 +38,21 @@ import { createInitAuthState } from '@src/login/auth-state';
   // EVENT BINDING (delegation)
   // =====================================================
 
-  var bound = false;
+  let bound = false;
 
   function handleLoginAction(e: Event): void {
     try {
-      var target = e.target as Element;
+      const target = e.target as Element;
       /*! v8 ignore start */
       if (!target || !target.closest) return;
       /*! v8 ignore stop */
 
-      var el = target.closest('[' + CONFIG.actionAttribute + ']');
+      const el = target.closest('[' + CONFIG.actionAttribute + ']');
       /*! v8 ignore start */
       if (!el) return;
       /*! v8 ignore stop */
 
-      var action = el.getAttribute(CONFIG.actionAttribute);
+      const action = el.getAttribute(CONFIG.actionAttribute);
       if (action === 'logout') {
         e.preventDefault();
         logoutUser(false);

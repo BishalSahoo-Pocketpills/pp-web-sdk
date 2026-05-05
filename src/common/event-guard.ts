@@ -15,7 +15,7 @@ export interface EventGuard {
  */
 export function createEventGuard(ppLib: PPLib): EventGuard {
   function claim(eventName: string): boolean {
-    var fired = ppLib._firedEvents || (ppLib._firedEvents = {});
+    const fired = ppLib._firedEvents || (ppLib._firedEvents = {});
     if (fired[eventName]) return false;
     fired[eventName] = true;
     return true;

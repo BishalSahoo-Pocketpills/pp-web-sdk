@@ -21,14 +21,14 @@ export function createUserManager(
   ppLib: PPLib,
   CONFIG: BrazeConfig
 ) {
-  var mapValidated = false;
+  let mapValidated = false;
 
   function validateAttributeMap(): void {
     if (mapValidated) return;
     mapValidated = true;
-    var seen: Record<string, string> = {};
-    for (var key in CONFIG.attributeMap) {
-      var target = CONFIG.attributeMap[key];
+    const seen: Record<string, string> = {};
+    for (const key in CONFIG.attributeMap) {
+      const target = CONFIG.attributeMap[key];
       if (seen[target]) {
         ppLib.log('warn', '[ppBraze] attributeMap collision: "' + seen[target] + '" and "' + key + '" both map to "' + target + '"');
       }
@@ -38,7 +38,7 @@ export function createUserManager(
 
   function identify(userId: string): void {
     try {
-      var sanitized = ppLib.Security.sanitize(userId);
+      const sanitized = ppLib.Security.sanitize(userId);
       /*! v8 ignore start */
       if (!sanitized) {
       /*! v8 ignore stop */
@@ -60,20 +60,20 @@ export function createUserManager(
 
       validateAttributeMap();
 
-      var user = win.braze.getUser();
-      var keys = Object.keys(attrs);
+      const user = win.braze.getUser();
+      const keys = Object.keys(attrs);
 
-      for (var i = 0; i < keys.length; i++) {
-        var key = keys[i];
-        var value = ppLib.Security.sanitize(String(attrs[key]));
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        const value = ppLib.Security.sanitize(String(attrs[key]));
 
         // Check attributeMap for remapping
         /*! v8 ignore start */
-        var mappedKey = CONFIG.attributeMap[key] || key;
+        const mappedKey = CONFIG.attributeMap[key] || key;
         /*! v8 ignore stop */
 
         // Check if it's a standard attribute
-        var setter = STANDARD_ATTRS[mappedKey];
+        const setter = STANDARD_ATTRS[mappedKey];
         /*! v8 ignore start */
         if (setter && typeof user[setter] === 'function') {
         /*! v8 ignore stop */
@@ -95,7 +95,7 @@ export function createUserManager(
         ppLib.log('warn', '[ppBraze] setEmail called with empty email');
         return;
       }
-      var sanitized = ppLib.Security.sanitize(email);
+      const sanitized = ppLib.Security.sanitize(email);
       /*! v8 ignore start */
       if (!sanitized) {
         ppLib.log('warn', '[ppBraze] Email was rejected by sanitization: ' + email);
@@ -112,7 +112,7 @@ export function createUserManager(
   function autoIdentify(): void {
     if (!CONFIG.identity.autoIdentify) return;
 
-    var userId = ppLib.getCookie(CONFIG.identity.userIdCookie);
+    const userId = ppLib.getCookie(CONFIG.identity.userIdCookie);
     /*! v8 ignore start */
     if (userId && userId !== '-1') {
     /*! v8 ignore stop */
@@ -122,7 +122,7 @@ export function createUserManager(
     /*! v8 ignore start */
     if (CONFIG.identity.emailCookie) {
     /*! v8 ignore stop */
-      var email = ppLib.getCookie(CONFIG.identity.emailCookie);
+      const email = ppLib.getCookie(CONFIG.identity.emailCookie);
       /*! v8 ignore start */
       if (email) {
       /*! v8 ignore stop */
@@ -139,12 +139,12 @@ export function createUserManager(
     try {
       validateAttributeMap();
 
-      var user = win.braze.getUser();
-      var keys = Object.keys(fieldMap);
+      const user = win.braze.getUser();
+      const keys = Object.keys(fieldMap);
 
-      for (var i = 0; i < keys.length; i++) {
-        var attrName = keys[i];
-        var value = ppLib.Security.sanitize(fieldMap[attrName]);
+      for (let i = 0; i < keys.length; i++) {
+        const attrName = keys[i];
+        const value = ppLib.Security.sanitize(fieldMap[attrName]);
         /*! v8 ignore start */
         if (!value) continue;
         /*! v8 ignore stop */
@@ -153,7 +153,7 @@ export function createUserManager(
         /*! v8 ignore start */
         if (attrName.indexOf('custom:') === 0) {
         /*! v8 ignore stop */
-          var customKey = attrName.substring(7);
+          const customKey = attrName.substring(7);
           /*! v8 ignore start */
           if (customKey) {
           /*! v8 ignore stop */
@@ -164,11 +164,11 @@ export function createUserManager(
 
         // Check attributeMap for remapping
         /*! v8 ignore start */
-        var mappedName = CONFIG.attributeMap[attrName] || attrName;
+        const mappedName = CONFIG.attributeMap[attrName] || attrName;
         /*! v8 ignore stop */
 
         // Standard attribute → dedicated setter
-        var setter = STANDARD_ATTRS[mappedName];
+        const setter = STANDARD_ATTRS[mappedName];
         /*! v8 ignore start */
         if (setter && typeof user[setter] === 'function') {
         /*! v8 ignore stop */

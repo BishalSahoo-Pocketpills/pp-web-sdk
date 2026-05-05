@@ -9,9 +9,9 @@ export interface SessionService {
   clearSession: () => void;
 }
 
-var SESSION_KEY = 'pp_analytics_session_id';
-var ACTIVITY_KEY = 'pp_analytics_last_activity';
-var TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const SESSION_KEY = 'pp_analytics_session_id';
+const ACTIVITY_KEY = 'pp_analytics_last_activity';
+const TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 function generateId(): string {
   try {
@@ -22,7 +22,7 @@ function generateId(): string {
 
   // Manual v4 UUID for non-secure contexts
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    var r = Math.random() * 16 | 0;
+    const r = Math.random() * 16 | 0;
     return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
   });
 }
@@ -31,9 +31,9 @@ export function createSessionService(): SessionService {
 
   function getOrCreateSessionId(): string {
     try {
-      var now = Date.now();
-      var lastActivity = parseInt(localStorage.getItem(ACTIVITY_KEY) || '0', 10);
-      var sessionId = localStorage.getItem(SESSION_KEY);
+      const now = Date.now();
+      const lastActivity = parseInt(localStorage.getItem(ACTIVITY_KEY) || '0', 10);
+      let sessionId = localStorage.getItem(SESSION_KEY);
 
       // New session if expired or missing
       if (!sessionId || (now - lastActivity) > TIMEOUT_MS) {
