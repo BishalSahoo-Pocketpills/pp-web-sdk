@@ -68,8 +68,8 @@ export function createAttributionService(
   ppLib: PPLib,
 ) {
   var config: AttributionServiceConfig = {
-    includeFirstTouch: true,
-    includeLastTouch: true,
+    includeFirstTouch: false,
+    includeLastTouch: false,
     enrichEvents: true,
     sessionTimeoutMs: 30 * 60 * 1000, // 30 minutes
     persistFirstTouch: true,
