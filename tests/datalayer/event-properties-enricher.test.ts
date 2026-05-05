@@ -1,10 +1,12 @@
 import { createEventPropertiesEnricher } from '../../src/datalayer/enrichers/event-properties';
 import { createEventPropertiesBuilder } from '../../src/common/event-properties-builder';
+import { createGetQueryParam } from '../../src/common/url';
 import type { PPLib } from '../../src/types/common.types';
 
 function makePPLib(cookies?: Record<string, string>): PPLib {
   const ppLib = {
     getCookie: vi.fn((name: string) => (cookies || {})[name] || null),
+    getQueryParam: createGetQueryParam(),
     session: {
       getOrCreateSessionId: vi.fn(() => 'test-session-id'),
       clearSession: vi.fn(),
@@ -35,6 +37,16 @@ describe('createEventPropertiesEnricher', () => {
   });
 
   it('adds all required eventProperties to events', () => {
+    // utm_* keys are sourced literally from URL (not from attribution
+    // service), so stub document.URL for the assertions to land.
+    const originalURL = document.URL;
+    Object.defineProperty(document, 'URL', {
+      value: 'http://localhost/test?utm_source=google&utm_medium=cpc&utm_campaign=spring',
+      writable: true,
+      configurable: true,
+    });
+    window.localStorage.clear();
+
     const ppLib = makePPLib({ userId: '42', patientId: '99', app_is_authenticated: 'true', country: 'CA' });
     const enricher = createEventPropertiesEnricher(window, ppLib, makeConfig());
     const mockPush = vi.fn(() => 1);
@@ -67,17 +79,17 @@ describe('createEventPropertiesEnricher', () => {
     expect(typeof ep.pp_timestamp).toBe('number');
     expect(ep.platform).toBe('web');
 
-    // UTM current
+    // UTM current — literal URL params.
     expect(ep.utm_source).toBe('google');
     expect(ep.utm_medium).toBe('cpc');
     expect(ep.utm_campaign).toBe('spring');
 
-    // UTM first touch
-    expect(ep['utm_source [first touch]']).toBe('facebook');
-    expect(ep['utm_medium [first touch]']).toBe('social');
-    expect(ep['utm_campaign [first touch]']).toBe('launch');
+    // First/last touch — first call to build() captures the current visit's
+    // utm_* into localStorage, so both touch keys mirror the current values.
+    expect(ep['utm_source [first touch]']).toBe('google');
+    expect(ep['utm_medium [first touch]']).toBe('cpc');
+    expect(ep['utm_campaign [first touch]']).toBe('spring');
 
-    // UTM last touch
     expect(ep['utm_source [last touch]']).toBe('google');
     expect(ep['utm_medium [last touch]']).toBe('cpc');
     expect(ep['utm_campaign [last touch]']).toBe('spring');
@@ -94,6 +106,12 @@ describe('createEventPropertiesEnricher', () => {
     expect(arg.page.url).toBeDefined();
     expect(typeof arg.page.title).toBe('string');
     expect(typeof arg.page.referrer).toBe('string');
+
+    Object.defineProperty(document, 'URL', {
+      value: originalURL,
+      writable: true,
+      configurable: true,
+    });
   });
 
   it('pp_distinct_id falls back to device_id when not logged in', () => {

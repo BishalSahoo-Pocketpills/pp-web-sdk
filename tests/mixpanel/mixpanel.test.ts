@@ -752,33 +752,25 @@ describe('Campaign / UTM Attribution', () => {
       });
     });
 
-    it('reads normalized attribution (e.g. source=febpt) via the attribution service, not just utm_* URL params', () => {
-      // Simulates a user landing at /lp/?source=febpt where the URL has no
-      // utm_* prefix. The attribution service normalizes `source=` to
-      // utm_source via marketingAttribution; mixpanel super-properties
-      // should pick it up too.
+    it('does NOT populate utm_* super-properties from non-utm aliases like source=febpt', () => {
+      // utm_* keys are intentionally LITERAL utm_* URL params. A `?source=febpt`
+      // visit (no utm_ prefix) should leave the super-properties at their
+      // $direct/none defaults — even though the attribution service
+      // normalizes `source=` into marketingAttribution.source.
       const originalURL = document.URL;
       Object.defineProperty(document, 'URL', {
         value: 'http://localhost/lp/?source=febpt',
         writable: true,
         configurable: true,
       });
+      window.localStorage.clear();
 
       const loadedCallback = initAndGetLoadedCallback();
 
-      // Stub the shared attribution service to return the normalized touch
-      // (production: attribution.init() does this from window.location.search).
+      // Even with attribution returning a normalized "febpt" touch, the
+      // mixpanel super-property must remain $direct because there is no
+      // literal utm_source param in the URL.
       window.ppLib.attribution.getLastTouch = vi.fn(() => ({
-        source: 'febpt',
-        medium: 'organic',
-        campaign: '',
-        platform: 'organic_search',
-        clickId: '',
-        landingPage: '/lp/',
-        referrer: 'tagassistant.google.com',
-        timestamp: '2026-05-05T00:00:00Z',
-      }));
-      window.ppLib.attribution.getFirstTouch = vi.fn(() => ({
         source: 'febpt',
         medium: 'organic',
         campaign: '',
@@ -794,17 +786,14 @@ describe('Campaign / UTM Attribution', () => {
 
       expect(mp.register).toHaveBeenCalledWith(
         expect.objectContaining({
-          'utm_source [last touch]': 'febpt',
-          'utm_medium [last touch]': 'organic',
+          'utm_source [last touch]': '$direct',
+          'utm_medium [last touch]': 'none',
           'utm_campaign [last touch]': 'none',
         })
       );
-      expect(mp.register).toHaveBeenCalledWith(
-        expect.objectContaining({
-          'utm_source [first touch]': 'febpt',
-          'utm_medium [first touch]': 'organic',
-          'utm_campaign [first touch]': 'none',
-        })
+      // Crucially, "febpt" must NOT have leaked from attribution into utm_*.
+      expect(mp.register).not.toHaveBeenCalledWith(
+        expect.objectContaining({ 'utm_source [last touch]': 'febpt' })
       );
 
       Object.defineProperty(document, 'URL', {

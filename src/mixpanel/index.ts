@@ -221,55 +221,40 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
     return keyword === 'utm_source' ? '$direct' : 'none';
   }
 
-  // Read source/medium/campaign from the SDK's attribution service so we
-  // pick up traffic that uses non-utm parameter names (source=, gclid, etc.)
-  // — same normalization as marketingAttribution. content/term aren't part
-  // of TouchAttribution, so URL extraction is consulted as a layered fallback.
-  // If both sources are empty, the canonical fallback (`$direct` for source,
-  // `none` for everything else) ensures the super-property always exists.
-  function buildTouchParams(
-    touch: import('@src/common/attribution').TouchAttribution | null,
-    suffix: '[first touch]' | '[last touch]'
-  ): Record<string, string> {
+  // Read utm_* values from the shared event-properties builder. The builder
+  // tracks LITERAL `utm_*` URL params (no normalization), so traffic that
+  // uses non-utm aliases like `?source=febpt` does not pollute these
+  // super-properties. The attribution service's normalized values still flow
+  // separately into the `marketingAttribution` super-property.
+  type UtmTouch = { utm_source: string; utm_medium: string; utm_campaign: string; utm_content: string; utm_term: string };
+
+  function emptyUtmTouch(): UtmTouch {
+    return { utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '' };
+  }
+
+  function buildTouchParams(touch: UtmTouch, suffix: '[first touch]' | '[last touch]'): Record<string, string> {
     const params: Record<string, string> = {};
-    const url = doc.URL;
     for (let i = 0; i < CAMPAIGN_KEYWORDS.length; i++) {
-      const kw = CAMPAIGN_KEYWORDS[i];
-      let value = '';
-      // 1) Normalized attribution service (handles source=, gclid → utm_*).
-      if (touch) {
-        if (kw === 'utm_source') value = touch.source || '';
-        else if (kw === 'utm_medium') value = touch.medium || '';
-        else if (kw === 'utm_campaign') value = touch.campaign || '';
-      }
-      // 2) URL extraction — covers utm_content/utm_term and visits where
-      //    attribution hasn't been initialized yet (first paint, edge cases).
-      if (!value) {
-        value = ppLib.getQueryParam(url, kw) || '';
-      }
-      // 3) Canonical default so the key is always present.
-      params[kw + ' ' + suffix] = value || fallbackForKeyword(kw);
+      const kw = CAMPAIGN_KEYWORDS[i] as keyof UtmTouch;
+      params[kw + ' ' + suffix] = touch[kw] || fallbackForKeyword(kw);
     }
     return params;
   }
 
   function resetCampaign(): void {
     // Session reset: clear last-touch attribution to canonical defaults.
-    const params = buildTouchParams(null, '[last touch]');
+    const params = buildTouchParams(emptyUtmTouch(), '[last touch]');
     mixpanel.people.set(params);
     mixpanel.register(params);
   }
 
   function campaignParams(): void {
-    // Read attribution from the shared service. This handles `source=` /
-    // `gclid` / etc. → utm_* normalization that the previous URL-only
-    // implementation missed. First-touch lock semantics are owned by the
-    // attribution service: getFirstTouch() returns null until the first
-    // attributed visit, then the locked value forever after — so we can
-    // safely use register() (overwrite) without losing the lock.
-    const attr = ppLib.attribution;
-    const firstTouch = attr ? attr.getFirstTouch() : null;
-    const lastTouch = attr ? attr.getLastTouch() : null;
+    // Source utm_* from the builder (literal URL params + first/last touch
+    // persistence). Falls back to direct URL extraction if the builder isn't
+    // wired up (defensive — common module always installs it).
+    const builder = ppLib.eventPropertiesBuilder;
+    const firstTouch: UtmTouch = builder ? builder.getFirstTouchUtm() as UtmTouch : emptyUtmTouch();
+    const lastTouch: UtmTouch = builder ? builder.getLastTouchUtm() as UtmTouch : emptyUtmTouch();
 
     const lastParams = buildTouchParams(lastTouch, '[last touch]');
     const firstParams = buildTouchParams(firstTouch, '[first touch]');

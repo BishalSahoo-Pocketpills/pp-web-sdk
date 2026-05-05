@@ -80,13 +80,34 @@ export interface BuiltEventBundle {
   attribution: BuiltAttribution;
 }
 
+export type RawUtmTouch = {
+  utm_source: string;
+  utm_medium: string;
+  utm_campaign: string;
+  utm_content: string;
+  utm_term: string;
+};
+
 export interface EventPropertiesBuilder {
   configure: (next: EventPropertiesBuilderOpts) => void;
   build: () => BuiltEventBundle;
   buildFlat: () => Record<string, unknown>;
+  /** Literal utm_* params from the current visit's URL (no normalization). */
+  getCurrentUtm: () => RawUtmTouch;
+  /** Persisted first-touch utm_* — only set on the first visit that had utm_* params. */
+  getFirstTouchUtm: () => RawUtmTouch;
+  /** Persisted last-touch utm_* — overwritten on every visit that has utm_* params. */
+  getLastTouchUtm: () => RawUtmTouch;
 }
 
 var DEVICE_ID_KEY = 'pp_device_id';
+var UTM_FIRST_TOUCH_KEY = 'pp_utm_first_touch';
+var UTM_LAST_TOUCH_KEY = 'pp_utm_last_touch';
+var UTM_KEYS: ReadonlyArray<keyof RawUtmTouch> = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
+
+function emptyUtm(): RawUtmTouch {
+  return { utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '' };
+}
 
 // Properties already registered as Mixpanel super-properties elsewhere in the
 // SDK. Skipping them in buildFlat() avoids redundant per-event payload bloat.
@@ -209,6 +230,105 @@ export function createEventPropertiesBuilder(
   // should be set server-side from real IP geolocation (e.g. via the
   // CF-IPCountry header at the edge).
 
+  // ---------------------------------------------------------------------------
+  // Raw UTM tracking — `utm_*` keys are LITERAL URL params, intentionally
+  // separate from the attribution service's normalized source/medium/campaign
+  // (which fold in aliases like `source=`, `gclid=`, etc. into
+  // marketingAttribution). Conflating the two muddies analytics: a visit with
+  // `?source=febpt` should leave `utm_source` empty (`$direct`) while
+  // `marketingAttribution.source` correctly reports "febpt".
+  // ---------------------------------------------------------------------------
+
+  function readUtmFromUrl(): RawUtmTouch {
+    var result = emptyUtm();
+    try {
+      // Prefer document.URL — matches the rest of the SDK's URL access and
+      // honors the test pattern of stubbing document.URL via defineProperty.
+      var url = (win.document && win.document.URL) || win.location.href || '';
+      for (var i = 0; i < UTM_KEYS.length; i++) {
+        var k = UTM_KEYS[i];
+        result[k] = ppLib.getQueryParam(url, k) || '';
+      }
+    } catch (e) {
+      /* keep empty result on any failure */
+    }
+    return result;
+  }
+
+  function readStoredUtm(storageKey: string): RawUtmTouch {
+    try {
+      var raw = win.localStorage.getItem(storageKey);
+      if (!raw) return emptyUtm();
+      var parsed = ppLib.Security && ppLib.Security.json
+        ? ppLib.Security.json.parse(raw, null)
+        : JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return emptyUtm();
+      var out = emptyUtm();
+      for (var i = 0; i < UTM_KEYS.length; i++) {
+        var k = UTM_KEYS[i];
+        var v = (parsed as Record<string, unknown>)[k];
+        out[k] = typeof v === 'string' ? v : '';
+      }
+      return out;
+    } catch (e) {
+      return emptyUtm();
+    }
+  }
+
+  function persistUtm(storageKey: string, value: RawUtmTouch): void {
+    try {
+      win.localStorage.setItem(storageKey, JSON.stringify(value));
+    } catch (e) {
+      /* localStorage may be disabled — leave persistence as best-effort */
+    }
+  }
+
+  // Capture the current visit's utm_* into last-touch (always overwritten when
+  // present) and first-touch (set once, locked thereafter). Skipped on visits
+  // with no utm_* params so a direct return doesn't clobber stored attribution.
+  var utmCaptured = false;
+  function captureUtmTouches(): void {
+    if (utmCaptured) return;
+    utmCaptured = true;
+    var current = readUtmFromUrl();
+    var hasAny = false;
+    for (var i = 0; i < UTM_KEYS.length; i++) {
+      if (current[UTM_KEYS[i]]) { hasAny = true; break; }
+    }
+    if (!hasAny) return;
+    persistUtm(UTM_LAST_TOUCH_KEY, current);
+    var existingFirst = readStoredUtm(UTM_FIRST_TOUCH_KEY);
+    var firstAlreadySet = false;
+    for (var j = 0; j < UTM_KEYS.length; j++) {
+      if (existingFirst[UTM_KEYS[j]]) { firstAlreadySet = true; break; }
+    }
+    if (!firstAlreadySet) persistUtm(UTM_FIRST_TOUCH_KEY, current);
+  }
+
+  // Each getter triggers captureUtmTouches() so the persistence runs on the
+  // first call regardless of whether build() was invoked first. Capture is
+  // idempotent (guarded by utmCaptured), so this stays a one-time cost per
+  // builder instance.
+  function getCurrentUtm(): RawUtmTouch {
+    captureUtmTouches();
+    return readUtmFromUrl();
+  }
+  function getFirstTouchUtm(): RawUtmTouch {
+    captureUtmTouches();
+    return readStoredUtm(UTM_FIRST_TOUCH_KEY);
+  }
+  function getLastTouchUtm(): RawUtmTouch {
+    captureUtmTouches();
+    return readStoredUtm(UTM_LAST_TOUCH_KEY);
+  }
+
+  function utmFallback(key: keyof RawUtmTouch): string {
+    return key === 'utm_source' ? '$direct' : 'none';
+  }
+  function utmOrFallback(touch: RawUtmTouch, key: keyof RawUtmTouch): string {
+    return touch[key] || utmFallback(key);
+  }
+
   function buildStable() {
     if (stableCache) return stableCache;
     var ua = (win.navigator && win.navigator.userAgent) || '';
@@ -223,14 +343,22 @@ export function createEventPropertiesBuilder(
 
   function build(): BuiltEventBundle {
     var stable = buildStable();
+    captureUtmTouches();
+
     var userId = ppLib.getCookie(cookieNames.userId) || '';
     var patientId = ppLib.getCookie(cookieNames.patientId) || '';
     var appAuth = ppLib.getCookie(cookieNames.appAuth) || '';
     var isLoggedIn = appAuth === 'true' || (!!userId && userId !== '-1' && !!patientId);
 
-    var current = ppLib.attribution ? ppLib.attribution.getCurrent() : null;
-    var firstTouch = ppLib.attribution ? ppLib.attribution.getFirstTouch() : null;
-    var lastTouch = ppLib.attribution ? ppLib.attribution.getLastTouch() : null;
+    // Literal utm_* params — intentionally NOT routed through the attribution
+    // service's normalization, so e.g. `?source=febpt` does NOT populate
+    // utm_source. The attribution service still normalizes for
+    // marketing_attribution below.
+    var currentUtm = readUtmFromUrl();
+    var firstUtm = readStoredUtm(UTM_FIRST_TOUCH_KEY);
+    var lastUtm = readStoredUtm(UTM_LAST_TOUCH_KEY);
+
+    var firstTouchAttr = ppLib.attribution ? ppLib.attribution.getFirstTouch() : null;
 
     var userProperties: BuiltUserProperties = {
       userId: userId,
@@ -249,30 +377,32 @@ export function createEventPropertiesBuilder(
       platform: defaultPlatform,
       is_logged_in: isLoggedIn,
 
-      // Current UTM (from URL) — Mixpanel-style $direct/none fallbacks for
-      // consistency with [first touch] / [last touch] keys.
-      utm_source: current && current.source ? current.source : '$direct',
-      utm_medium: current && current.medium ? current.medium : 'none',
-      utm_campaign: current && current.campaign ? current.campaign : 'none',
+      // Current UTM — literal URL params with Mixpanel-style $direct/none
+      // fallbacks for consistency with [first touch] / [last touch] keys.
+      utm_source: utmOrFallback(currentUtm, 'utm_source'),
+      utm_medium: utmOrFallback(currentUtm, 'utm_medium'),
+      utm_campaign: utmOrFallback(currentUtm, 'utm_campaign'),
 
-      // First touch UTM (Mixpanel-style bracket keys with $direct/none fallbacks)
-      'utm_source [first touch]': firstTouch && firstTouch.source ? firstTouch.source : '$direct',
-      'utm_medium [first touch]': firstTouch && firstTouch.medium ? firstTouch.medium : 'none',
-      'utm_campaign [first touch]': firstTouch && firstTouch.campaign ? firstTouch.campaign : 'none',
+      // First touch UTM — locked once on the first visit that had utm_* params.
+      'utm_source [first touch]': utmOrFallback(firstUtm, 'utm_source'),
+      'utm_medium [first touch]': utmOrFallback(firstUtm, 'utm_medium'),
+      'utm_campaign [first touch]': utmOrFallback(firstUtm, 'utm_campaign'),
 
-      // Last touch UTM (Mixpanel-style bracket keys with $direct/none fallbacks)
-      'utm_source [last touch]': lastTouch && lastTouch.source ? lastTouch.source : '$direct',
-      'utm_medium [last touch]': lastTouch && lastTouch.medium ? lastTouch.medium : 'none',
-      'utm_campaign [last touch]': lastTouch && lastTouch.campaign ? lastTouch.campaign : 'none',
+      // Last touch UTM — overwritten on every visit with utm_* params.
+      'utm_source [last touch]': utmOrFallback(lastUtm, 'utm_source'),
+      'utm_medium [last touch]': utmOrFallback(lastUtm, 'utm_medium'),
+      'utm_campaign [last touch]': utmOrFallback(lastUtm, 'utm_campaign'),
 
       // User context
       country: stable.country,
       browser: stable.browser,
       device_type: stable.device_type,
       referrer: extractDomain(win.document.referrer),
-      initial_referrer: firstTouch ? firstTouch.referrer : '',
+      // initial_referrer still comes from the attribution service's first-touch
+      // (referrer is not a UTM concept).
+      initial_referrer: firstTouchAttr ? firstTouchAttr.referrer : '',
 
-      // Marketing attribution
+      // Marketing attribution — the normalized view (handles source=, gclid, …).
       marketing_attribution: ppLib.attribution ? ppLib.attribution.get() : null
     };
 
@@ -329,5 +459,12 @@ export function createEventPropertiesBuilder(
     return flat;
   }
 
-  return { configure: configure, build: build, buildFlat: buildFlat };
+  return {
+    configure: configure,
+    build: build,
+    buildFlat: buildFlat,
+    getCurrentUtm: getCurrentUtm,
+    getFirstTouchUtm: getFirstTouchUtm,
+    getLastTouchUtm: getLastTouchUtm
+  };
 }

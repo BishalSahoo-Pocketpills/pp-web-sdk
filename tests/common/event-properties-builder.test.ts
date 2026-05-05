@@ -5,6 +5,7 @@
  * dataLayer enricher and the mixpanel.track facade rely on it.
  */
 import { createEventPropertiesBuilder } from '../../src/common/event-properties-builder';
+import { createGetQueryParam } from '../../src/common/url';
 import type { PPLib } from '../../src/types/common.types';
 
 function makePPLib(opts?: {
@@ -28,6 +29,7 @@ function makePPLib(opts?: {
 
   const ppLib: any = {
     getCookie: vi.fn((name: string) => cookies[name] || null),
+    getQueryParam: createGetQueryParam(),
     log: vi.fn()
   };
   if (attribution) {
@@ -54,6 +56,17 @@ describe('createEventPropertiesBuilder', () => {
 
   describe('build()', () => {
     it('produces userProperties / eventProperties / page / attribution blocks', () => {
+      // Stub document.URL so the literal-utm reader picks up the params.
+      // The attribution-service mock still provides the normalized
+      // marketingAttribution, but utm_* keys are sourced strictly from URL.
+      const originalURL = document.URL;
+      Object.defineProperty(document, 'URL', {
+        value: 'http://localhost/test?utm_source=google&utm_medium=cpc&utm_campaign=spring',
+        writable: true,
+        configurable: true,
+      });
+      window.localStorage.clear();
+
       const ppLib = makePPLib({
         cookies: { userId: '42', patientId: '99', app_is_authenticated: 'true', country: 'CA' }
       });
@@ -75,17 +88,27 @@ describe('createEventPropertiesBuilder', () => {
       expect(typeof bundle.eventProperties.device_id).toBe('string');
       expect(typeof bundle.eventProperties.pp_timestamp).toBe('number');
 
+      // utm_* are read literally from the URL, not from the (potentially
+      // normalized) attribution service.
       expect(bundle.eventProperties.utm_source).toBe('google');
       expect(bundle.eventProperties.utm_medium).toBe('cpc');
       expect(bundle.eventProperties.utm_campaign).toBe('spring');
 
-      expect(bundle.eventProperties['utm_source [first touch]']).toBe('facebook');
-      expect(bundle.eventProperties['utm_medium [first touch]']).toBe('social');
-      expect(bundle.eventProperties['utm_campaign [first touch]']).toBe('launch');
+      // First/last touch: this URL has utm_* params, so capture seeds
+      // localStorage and the touch keys mirror the current visit.
+      expect(bundle.eventProperties['utm_source [first touch]']).toBe('google');
+      expect(bundle.eventProperties['utm_medium [first touch]']).toBe('cpc');
+      expect(bundle.eventProperties['utm_campaign [first touch]']).toBe('spring');
 
       expect(bundle.eventProperties['utm_source [last touch]']).toBe('google');
       expect(bundle.eventProperties['utm_medium [last touch]']).toBe('cpc');
       expect(bundle.eventProperties['utm_campaign [last touch]']).toBe('spring');
+
+      Object.defineProperty(document, 'URL', {
+        value: originalURL,
+        writable: true,
+        configurable: true,
+      });
 
       expect(bundle.page.title).toBe('');
       expect(typeof bundle.page.url).toBe('string');
@@ -237,13 +260,27 @@ describe('createEventPropertiesBuilder', () => {
       expect(flat.marketing_attribution).toBeUndefined();
     });
 
-    it('keeps the current (non-touch) UTM keys', () => {
+    it('keeps the current (non-touch) UTM keys, sourced from URL', () => {
+      const originalURL = document.URL;
+      Object.defineProperty(document, 'URL', {
+        value: 'http://localhost/test?utm_source=google&utm_medium=cpc&utm_campaign=spring',
+        writable: true,
+        configurable: true,
+      });
+      window.localStorage.clear();
+
       const ppLib = makePPLib();
       const flat = createEventPropertiesBuilder(window, ppLib).buildFlat();
 
       expect(flat.utm_source).toBe('google');
       expect(flat.utm_medium).toBe('cpc');
       expect(flat.utm_campaign).toBe('spring');
+
+      Object.defineProperty(document, 'URL', {
+        value: originalURL,
+        writable: true,
+        configurable: true,
+      });
     });
 
     it('omits null click-id attribution fields, keeps non-null ones', () => {
