@@ -275,7 +275,7 @@ describe('logoutUser()', () => {
     expect(logSpy).toHaveBeenCalledWith(
       'error',
       '[ppLogin] Logout error',
-      expect.any(Error)
+      expect.objectContaining({ errorClass: expect.any(String) })
     );
 
     Object.defineProperty(document.body, 'classList', {
@@ -466,7 +466,7 @@ describe('initAuthState()', () => {
     expect(logSpy).toHaveBeenCalledWith(
       'error',
       '[ppLogin] initAuthState error',
-      expect.any(Error)
+      expect.objectContaining({ errorClass: expect.any(String) })
     );
 
     window.ppLib.getCookie = origGetCookie;
@@ -553,7 +553,7 @@ describe('bindActions()', () => {
     expect(logSpy).toHaveBeenCalledWith(
       'error',
       '[ppLogin] bindActions error',
-      expect.any(Error)
+      expect.objectContaining({ errorClass: expect.any(String) })
     );
 
     document.addEventListener = origAddEventListener;

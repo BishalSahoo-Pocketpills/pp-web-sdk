@@ -51,7 +51,7 @@ import { createEventPropertiesEnricher } from '@src/datalayer/enrichers/event-pr
       const prevRaw = ppLib.getCookie(CONFIG.cookieNames.previousUser) || '';
       prevUser = prevRaw ? JSON.parse(decodeURIComponent(prevRaw)) : {};
     } catch (e) {
-      ppLib.log('error', '[ppDataLayer] Failed to parse previousUser cookie', e);
+      ppLib.log('error', '[ppDataLayer] Failed to parse previousUser cookie', ppLib.safeLogError(e));
     }
 
     const userData = {
@@ -116,7 +116,7 @@ import { createEventPropertiesEnricher } from '@src/datalayer/enrichers/event-pr
       // If previousUser cookie wasn't available yet, poll for it
       !ud.sha256_email_address && !ud.sha256_phone_number && pollPreviousUser(20);
     }).catch(function(e: unknown) {
-      ppLib.log('error', '[ppDataLayer] onReady error', e);
+      ppLib.log('error', '[ppDataLayer] onReady error', ppLib.safeLogError(e));
     });
   }
 

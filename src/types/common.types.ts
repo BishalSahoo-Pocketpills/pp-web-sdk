@@ -84,7 +84,7 @@ export interface PPLib {
   // surfacing `errorClass`, `messageShape`, and the typed-error context
   // fields (`endpoint`, `status`, `attempt`, `cause`) instead. Honours
   // `config.debugErrors` to surface verbatim text in local debug builds.
-  safeLogError?: (err: unknown) => Record<string, unknown>;
+  safeLogError: (err: unknown) => Record<string, unknown>;
   extend: <T extends object, U>(target: T, source: U) => T & U;
   ready: (callback: (ppLib: PPLib) => void) => void;
   attribution: import('../common/attribution').AttributionService;

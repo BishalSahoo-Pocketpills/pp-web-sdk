@@ -111,7 +111,7 @@ export function createEventHandler(
       const safeProps = ppLib.safeLogPayload ? ppLib.safeLogPayload(properties) : '<redacted>';
       ppLib.log('info', '[ppBraze] Event tracked → ' + sanitizedName, safeProps);
     } catch (err) {
-      ppLib.log('error', '[ppBraze] handleInteraction error', err);
+      ppLib.log('error', '[ppBraze] handleInteraction error', ppLib.safeLogError(err));
     }
   }
 

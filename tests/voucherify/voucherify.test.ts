@@ -263,7 +263,7 @@ describe('init()', () => {
     });
     window.ppLib.voucherify!.init();
 
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('consent check error'), expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('consent check error'), expect.objectContaining({ errorClass: expect.any(String) }));
   });
 
   it('uses custom consent check function when mode is not analytics', () => {

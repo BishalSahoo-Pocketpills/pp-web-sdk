@@ -50,7 +50,7 @@ export function createUserManager(
       // class (numeric vs UUID). The act of calling identify is the signal.
       ppLib.log('info', '[ppBraze] identify → <id>');
     } catch (e) {
-      ppLib.log('error', '[ppBraze] identify error', e);
+      ppLib.log('error', '[ppBraze] identify error', ppLib.safeLogError(e));
     }
   }
 
@@ -88,7 +88,7 @@ export function createUserManager(
       const safeAttrs = ppLib.safeLogPayload ? ppLib.safeLogPayload(attrs) : '<redacted>';
       ppLib.log('info', '[ppBraze] setUserAttributes', safeAttrs);
     } catch (e) {
-      ppLib.log('error', '[ppBraze] setUserAttributes error', e);
+      ppLib.log('error', '[ppBraze] setUserAttributes error', ppLib.safeLogError(e));
     }
   }
 
@@ -108,7 +108,7 @@ export function createUserManager(
       win.braze.getUser().setEmail(sanitized);
       ppLib.log('info', '[ppBraze] setEmail → <redacted email>');
     } catch (e) {
-      ppLib.log('error', '[ppBraze] setEmail error', e);
+      ppLib.log('error', '[ppBraze] setEmail error', ppLib.safeLogError(e));
     }
   }
 
@@ -182,7 +182,7 @@ export function createUserManager(
         }
       }
     } catch (e) {
-      ppLib.log('error', '[ppBraze] processFormAttrs error', e);
+      ppLib.log('error', '[ppBraze] processFormAttrs error', ppLib.safeLogError(e));
     }
   }
 

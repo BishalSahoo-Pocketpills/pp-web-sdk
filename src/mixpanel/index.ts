@@ -69,7 +69,7 @@ import type { MixpanelGlobal } from '@src/types/window';
       mp.track(eventName, merged);
       return true;
     } catch (e) {
-      ppLib.log('error', '[ppMixpanel] track facade error', e);
+      ppLib.log('error', '[ppMixpanel] track facade error', ppLib.safeLogError(e));
       return false;
     }
   }
@@ -333,7 +333,7 @@ import type { MixpanelGlobal } from '@src/types/window';
         }
       });
     } catch (e) {
-      ppLib.log('error', 'getMixpanelCookieData error', e);
+      ppLib.log('error', 'getMixpanelCookieData error', ppLib.safeLogError(e));
     }
 
     return mixpanelData;

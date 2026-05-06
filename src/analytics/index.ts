@@ -132,7 +132,7 @@ type MixpanelQueueData = {
         cachedParamNames = params;
         return params;
       } catch (e) {
-        ppLib.log('error', 'getAllParamNames error', e);
+        ppLib.log('error', 'getAllParamNames error', ppLib.safeLogError(e));
         return [];
       }
     },

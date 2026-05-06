@@ -63,7 +63,7 @@ import { createInitAuthState } from '@src/login/auth-state';
         logoutUser(true);
       }
     } catch (err) {
-      ppLib.log('error', '[ppLogin] handleLoginAction error', err);
+      ppLib.log('error', '[ppLogin] handleLoginAction error', ppLib.safeLogError(err));
     }
   }
 
@@ -75,7 +75,7 @@ import { createInitAuthState } from '@src/login/auth-state';
       bound = true;
       doc.addEventListener('click', handleLoginAction, { capture: false, passive: false } as EventListenerOptions);
     } catch (e) {
-      ppLib.log('error', '[ppLogin] bindActions error', e);
+      ppLib.log('error', '[ppLogin] bindActions error', ppLib.safeLogError(e));
     }
   }
 

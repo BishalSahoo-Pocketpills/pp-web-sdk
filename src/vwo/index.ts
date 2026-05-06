@@ -75,7 +75,7 @@ import { createDebounceTracker } from '@src/common/debounce';
         return JSON.parse(stored);
       }
     } catch (e) {
-      ppLib.log('error', '[ppVWO] parseForcedVariations error', e);
+      ppLib.log('error', '[ppVWO] parseForcedVariations error', ppLib.safeLogError(e));
     }
 
     return {};
@@ -233,7 +233,7 @@ import { createDebounceTracker } from '@src/common/debounce';
         });
       }
     } catch (e) {
-      ppLib.log('error', '[ppVWO] readExperiments error', e);
+      ppLib.log('error', '[ppVWO] readExperiments error', ppLib.safeLogError(e));
     }
 
     return experiments;
@@ -330,7 +330,7 @@ import { createDebounceTracker } from '@src/common/debounce';
 
       ppLib.log('info', '[ppVWO] Goal tracked: ' + goalId + (typeof revenue === 'number' ? ' (revenue: ' + revenue + ')' : ''));
     } catch (e) {
-      ppLib.log('error', '[ppVWO] trackGoal error', e);
+      ppLib.log('error', '[ppVWO] trackGoal error', ppLib.safeLogError(e));
     }
   }
 
@@ -375,7 +375,7 @@ import { createDebounceTracker } from '@src/common/debounce';
 
       trackGoalFromElement(el);
     } catch (err) {
-      ppLib.log('error', '[ppVWO] handleGoalClick error', err);
+      ppLib.log('error', '[ppVWO] handleGoalClick error', ppLib.safeLogError(err));
     }
   }
 
@@ -397,7 +397,7 @@ import { createDebounceTracker } from '@src/common/debounce';
 
       trackGoalFromElement(el);
     } catch (err) {
-      ppLib.log('error', '[ppVWO] handleGoalSubmit error', err);
+      ppLib.log('error', '[ppVWO] handleGoalSubmit error', ppLib.safeLogError(err));
     }
   }
 
@@ -432,7 +432,7 @@ import { createDebounceTracker } from '@src/common/debounce';
 
       ppLib.log('info', '[ppVWO] Observing ' + elements.length + ' view-trigger element(s)');
     } catch (err) {
-      ppLib.log('error', '[ppVWO] scanViewGoals error', err);
+      ppLib.log('error', '[ppVWO] scanViewGoals error', ppLib.safeLogError(err));
     }
   }
 
@@ -554,7 +554,7 @@ import { createDebounceTracker } from '@src/common/debounce';
 
         return String(exp.combination_chosen);
       } catch (e) {
-        ppLib.log('error', '[ppVWO] getVariation error', e);
+        ppLib.log('error', '[ppVWO] getVariation error', ppLib.safeLogError(e));
         return null;
       }
     },
@@ -574,7 +574,7 @@ import { createDebounceTracker } from '@src/common/debounce';
 
         ppLib.log('info', '[ppVWO] Forced variation: campaign ' + campaignId + ' → variation ' + variationId);
       } catch (e) {
-        ppLib.log('error', '[ppVWO] forceVariation error', e);
+        ppLib.log('error', '[ppVWO] forceVariation error', ppLib.safeLogError(e));
       }
     },
 
@@ -595,7 +595,7 @@ import { createDebounceTracker } from '@src/common/debounce';
         // Variation 1 is control (feature disabled), anything else is enabled
         return exp.combination_chosen !== 1 && String(exp.combination_chosen) !== '1';
       } catch (e) {
-        ppLib.log('error', '[ppVWO] isFeatureEnabled error', e);
+        ppLib.log('error', '[ppVWO] isFeatureEnabled error', ppLib.safeLogError(e));
         return false;
       }
     },

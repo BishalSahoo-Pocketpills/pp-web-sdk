@@ -898,7 +898,7 @@ describe('sendToGTM()', () => {
     expect(logSpy).toHaveBeenCalledWith(
       'error',
       '[ppEcommerce] GTM send error',
-      expect.any(Error)
+      expect.objectContaining({ errorClass: expect.any(String) })
     );
   });
 });
@@ -996,7 +996,7 @@ describe('sendToMixpanel()', () => {
     expect(logSpy).toHaveBeenCalledWith(
       'error',
       '[ppEcommerce] Mixpanel send error',
-      expect.any(Error)
+      expect.objectContaining({ errorClass: expect.any(String) })
     );
   });
 });
@@ -1076,7 +1076,7 @@ describe('trackViewItem()', () => {
     expect(logSpy).toHaveBeenCalledWith(
       'error',
       '[ppEcommerce] trackViewItem error',
-      expect.any(Error)
+      expect.objectContaining({ errorClass: expect.any(String) })
     );
 
     document.querySelectorAll = origQSA;
@@ -1215,7 +1215,7 @@ describe('handleInteraction() — via click events', () => {
     expect(logSpy).toHaveBeenCalledWith(
       'error',
       '[ppEcommerce] handleInteraction error',
-      expect.any(Error)
+      expect.objectContaining({ errorClass: expect.any(String) })
     );
 
     btn.closest = origClosest;
@@ -1674,7 +1674,7 @@ describe('init() error handling', () => {
     expect(logSpy).toHaveBeenCalledWith(
       'error',
       '[ppEcommerce] init error',
-      expect.any(Error)
+      expect.objectContaining({ errorClass: expect.any(String) })
     );
 
     document.addEventListener = origAEL;

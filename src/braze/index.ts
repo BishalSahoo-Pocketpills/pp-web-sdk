@@ -55,7 +55,7 @@ import { createPurchaseHandler } from '@src/braze/purchases';
           return win.ppAnalytics.consent.status();
         }
       } catch (e) {
-        ppLib.log('error', '[ppBraze] consent check error', e);
+        ppLib.log('error', '[ppBraze] consent check error', ppLib.safeLogError(e));
       }
       return false;
     }
@@ -148,7 +148,7 @@ import { createPurchaseHandler } from '@src/braze/purchases';
       ppLib.log('info', '[ppBraze] trackEvent → ' + sanitized, safeProps);
       /*! v8 ignore stop */
     } catch (e) {
-      ppLib.log('error', '[ppBraze] trackEvent error', e);
+      ppLib.log('error', '[ppBraze] trackEvent error', ppLib.safeLogError(e));
     }
   }
 
@@ -191,7 +191,7 @@ import { createPurchaseHandler } from '@src/braze/purchases';
       try {
         win.braze.requestImmediateDataFlush();
       } catch (e) {
-        ppLib.log('error', '[ppBraze] flush error', e);
+        ppLib.log('error', '[ppBraze] flush error', ppLib.safeLogError(e));
       }
     },
     /*! v8 ignore stop */

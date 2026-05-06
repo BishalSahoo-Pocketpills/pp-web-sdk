@@ -188,7 +188,7 @@ import type { EventSourceConfig, EventSourceData } from '@src/types/event-source
       ppLib.log('verbose', '[ppEventSource] Sent to Mixpanel', data);
     /*! v8 ignore start */
     } catch (e) {
-      ppLib.log('error', '[ppEventSource] Mixpanel send error', e);
+      ppLib.log('error', '[ppEventSource] Mixpanel send error', ppLib.safeLogError(e));
     }
     /*! v8 ignore stop */
   }
@@ -221,7 +221,7 @@ import type { EventSourceConfig, EventSourceData } from '@src/types/event-source
       win.dataLayer.push(gtmData);
       ppLib.log('verbose', '[ppEventSource] Sent to GTM', gtmData);
     } catch (e) {
-      ppLib.log('error', '[ppEventSource] GTM send error', e);
+      ppLib.log('error', '[ppEventSource] GTM send error', ppLib.safeLogError(e));
     }
   }
 
@@ -253,7 +253,7 @@ import type { EventSourceConfig, EventSourceData } from '@src/types/event-source
       ppLib.vwo.trackGoal(goalId, revenue);
       ppLib.log('verbose', '[ppEventSource] Sent to VWO — goal: ' + goalId);
     } catch (e) {
-      ppLib.log('error', '[ppEventSource] VWO send error', e);
+      ppLib.log('error', '[ppEventSource] VWO send error', ppLib.safeLogError(e));
     }
   }
 
@@ -295,7 +295,7 @@ import type { EventSourceConfig, EventSourceData } from '@src/types/event-source
 
       dispatchEvent(data);
     } catch (e) {
-      ppLib.log('error', '[ppEventSource] handleInteraction error', e);
+      ppLib.log('error', '[ppEventSource] handleInteraction error', ppLib.safeLogError(e));
     }
   }
 
@@ -314,7 +314,7 @@ import type { EventSourceConfig, EventSourceData } from '@src/types/event-source
 
       ppLib.log('info', '[ppEventSource] Initialized — listening for [' + CONFIG.attribute + '] interactions');
     } catch (e) {
-      ppLib.log('error', '[ppEventSource] init error', e);
+      ppLib.log('error', '[ppEventSource] init error', ppLib.safeLogError(e));
     }
   }
 

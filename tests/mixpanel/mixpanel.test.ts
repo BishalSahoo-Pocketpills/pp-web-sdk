@@ -1011,7 +1011,7 @@ describe('getMixpanelCookieData()', () => {
     expect(logSpy).toHaveBeenCalledWith(
       'error',
       'getMixpanelCookieData error',
-      expect.any(Error)
+      expect.objectContaining({ errorClass: expect.any(String) })
     );
 
     if (originalCookieDescriptor) {

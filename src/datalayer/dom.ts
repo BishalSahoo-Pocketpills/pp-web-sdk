@@ -154,7 +154,7 @@ export function createDomBinder(
         }, CONFIG.navigationDelay);
       }
     } catch (e) {
-      ppLib.log('error', '[ppDataLayer] handleInteraction error', e);
+      ppLib.log('error', '[ppDataLayer] handleInteraction error', ppLib.safeLogError(e));
     }
   }
 
@@ -166,7 +166,7 @@ export function createDomBinder(
       doc.addEventListener('touchend', handleInteraction, { capture: false, passive: false } as EventListenerOptions);
       ppLib.log('info', '[ppDataLayer] DOM binding initialized');
     } catch (e) {
-      ppLib.log('error', '[ppDataLayer] init error', e);
+      ppLib.log('error', '[ppDataLayer] init error', ppLib.safeLogError(e));
     }
   }
 
@@ -203,7 +203,7 @@ export function createDomBinder(
       eventPusher.pushEcommerceEvent('view_item', items);
       ppLib.log('info', '[ppDataLayer] auto view_item fired with ' + items.length + ' item(s)');
     } catch (e) {
-      ppLib.log('error', '[ppDataLayer] scanViewItems error', e);
+      ppLib.log('error', '[ppDataLayer] scanViewItems error', ppLib.safeLogError(e));
     }
   }
 

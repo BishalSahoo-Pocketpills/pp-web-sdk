@@ -699,7 +699,7 @@ describe('flush()', () => {
 
     window.ppLib.braze!.flush();
 
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('flush error'), expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('flush error'), expect.objectContaining({ errorClass: expect.any(String) }));
   });
 });
 
@@ -1619,7 +1619,7 @@ describe('Edge Cases', () => {
     window.braze = { changeUser: () => { throw new Error('test'); } } as any;
     window.ppLib.braze!.identify('user-1');
 
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('identify error'), expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('identify error'), expect.objectContaining({ errorClass: expect.any(String) }));
   });
 
   it('handles setUserAttributes error gracefully', () => {
@@ -1629,7 +1629,7 @@ describe('Edge Cases', () => {
     window.braze = { getUser: () => { throw new Error('test'); } } as any;
     window.ppLib.braze!.setUserAttributes({ email: 'test@test.com' });
 
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('setUserAttributes error'), expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('setUserAttributes error'), expect.objectContaining({ errorClass: expect.any(String) }));
   });
 
   it('handles setEmail error gracefully', () => {
@@ -1639,7 +1639,7 @@ describe('Edge Cases', () => {
     window.braze = { getUser: () => { throw new Error('test'); } } as any;
     window.ppLib.braze!.setEmail('test@test.com');
 
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('setEmail error'), expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('setEmail error'), expect.objectContaining({ errorClass: expect.any(String) }));
   });
 
   it('handles trackEvent error gracefully', () => {
@@ -1649,7 +1649,7 @@ describe('Edge Cases', () => {
     window.braze = { logCustomEvent: () => { throw new Error('test'); } } as any;
     window.ppLib.braze!.trackEvent('test_event');
 
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('trackEvent error'), expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('trackEvent error'), expect.objectContaining({ errorClass: expect.any(String) }));
   });
 
   it('preserves number, boolean, and array property types in trackEvent', () => {
@@ -1679,7 +1679,7 @@ describe('Edge Cases', () => {
     window.braze = { logPurchase: () => { throw new Error('test'); } } as any;
     window.ppLib.braze!.trackPurchase('item', 10);
 
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('trackPurchase error'), expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('trackPurchase error'), expect.objectContaining({ errorClass: expect.any(String) }));
   });
 
   it('form handler survives when submit target has no closest()', () => {
@@ -1767,7 +1767,7 @@ describe('Edge Cases', () => {
     });
     window.ppLib.braze!.init();
 
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('consent check error'), expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('consent check error'), expect.objectContaining({ errorClass: expect.any(String) }));
   });
 
   it('form submit handler processes attributeMap remapping', () => {
@@ -1859,7 +1859,7 @@ describe('Edge Cases', () => {
     const form = document.querySelector('form')!;
     form.dispatchEvent(new Event('submit', { bubbles: true }));
 
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('processFormAttrs error'), expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('processFormAttrs error'), expect.objectContaining({ errorClass: expect.any(String) }));
   });
 
   it('purchase trackPurchase with invalid quantity defaults to 1', () => {

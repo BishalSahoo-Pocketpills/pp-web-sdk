@@ -854,7 +854,7 @@ describe('trackGoal()', () => {
     const logSpy = vi.spyOn(window.ppLib, 'log');
     window.ppLib.vwo!.trackGoal(100);
 
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('trackGoal error'), expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('trackGoal error'), expect.objectContaining({ errorClass: expect.any(String) }));
 
     delete window.VWO;
   });
@@ -1440,7 +1440,7 @@ describe('Error handling', () => {
     const result = window.ppLib.vwo!.getVariation('42');
 
     expect(result).toBeNull();
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('getVariation error'), expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('getVariation error'), expect.objectContaining({ errorClass: expect.any(String) }));
 
     // Clean up
     delete window._vwo_exp;
@@ -1456,7 +1456,7 @@ describe('Error handling', () => {
     const result = window.ppLib.vwo!.isFeatureEnabled('42');
 
     expect(result).toBe(false);
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('isFeatureEnabled error'), expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('isFeatureEnabled error'), expect.objectContaining({ errorClass: expect.any(String) }));
 
     delete window._vwo_exp;
   });
@@ -1735,7 +1735,7 @@ describe('Comprehensive integration', () => {
     window.ppLib.vwo!.configure({ accountId: '123' });
     window.ppLib.vwo!.init();
 
-    expect(logSpy).toHaveBeenCalledWith('error', '[ppVWO] parseForcedVariations error', expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', '[ppVWO] parseForcedVariations error', expect.objectContaining({ errorClass: expect.any(String) }));
   });
 
   it('scanViewGoals skips when IntersectionObserver is unavailable', () => {

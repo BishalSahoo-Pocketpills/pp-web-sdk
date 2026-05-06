@@ -785,12 +785,7 @@ import { VoucherifyConfigError, VoucherifyApiError, VoucherifyPricingError } fro
       // to baseline pricing (basePrice as both retail and "discounted" so the
       // DOM renders something coherent). Previously this returned `[]` and
       // never invoked the renderer, leaving the page in a cloaked state.
-      const errObj = e as { name?: string; context?: { endpoint?: string; status?: number } };
-      ppLib.log('error', '[ppVoucherify] fetchPricing error', {
-        errorClass: (errObj && errObj.name) || 'Error',
-        endpoint: errObj && errObj.context && errObj.context.endpoint,
-        status: errObj && errObj.context && errObj.context.status
-      });
+      ppLib.log('error', '[ppVoucherify] fetchPricing error', ppLib.safeLogError(e));
       try {
         // Reuse the products from the outer scope — already scanned once.
         if (products.length > 0) {
@@ -806,10 +801,7 @@ import { VoucherifyConfigError, VoucherifyApiError, VoucherifyPricingError } fro
         const wrapped = new VoucherifyPricingError('baseline-fallback render failed', {
           cause: (fallbackErr as { message?: string } | null)?.message
         });
-        ppLib.log('error', '[ppVoucherify] ' + wrapped.message, {
-          errorClass: wrapped.name,
-          cause: wrapped.context && wrapped.context.cause
-        });
+        ppLib.log('error', '[ppVoucherify] ' + wrapped.message, ppLib.safeLogError(wrapped));
       }
       return [];
     }
@@ -1126,7 +1118,7 @@ import { VoucherifyConfigError, VoucherifyApiError, VoucherifyPricingError } fro
         removeOffersLoadingClass();
       }
     } catch (e) {
-      ppLib.log('error', '[ppVoucherify] fetchOffers error', e);
+      ppLib.log('error', '[ppVoucherify] fetchOffers error', ppLib.safeLogError(e));
       return emptyResult('unknown');
     }
   }
@@ -1151,7 +1143,7 @@ import { VoucherifyConfigError, VoucherifyApiError, VoucherifyPricingError } fro
           return win.ppAnalytics.consent.status();
         }
       } catch (e) {
-        ppLib.log('error', '[ppVoucherify] consent check error', e);
+        ppLib.log('error', '[ppVoucherify] consent check error', ppLib.safeLogError(e));
       }
       return false;
     }
@@ -1293,16 +1285,11 @@ import { VoucherifyConfigError, VoucherifyApiError, VoucherifyPricingError } fro
           // errors from apiRequest). Without this .catch the rejection
           // propagated as an unhandled promise rejection — the previous
           // surrounding try/catch only caught synchronous failures.
-          const errObj = err as { name?: string; context?: { endpoint?: string; status?: number } };
-          ppLib.log('error', '[ppVoucherify] validateVoucher failed', {
-            errorClass: (errObj && errObj.name) || 'Error',
-            endpoint: errObj && errObj.context && errObj.context.endpoint,
-            status: errObj && errObj.context && errObj.context.status
-          });
+          ppLib.log('error', '[ppVoucherify] validateVoucher failed', ppLib.safeLogError(err));
           return { valid: false, code: sanitizedCode, reason: 'Validation error' } as ValidationResult;
         });
       } catch (e) {
-        ppLib.log('error', '[ppVoucherify] validateVoucher error', e);
+        ppLib.log('error', '[ppVoucherify] validateVoucher error', ppLib.safeLogError(e));
         return Promise.resolve({ valid: false, code: code, reason: 'Validation error' });
       }
     },
@@ -1331,12 +1318,7 @@ import { VoucherifyConfigError, VoucherifyApiError, VoucherifyPricingError } fro
       }).catch(function(err: unknown) {
         // Defensive: callers expect a fulfilled Promise<QualificationResult>;
         // emit an empty-but-shaped result rather than an unhandled rejection.
-        const errObj = err as { name?: string; context?: { endpoint?: string; status?: number } };
-        ppLib.log('error', '[ppVoucherify] checkQualifications failed', {
-          errorClass: (errObj && errObj.name) || 'Error',
-          endpoint: errObj && errObj.context && errObj.context.endpoint,
-          status: errObj && errObj.context && errObj.context.status
-        });
+        ppLib.log('error', '[ppVoucherify] checkQualifications failed', ppLib.safeLogError(err));
         return { redeemables: [], total: 0, hasMore: false } as QualificationResult;
       });
     },

@@ -87,7 +87,7 @@ export function createPurchaseHandler(
       win.braze.logPurchase(sanitizedId, price, currency, quantity);
       ppLib.log('info', '[ppBraze] Purchase tracked → ' + sanitizedId, { price: price, currency: currency, quantity: quantity });
     } catch (err) {
-      ppLib.log('error', '[ppBraze] handlePurchaseClick error', err);
+      ppLib.log('error', '[ppBraze] handlePurchaseClick error', ppLib.safeLogError(err));
     }
   }
 
@@ -139,7 +139,7 @@ export function createPurchaseHandler(
 
       ppLib.log('info', '[ppBraze] trackPurchase → ' + sanitizedId, { price: price, currency: cur, quantity: qty });
     } catch (err) {
-      ppLib.log('error', '[ppBraze] trackPurchase error', err);
+      ppLib.log('error', '[ppBraze] trackPurchase error', ppLib.safeLogError(err));
     }
   }
 

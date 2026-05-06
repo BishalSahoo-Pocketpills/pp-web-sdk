@@ -236,7 +236,7 @@ describe('VWO coverage — guard paths', () => {
     window.ppLib.vwo!.configure({ accountId: '123' });
     window.ppLib.vwo!.init();
 
-    expect(logSpy).toHaveBeenCalledWith('error', '[ppVWO] parseForcedVariations error', expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', '[ppVWO] parseForcedVariations error', expect.objectContaining({ errorClass: expect.any(String) }));
   });
 
   it('scanViewGoals without IntersectionObserver', () => {

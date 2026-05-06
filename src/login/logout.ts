@@ -44,7 +44,7 @@ export function createLogoutUser(
         win.location.reload();
       }
     } catch (e) {
-      ppLib.log('error', '[ppLogin] Logout error', e);
+      ppLib.log('error', '[ppLogin] Logout error', ppLib.safeLogError(e));
     }
   };
 }

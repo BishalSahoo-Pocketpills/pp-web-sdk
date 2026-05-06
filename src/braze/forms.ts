@@ -159,7 +159,7 @@ export function createFormHandler(
         win.braze.requestImmediateDataFlush();
       }
     } catch (err) {
-      ppLib.log('error', '[ppBraze] handleSubmit error', err);
+      ppLib.log('error', '[ppBraze] handleSubmit error', ppLib.safeLogError(err));
     }
   }
 

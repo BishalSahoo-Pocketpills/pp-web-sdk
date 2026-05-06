@@ -1486,7 +1486,7 @@ describe('Mixpanel native coverage', () => {
       expect(logSpy).toHaveBeenCalledWith(
         'error',
         'getMixpanelCookieData error',
-        expect.any(Error)
+        expect.objectContaining({ errorClass: expect.any(String) })
       );
 
       if (originalCookieDescriptor) {

@@ -44,7 +44,7 @@ export function createInitAuthState(
             if (userData.firstName) previousUserName = userData.firstName;
           }
         } catch (e) {
-          ppLib.log('error', '[ppLogin] Previous user JSON parse error', e);
+          ppLib.log('error', '[ppLogin] Previous user JSON parse error', ppLib.safeLogError(e));
         }
       }
 
@@ -74,7 +74,7 @@ export function createInitAuthState(
       });
 
     } catch (e) {
-      ppLib.log('error', '[ppLogin] initAuthState error', e);
+      ppLib.log('error', '[ppLogin] initAuthState error', ppLib.safeLogError(e));
     }
   };
 }

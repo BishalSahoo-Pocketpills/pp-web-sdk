@@ -81,7 +81,7 @@ export function createSdkLoader(
           braze[method].apply(braze, args);
         }
       } catch (e) {
-        ppLib.log('error', '[ppBraze] drainQueue error for ' + method, e);
+        ppLib.log('error', '[ppBraze] drainQueue error for ' + method, ppLib.safeLogError(e));
       }
     }
 
@@ -118,7 +118,7 @@ export function createSdkLoader(
 
         ppLib.log('info', '[ppBraze] SDK loaded and initialized');
       } catch (e) {
-        ppLib.log('error', '[ppBraze] SDK initialization error', e);
+        ppLib.log('error', '[ppBraze] SDK initialization error', ppLib.safeLogError(e));
       }
     };
 

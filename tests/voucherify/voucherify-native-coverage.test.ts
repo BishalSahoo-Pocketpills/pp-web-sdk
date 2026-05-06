@@ -237,7 +237,7 @@ describe('Voucherify native coverage', () => {
       consent: { required: true, mode: 'analytics', checkFunction: () => true }
     });
     window.ppLib.voucherify.init();
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('consent check error'), expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('consent check error'), expect.objectContaining({ errorClass: expect.any(String) }));
   });
 
   // =====================================================
@@ -1062,7 +1062,7 @@ describe('Voucherify native coverage', () => {
     const result = await window.ppLib.voucherify.validateVoucher('ERRORCODE');
     expect(result.valid).toBe(false);
     expect(result.reason).toBe('Validation error');
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('validateVoucher error'), expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('validateVoucher error'), expect.objectContaining({ errorClass: expect.any(String) }));
   });
 
   it('validateVoucher with inapplicable code', async () => {

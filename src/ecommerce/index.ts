@@ -235,7 +235,7 @@ import { createEventGuard } from '@src/common/event-guard';
 
       ppLib.log('info', '[ppEcommerce] GTM → ' + eventName, ecommerceData);
     } catch (e) {
-      ppLib.log('error', '[ppEcommerce] GTM send error', e);
+      ppLib.log('error', '[ppEcommerce] GTM send error', ppLib.safeLogError(e));
     }
   }
 
@@ -259,7 +259,7 @@ import { createEventGuard } from '@src/common/event-guard';
       }
       ppLib.log('info', '[ppEcommerce] Mixpanel → ' + eventName, ecommerceData);
     } catch (e) {
-      ppLib.log('error', '[ppEcommerce] Mixpanel send error', e);
+      ppLib.log('error', '[ppEcommerce] Mixpanel send error', ppLib.safeLogError(e));
     }
   }
   /*! v8 ignore stop */
@@ -296,7 +296,7 @@ import { createEventGuard } from '@src/common/event-guard';
       dispatchEvent('view_item', ecommerceData);
       ppLib.log('info', '[ppEcommerce] view_item fired with ' + items.length + ' item(s)');
     } catch (e) {
-      ppLib.log('error', '[ppEcommerce] trackViewItem error', e);
+      ppLib.log('error', '[ppEcommerce] trackViewItem error', ppLib.safeLogError(e));
     }
   }
 
@@ -334,7 +334,7 @@ import { createEventGuard } from '@src/common/event-guard';
 
       dispatchEvent('add_to_cart', ecommerceData);
     } catch (e) {
-      ppLib.log('error', '[ppEcommerce] handleInteraction error', e);
+      ppLib.log('error', '[ppEcommerce] handleInteraction error', ppLib.safeLogError(e));
     }
   }
 
@@ -360,7 +360,7 @@ import { createEventGuard } from '@src/common/event-guard';
 
       ppLib.log('info', '[ppEcommerce] Initialized');
     } catch (e) {
-      ppLib.log('error', '[ppEcommerce] init error', e);
+      ppLib.log('error', '[ppEcommerce] init error', ppLib.safeLogError(e));
     }
   }
 

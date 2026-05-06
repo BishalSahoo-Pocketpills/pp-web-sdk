@@ -1330,7 +1330,7 @@ describe('DOM Binding — Error Handling', () => {
     const btn = document.querySelector('[data-dl-event="error_test"]')!;
     btn.dispatchEvent(new Event('click', { bubbles: true }));
 
-    expect(logSpy).toHaveBeenCalledWith('error', '[ppDataLayer] handleInteraction error', expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', '[ppDataLayer] handleInteraction error', expect.objectContaining({ errorClass: expect.any(String) }));
 
     window.ppLib.Security.sanitize = originalSanitize;
     logSpy.mockRestore();
@@ -1557,7 +1557,7 @@ describe('Auto view_item on page load', () => {
 
     window.ppLib.datalayer.scanViewItems();
 
-    expect(logSpy).toHaveBeenCalledWith('error', '[ppDataLayer] scanViewItems error', expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', '[ppDataLayer] scanViewItems error', expect.objectContaining({ errorClass: expect.any(String) }));
 
     document.querySelectorAll = original;
     logSpy.mockRestore();
