@@ -254,3 +254,123 @@ export function safeLogPayload(value: unknown): unknown {
   return redactObject(value as Record<string, unknown>, 1, seen);
 }
 
+/**
+ * PII-safe error logging helper.
+ *
+ * Returns a plain object describing an exception in a shape that is safe to
+ * write to console / DevTools / Sentry. Free-form fields (the message, the
+ * stack, arbitrary `cause` chains) are dropped or replaced by shape hints —
+ * exception text is one of the most common PII leak vectors because it
+ * frequently embeds emails, tokens, and request payloads.
+ *
+ * Always returns a plain `Record<string, unknown>` and never throws — log
+ * sites must remain "fire and forget".
+ *
+ * Optional `opts.debugErrors: true` includes verbatim `messageRaw` and
+ * `stack`. Intended for local debug builds only. The runtime config flag
+ * `CONFIG.debugErrors` is forwarded by the common-module installer; callers
+ * that bypass `ppLib.safeLogError` and import this helper directly may pass
+ * the option explicitly.
+ */
+export interface SafeLogErrorOptions {
+  debugErrors?: boolean;
+}
+
+interface ErrorWithContext {
+  name?: unknown;
+  message?: unknown;
+  stack?: unknown;
+  code?: unknown;
+  context?: unknown;
+}
+
+export function safeLogError(
+  err: unknown,
+  opts?: SafeLogErrorOptions
+): Record<string, unknown> {
+  const debug = !!(opts && opts.debugErrors);
+
+  if (err instanceof Error) {
+    const e = err as Error & ErrorWithContext;
+    const out: Record<string, unknown> = {
+      errorClass: (typeof e.name === 'string' && e.name) || 'Error',
+      messageShape: typeof e.message === 'string'
+        ? '<string len=' + e.message.length + '>'
+        : '<unknown>'
+    };
+
+    // DOMException-style numeric `code`. Booleans excluded (`typeof true ===
+    // 'boolean'`); we accept numbers only.
+    if (typeof e.code === 'number') {
+      out.code = e.code;
+    }
+
+    if (e.context !== null && typeof e.context === 'object') {
+      const ctx = e.context as Record<string, unknown>;
+      // Lift well-known typed-error keys verbatim with strict type checks.
+      // Anything that doesn't match the expected primitive type is dropped
+      // (not coerced) so a future caller stuffing an Error.cause object into
+      // `cause` doesn't recurse PII through.
+      if (typeof ctx.endpoint === 'string') out.endpoint = ctx.endpoint;
+      if (typeof ctx.status === 'number') out.status = ctx.status;
+      if (typeof ctx.attempt === 'number') out.attempt = ctx.attempt;
+      if (typeof ctx.cause === 'string') out.cause = ctx.cause;
+
+      // Build remainder map of any custom keys (anything beyond the four
+      // typed-error fields above) and run it through safeLogPayload — this
+      // closes the H-3 loophole where future callers might add PII into the
+      // free-form `[key: string]: unknown` slot of VoucherifyErrorContext.
+      const rest: Record<string, unknown> = {};
+      let hasRest = false;
+      const keys = Object.keys(ctx);
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
+        if (k === 'endpoint' || k === 'status' || k === 'attempt' || k === 'cause') continue;
+        rest[k] = ctx[k];
+        hasRest = true;
+      }
+      if (hasRest) {
+        out.context = safeLogPayload(rest);
+      }
+    }
+
+    if (debug) {
+      out.messageRaw = typeof e.message === 'string' ? e.message : String(e.message);
+      out.stack = typeof e.stack === 'string' ? e.stack : undefined;
+    }
+
+    return out;
+  }
+
+  // Non-Error throws. JS allows `throw <anything>` so log sites can receive
+  // primitives, plain objects, null, or undefined.
+  if (err === null) {
+    return { errorClass: 'null' };
+  }
+  if (err === undefined) {
+    return { errorClass: 'undefined' };
+  }
+  const t = typeof err;
+  if (t === 'string') {
+    return {
+      errorClass: 'string',
+      primitive: 'string',
+      messageShape: shapeHint(err)
+    };
+  }
+  if (t === 'number' || t === 'boolean' || t === 'bigint' || t === 'symbol') {
+    return {
+      errorClass: t,
+      primitive: t
+    };
+  }
+  if (t === 'object') {
+    return {
+      errorClass: 'Object',
+      context: safeLogPayload(err)
+    };
+  }
+  // Functions and any other exotic type — degrade gracefully.
+  return { errorClass: t };
+}
+

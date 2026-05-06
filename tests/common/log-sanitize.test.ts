@@ -1,4 +1,10 @@
-import { safeLogPayload } from '../../src/common/log-sanitize';
+import { safeLogPayload, safeLogError } from '../../src/common/log-sanitize';
+import {
+  VoucherifyError,
+  VoucherifyApiError,
+  VoucherifyConfigError,
+  VoucherifyPricingError
+} from '../../src/voucherify/errors';
 
 describe('safeLogPayload — top-level passthrough', () => {
   it('passes a top-level string through unchanged', () => {
@@ -354,5 +360,190 @@ describe('safeLogPayload — idempotency + serialization (review fixes L-2/L-3)'
     expect(serialized).not.toContain('sekret-value-12345');
     // Allowlisted CA still surfaces.
     expect(serialized).toContain('CA');
+  });
+});
+
+describe('safeLogError — VoucherifyError subclasses', () => {
+  it('extracts errorClass + endpoint + status from VoucherifyApiError', () => {
+    const err = new VoucherifyApiError('non-OK', { endpoint: '/api/pricing', status: 503 });
+    const out = safeLogError(err);
+    expect(out.errorClass).toBe('VoucherifyApiError');
+    expect(out.endpoint).toBe('/api/pricing');
+    expect(out.status).toBe(503);
+    // Free-form message must be replaced with a length-only shape hint —
+    // the message can embed PII (server response fragments, request URLs).
+    expect(out.messageShape).toBe('<string len=6>');
+  });
+
+  it('omits status when only endpoint is provided (VoucherifyConfigError)', () => {
+    const err = new VoucherifyConfigError('clientPublicKey missing', { endpoint: '/init' });
+    const out = safeLogError(err);
+    expect(out.errorClass).toBe('VoucherifyConfigError');
+    expect(out.endpoint).toBe('/init');
+    expect('status' in out).toBe(false);
+    expect('attempt' in out).toBe(false);
+  });
+
+  it('passes string `cause` through verbatim on VoucherifyPricingError', () => {
+    const err = new VoucherifyPricingError('baseline-fallback render failed', {
+      cause: 'string-cause'
+    });
+    const out = safeLogError(err);
+    expect(out.cause).toBe('string-cause');
+  });
+
+  it('drops non-string `cause` (refuses to recurse Error.cause objects)', () => {
+    // VoucherifyErrorContext types `cause` as string, but JS allows any value
+    // at runtime. The helper must not pass through an Error/object cause —
+    // doing so would resurrect the H-3 PII risk this track is closing.
+    const inner = new Error('inner with user@example.com data');
+    const err = new VoucherifyError('outer', { cause: inner as unknown as string });
+    const out = safeLogError(err);
+    expect('cause' in out).toBe(false);
+    expect(JSON.stringify(out).indexOf('user@example.com')).toBe(-1);
+  });
+});
+
+describe('safeLogError — plain Error', () => {
+  it('replaces a PII-laden message with a length-only shape hint', () => {
+    const err = new Error('failed to fetch user@example.com payload at /api/x');
+    const out = safeLogError(err);
+    expect(out.errorClass).toBe('Error');
+    expect(typeof out.messageShape).toBe('string');
+    expect(out.messageShape).toMatch(/^<string len=\d+>$/);
+    // The PII MUST NOT survive into output, even in raw-string form.
+    const serialized = JSON.stringify(out);
+    expect(serialized.indexOf('user@example.com')).toBe(-1);
+  });
+
+  it('handles a TypeError with no context attached without crashing', () => {
+    const err = new TypeError('Cannot read property of undefined');
+    const out = safeLogError(err);
+    expect(out.errorClass).toBe('TypeError');
+    expect('endpoint' in out).toBe(false);
+    expect('context' in out).toBe(false);
+  });
+
+  it('extracts numeric `code` (DOMException-style errors)', () => {
+    const err = new Error('quota');
+    (err as unknown as { code: number }).code = 22;
+    const out = safeLogError(err);
+    expect(out.code).toBe(22);
+  });
+
+  it('drops non-numeric `code`', () => {
+    const err = new Error('quota');
+    (err as unknown as { code: string }).code = 'QUOTA_EXCEEDED';
+    const out = safeLogError(err);
+    expect('code' in out).toBe(false);
+  });
+
+  it('falls back to errorClass=Error when err.name is empty', () => {
+    const err = new Error('x');
+    err.name = '';
+    const out = safeLogError(err);
+    expect(out.errorClass).toBe('Error');
+  });
+});
+
+describe('safeLogError — non-Error throws', () => {
+  it('handles a thrown string', () => {
+    const out = safeLogError('oops');
+    expect(out.errorClass).toBe('string');
+    expect(out.primitive).toBe('string');
+    expect(out.messageShape).toBe('<string len=4>');
+  });
+
+  it('handles a thrown number', () => {
+    const out = safeLogError(42);
+    expect(out.errorClass).toBe('number');
+    expect(out.primitive).toBe('number');
+  });
+
+  it('handles a thrown null', () => {
+    const out = safeLogError(null);
+    expect(out.errorClass).toBe('null');
+  });
+
+  it('handles a thrown undefined', () => {
+    const out = safeLogError(undefined);
+    expect(out.errorClass).toBe('undefined');
+  });
+
+  it('handles a thrown boolean', () => {
+    const out = safeLogError(true);
+    expect(out.errorClass).toBe('boolean');
+    expect(out.primitive).toBe('boolean');
+  });
+
+  it('handles a thrown plain object via safeLogPayload', () => {
+    const out = safeLogError({ custom: 'object', email: 'x@y.com' });
+    expect(out.errorClass).toBe('Object');
+    const ctx = out.context as Record<string, unknown>;
+    expect(ctx.email).toBe('<redacted>');
+    // 'object' is len 6 → shape hint, not verbatim.
+    expect(ctx.custom).toBe('<string len=6>');
+  });
+});
+
+describe('safeLogError — context redaction (H-3 loophole closure)', () => {
+  it('routes custom (non-typed) context keys through safeLogPayload', () => {
+    // VoucherifyErrorContext has `[key: string]: unknown` for extension. If a
+    // future caller stuffs `email: 'x@y.com'` into context, the helper must
+    // redact it — not lift it verbatim.
+    const err = new VoucherifyApiError('x', {
+      endpoint: '/api/x',
+      status: 500,
+      // Cast: contextually arbitrary, but the type permits it via index sig.
+      ...(({ email: 'leak@example.com' }) as Record<string, unknown>)
+    });
+    const out = safeLogError(err);
+    expect(out.endpoint).toBe('/api/x');
+    expect(out.status).toBe(500);
+    const ctx = out.context as Record<string, unknown>;
+    expect(ctx.email).toBe('<redacted>');
+    expect(JSON.stringify(out).indexOf('leak@example.com')).toBe(-1);
+  });
+
+  it('does not emit a `context` key when only typed-error fields are set', () => {
+    const err = new VoucherifyApiError('x', { endpoint: '/api/x', status: 500 });
+    const out = safeLogError(err);
+    expect('context' in out).toBe(false);
+  });
+});
+
+describe('safeLogError — debugErrors opt-in', () => {
+  it('omits messageRaw and stack by default', () => {
+    const err = new Error('verbose message');
+    const out = safeLogError(err);
+    expect('messageRaw' in out).toBe(false);
+    expect('stack' in out).toBe(false);
+  });
+
+  it('includes messageRaw and stack when debugErrors:true', () => {
+    const err = new Error('verbose message');
+    const out = safeLogError(err, { debugErrors: true });
+    expect(out.messageRaw).toBe('verbose message');
+    expect(typeof out.stack === 'string' || out.stack === undefined).toBe(true);
+  });
+});
+
+describe('safeLogError — robustness', () => {
+  it('is idempotent: running on its own output does not throw and returns an object', () => {
+    const err = new VoucherifyApiError('x', { endpoint: '/y', status: 500 });
+    const once = safeLogError(err);
+    const twice = safeLogError(once);
+    expect(typeof twice).toBe('object');
+    expect(twice).not.toBeNull();
+    // The output of pass 1 is a plain object → pass 2 routes it through the
+    // "Object" branch and runs the body through safeLogPayload. We only
+    // assert no-throw + object shape; exact contents are an internal detail.
+    expect(twice.errorClass).toBe('Object');
+  });
+
+  it('always returns a plain object even for exotic inputs', () => {
+    expect(typeof safeLogError(Symbol('x'))).toBe('object');
+    expect(typeof safeLogError(BigInt(1))).toBe('object');
+    expect(typeof safeLogError(function() {})).toBe('object');
   });
 });

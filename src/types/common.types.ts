@@ -11,6 +11,11 @@ export interface PPLibConfig {
   verbose: boolean;
   namespace: string;
   security: SecurityConfig;
+  // Opt-in raw error logging. Default false — `safeLogError` strips
+  // `message` / `stack` because they routinely embed PII (emails in API
+  // payloads, bearer tokens in fetch URLs). Local debug builds may enable
+  // this to surface verbatim message + stack via `messageRaw` / `stack`.
+  debugErrors?: boolean;
 }
 
 export interface SafeUtils {
@@ -74,6 +79,12 @@ export interface PPLib {
   // bags before they reach console / DevTools / Sentry. See
   // src/common/log-sanitize.ts for the redaction rules.
   safeLogPayload?: (value: unknown) => unknown;
+  // PII-safe error helper. Wraps caught exceptions before they reach the log
+  // pipeline. Drops `message` (PII risk) and `stack` (URL-leak risk),
+  // surfacing `errorClass`, `messageShape`, and the typed-error context
+  // fields (`endpoint`, `status`, `attempt`, `cause`) instead. Honours
+  // `config.debugErrors` to surface verbatim text in local debug builds.
+  safeLogError?: (err: unknown) => Record<string, unknown>;
   extend: <T extends object, U>(target: T, source: U) => T & U;
   ready: (callback: (ppLib: PPLib) => void) => void;
   attribution: import('../common/attribution').AttributionService;

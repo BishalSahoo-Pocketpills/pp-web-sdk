@@ -17,7 +17,7 @@ import { createAttributionService } from '@src/common/attribution';
 import { createSessionService } from '@src/common/session';
 import { createDataLayerEnricher } from '@src/common/datalayer-enricher';
 import { createEventPropertiesBuilder } from '@src/common/event-properties-builder';
-import { safeLogPayload } from '@src/common/log-sanitize';
+import { safeLogPayload, safeLogError } from '@src/common/log-sanitize';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -87,6 +87,15 @@ import { safeLogPayload } from '@src/common/log-sanitize';
   // =====================================================
 
   ppLib.safeLogPayload = safeLogPayload;
+
+  // PII-safe error helper. Wraps caught exceptions before they reach
+  // `ppLib.log('error', ..., e)` so error.message / stack (which routinely
+  // embed emails, tokens, payload fragments) never reach console / Sentry.
+  // Honours `config.debugErrors` to opt local debug builds back into raw
+  // message + stack.
+  ppLib.safeLogError = function(err: unknown): Record<string, unknown> {
+    return safeLogError(err, { debugErrors: !!ppLib.config.debugErrors });
+  };
 
   // =====================================================
   // STORAGE MODULE (NULL-SAFE)
