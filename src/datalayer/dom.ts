@@ -1,5 +1,5 @@
 import type { PPLib } from '@src/types/common.types';
-import type { DataLayerConfig, DataLayerItemInput } from '@src/types/datalayer.types';
+import type { DataLayerConfig, DataLayerItemInput, DataLayerItem } from '@src/types/datalayer.types';
 import { createDebounceTracker } from '@src/common/debounce';
 import { createEventGuard } from '@src/common/event-guard';
 
@@ -16,8 +16,8 @@ export function createDomBinder(
   doc: Document,
   ppLib: PPLib,
   CONFIG: DataLayerConfig,
-  eventPusher: { pushEvent: (name: string, extra?: Record<string, any>) => void; pushEcommerceEvent: (name: string, items: DataLayerItemInput[], extra?: Record<string, any>) => void },
-  itemBuilder: { normalizeItem: (input: DataLayerItemInput) => any; calculateValue: (items: any[]) => string }
+  eventPusher: { pushEvent: (name: string, extra?: Record<string, unknown>) => void; pushEcommerceEvent: (name: string, items: DataLayerItemInput[], extra?: Record<string, unknown>) => void },
+  itemBuilder: { normalizeItem: (input: DataLayerItemInput) => DataLayerItem; calculateValue: (items: DataLayerItem[]) => string }
 ) {
 
   const debounce = createDebounceTracker(CONFIG);
@@ -72,7 +72,7 @@ export function createDomBinder(
   function handleEcommerceEvent(eventName: string, el: Element): void {
     const itemEl = resolveItemElement(el);
     const itemInput = extractItemFromElement(itemEl);
-    const extra: Record<string, any> = {};
+    const extra: Record<string, unknown> = {};
 
     if (eventName === 'purchase') {
       const txnId = readAttr(el, CONFIG.attributes.transactionId);
@@ -83,7 +83,7 @@ export function createDomBinder(
   }
 
   function handleCoreEvent(eventName: string, el: Element): void {
-    const data: Record<string, any> = {};
+    const data: Record<string, unknown> = {};
 
     const method = readAttr(el, CONFIG.attributes.method);
     const pageType = readAttr(el, CONFIG.attributes.pageType);

@@ -11,21 +11,21 @@ export function createEventPusher(
   itemBuilder: { normalizeItem: (input: DataLayerItemInput) => DataLayerItem; calculateValue: (items: DataLayerItem[]) => string }
 ) {
 
-  function ensureDataLayer(): any[] {
+  function ensureDataLayer(): unknown[] {
     win.dataLayer = win.dataLayer || [];
     return win.dataLayer;
   }
 
-  function merge(target: Record<string, any>, source: Record<string, any>): void {
+  function merge(target: Record<string, unknown>, source: Record<string, unknown>): void {
     const keys = Object.keys(source);
     for (let i = 0; i < keys.length; i++) {
       target[keys[i]] = source[keys[i]];
     }
   }
 
-  function pushEvent(eventName: string, extra?: Record<string, any>): void {
+  function pushEvent(eventName: string, extra?: Record<string, unknown>): void {
     const dl = ensureDataLayer();
-    const enriched: Record<string, any> = {
+    const enriched: Record<string, unknown> = {
       event: eventName,
       user: userBuilder.buildUser(),
       userData: userDataManager.getUserData(),
@@ -47,7 +47,7 @@ export function createEventPusher(
     ppLib.log('info', '[ppDataLayer] push → ' + eventName, enriched);
   }
 
-  function pushEcommerceEvent(eventName: string, inputItems: DataLayerItemInput[], extra?: Record<string, any>): void {
+  function pushEcommerceEvent(eventName: string, inputItems: DataLayerItemInput[], extra?: Record<string, unknown>): void {
     const dl = ensureDataLayer();
 
     // Clear previous ecommerce data
@@ -65,13 +65,13 @@ export function createEventPusher(
 
     const value = itemBuilder.calculateValue(items);
 
-    const ecommerceData: Record<string, any> = {
+    const ecommerceData: Record<string, unknown> = {
       items: items,
       value: value,
       currency: CONFIG.defaults.currency
     };
 
-    const merged: Record<string, any> = { ecommerce: ecommerceData };
+    const merged: Record<string, unknown> = { ecommerce: ecommerceData };
     merge(merged, extra || {});
 
     pushEvent(eventName, merged);

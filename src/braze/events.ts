@@ -34,9 +34,9 @@ export function createEventHandler(
   function getElementKey(el: Element): string {
     const eventName = el.getAttribute(CONFIG.event.eventAttribute) || '';
     /*! v8 ignore start */
-    const tag = (el as any).tagName || '';
+    const tag = el.tagName || '';
     /*! v8 ignore stop */
-    const text = ((el as any).textContent || '').substring(0, 50).trim();
+    const text = (el.textContent || '').substring(0, 50).trim();
     return tag + ':' + eventName + ':' + text;
   }
 

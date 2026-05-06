@@ -299,8 +299,8 @@ import { createDebounceTracker } from '@src/common/debounce';
       sessionStorageSet('pp_vwo_exp_props', JSON.stringify(props));
 
       // If Mixpanel is already fully loaded, register immediately
-      const mp = (win as any).mixpanel;
-      if (mp && mp.__loaded) {
+      const mp = win.mixpanel;
+      if (mp && (mp as { __loaded?: boolean }).__loaded) {
         mp.register(props);
         if (mp.people && typeof mp.people.set === 'function') {
           mp.people.set(props);
@@ -520,7 +520,10 @@ import { createDebounceTracker } from '@src/common/debounce';
 
     // Auto-enable VWO platform in event-source module
     if (ppLib.eventSource) {
-      ppLib.eventSource.configure({ platforms: { vwo: { enabled: true } } } as any);
+      // EventSource's platforms config doesn't include `vwo` in the public
+      // typing — VWO module dispatch is opt-in via this configure call.
+      // Cast through unknown to suppress the structural mismatch.
+      ppLib.eventSource.configure({ platforms: { vwo: { enabled: true } } } as unknown as Parameters<typeof ppLib.eventSource.configure>[0]);
       ppLib.log('info', '[ppVWO] Auto-enabled VWO dispatcher in event-source');
     }
 

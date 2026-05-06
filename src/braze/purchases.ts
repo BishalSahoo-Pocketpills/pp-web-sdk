@@ -96,7 +96,7 @@ export function createPurchaseHandler(
     price: number,
     currency?: string,
     quantity?: number,
-    properties?: Record<string, any>
+    properties?: Record<string, unknown>
   ): void {
     try {
       const sanitizedId = ppLib.Security.sanitize(productId);
@@ -152,11 +152,11 @@ export function createPurchaseHandler(
     win.dataLayer = win.dataLayer || [];
 
     const origPush = Array.prototype.push;
-    win.dataLayer.push = function() {
-      const result = origPush.apply(win.dataLayer, arguments as any);
+    win.dataLayer.push = function(this: unknown[], ...pushArgs: unknown[]): number {
+      const result = origPush.apply(win.dataLayer, pushArgs);
 
-      for (let i = 0; i < arguments.length; i++) {
-        const entry = arguments[i];
+      for (let i = 0; i < pushArgs.length; i++) {
+        const entry = pushArgs[i] as { event?: string; ecommerce?: { items?: Array<Record<string, string | number>>; currency?: string } } | undefined;
         /*! v8 ignore start */
         if (entry && entry.event === 'add_to_cart' && entry.ecommerce && entry.ecommerce.items) {
         /*! v8 ignore stop */
@@ -167,10 +167,10 @@ export function createPurchaseHandler(
             if (item.item_id && item.price) {
             /*! v8 ignore stop */
               trackPurchase(
-                item.item_id,
-                parseFloat(item.price),
+                String(item.item_id),
+                parseFloat(String(item.price)),
                 entry.ecommerce.currency || CONFIG.purchase.defaultCurrency,
-                item.quantity || 1
+                Number(item.quantity) || 1
               );
             }
           }
@@ -178,7 +178,7 @@ export function createPurchaseHandler(
       }
 
       return result;
-    } as any;
+    };
 
     ppLib.log('info', '[ppBraze] Ecommerce bridge active');
   }

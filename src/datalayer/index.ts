@@ -86,8 +86,8 @@ import { createEventPropertiesEnricher } from '@src/datalayer/enrichers/event-pr
     };
   }
 
-  function coreEvent(eventName: string): (data: Record<string, any>) => void {
-    return function(data: Record<string, any>) {
+  function coreEvent(eventName: string): (data: Record<string, unknown>) => void {
+    return function(data: Record<string, unknown>) {
       eventPusher.pushEvent(eventName, data);
     };
   }
@@ -115,7 +115,7 @@ import { createEventPropertiesEnricher } from '@src/datalayer/enrichers/event-pr
 
       // If previousUser cookie wasn't available yet, poll for it
       !ud.sha256_email_address && !ud.sha256_phone_number && pollPreviousUser(20);
-    }).catch(function(e: any) {
+    }).catch(function(e: unknown) {
       ppLib.log('error', '[ppDataLayer] onReady error', e);
     });
   }
@@ -183,18 +183,18 @@ import { createEventPropertiesEnricher } from '@src/datalayer/enrichers/event-pr
 
     // ---- Generic push ----
 
-    push: function(eventName: string, data?: Record<string, any>) {
+    push: function(eventName: string, data?: Record<string, unknown>) {
       eventPusher.pushEvent(eventName, data);
     },
 
-    pushEcommerce: function(eventName: string, items: DataLayerItemInput[], data?: Record<string, any>) {
+    pushEcommerce: function(eventName: string, items: DataLayerItemInput[], data?: Record<string, unknown>) {
       eventPusher.pushEcommerceEvent(eventName, items, data);
     },
 
     // ---- Core events ----
 
-    pageview: function(data?: Record<string, any>) {
-      const extra: Record<string, any> = { platform: CONFIG.defaults.platform };
+    pageview: function(data?: Record<string, unknown>) {
+      const extra: Record<string, unknown> = { platform: CONFIG.defaults.platform };
       ppLib.extend(extra, data || {});
       eventPusher.pushEvent('pageview', extra);
     },

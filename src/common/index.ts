@@ -34,7 +34,7 @@ import { createEventPropertiesBuilder } from '@src/common/event-properties-build
   // LOGGING
   // =====================================================
 
-  ppLib.log = function(level: string, message: string, data?: any) {
+  ppLib.log = function(level: string, message: string, data?: unknown) {
     /*! v8 ignore start */
     if (level !== 'error' && level !== 'warn') {
       if (!ppLib.config.debug) return;
@@ -44,7 +44,8 @@ import { createEventPropertiesBuilder } from '@src/common/event-properties-build
 
     try {
       const prefix = '[ppLib v' + ppLib.version + ']';
-      const logFn = (console as any)[level] || console.log;
+      const consoleObj = console as unknown as Record<string, ((...args: unknown[]) => void) | undefined>;
+      const logFn = consoleObj[level] || console.log;
       logFn.call(console, prefix, message, data || '');
     } catch (e) {
       // Silent fail for logging

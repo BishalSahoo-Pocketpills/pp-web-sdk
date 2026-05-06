@@ -78,9 +78,9 @@ import type { EventSourceConfig, EventSourceData } from '@src/types/event-source
     // Create a stable identifier for debounce purposes
     const source = el.getAttribute(CONFIG.attribute) || '';
     /*! v8 ignore start */
-    const tag = (el as any).tagName || '';
+    const tag = el.tagName || '';
     /*! v8 ignore stop */
-    const text = ((el as any).textContent || '').substring(0, 50).trim();
+    const text = (el.textContent || '').substring(0, 50).trim();
     return tag + ':' + source + ':' + text;
   }
 
@@ -102,7 +102,7 @@ import type { EventSourceConfig, EventSourceData } from '@src/types/event-source
     const data: EventSourceData = {
       event_source: sanitizedSource,
       element_tag: el.tagName.toLowerCase(),
-      element_text: ppLib.Security.sanitize(((el as any).textContent || '').substring(0, 100).trim()),
+      element_text: ppLib.Security.sanitize((el.textContent || '').substring(0, 100).trim()),
       element_href: '',
       timestamp: new Date().toISOString()
     };
@@ -200,7 +200,7 @@ import type { EventSourceConfig, EventSourceData } from '@src/types/event-source
       /*! v8 ignore stop */
 
       win.dataLayer = win.dataLayer || [];
-      const gtmData: Record<string, any> = { event: CONFIG.gtmEventName };
+      const gtmData: Record<string, unknown> = { event: CONFIG.gtmEventName };
 
       for (const key in data) {
         /*! v8 ignore start */
@@ -363,7 +363,7 @@ import type { EventSourceConfig, EventSourceData } from '@src/types/event-source
     },
 
     // Manually track a custom event through the same pipeline
-    trackCustom: function(eventSource: string, properties?: Record<string, any>): void {
+    trackCustom: function(eventSource: string, properties?: Record<string, unknown>): void {
       /*! v8 ignore start */
       if (!eventSource) {
         ppLib.log('warn', '[ppEventSource] trackCustom requires a non-empty eventSource');

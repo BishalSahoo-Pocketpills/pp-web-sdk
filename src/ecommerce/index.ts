@@ -64,9 +64,9 @@ import { createEventGuard } from '@src/common/event-guard';
   function getElementKey(el: Element): string {
     /*! v8 ignore start */
     const item = el.getAttribute(CONFIG.attributes.item) || '';
-    const tag = (el as any).tagName || '';
+    const tag = el.tagName || '';
     /*! v8 ignore stop */
-    const text = ((el as any).textContent || '').substring(0, 50).trim();
+    const text = (el.textContent || '').substring(0, 50).trim();
     return tag + ':' + item + ':' + text;
   }
 
@@ -216,7 +216,7 @@ import { createEventGuard } from '@src/common/event-guard';
       win.dataLayer = win.dataLayer || [];
       win.dataLayer.splice(0, Math.max(0, win.dataLayer.length - 500));
 
-      const payload: Record<string, any> = {
+      const payload: Record<string, unknown> = {
         event: eventName,
         platform: CONFIG.defaults.platform,
         ecommerce: ecommerceData
@@ -391,7 +391,7 @@ import { createEventGuard } from '@src/common/event-guard';
 
     trackViewItem: trackViewItem,
 
-    trackItem: function(itemData: any): void {
+    trackItem: function(itemData: Partial<EcommerceItem> & { price: string | number }): void {
       /*! v8 ignore start */
       if (!itemData || !itemData.item_id || !itemData.item_name || !itemData.price) {
         ppLib.log('error', '[ppEcommerce] trackItem requires item_id, item_name, and price');
