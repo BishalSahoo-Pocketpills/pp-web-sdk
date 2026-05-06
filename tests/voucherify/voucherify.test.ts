@@ -376,6 +376,12 @@ describe('API Client — Direct Mode', () => {
     expect(callHeaders.origin).toBe('https://pocketpills.com');
   });
 
+  // checkQualifications no longer rejects — async failures resolve to an
+  // empty-but-shaped QualificationResult and the typed error is logged via
+  // ppLib.log('error', ..., { errorClass, endpoint, status }). The block of
+  // tests below assert that contract (instead of `.rejects.toThrow(...)`).
+  // The error class itself is verified by inspecting the structured log call.
+
   it('handles API error response (non-2xx)', async () => {
     loadWithCommon('voucherify', { coverable: false });
     window.fetch = mockFetch({}, 400);
@@ -385,12 +391,17 @@ describe('API Client — Direct Mode', () => {
       pricing: { autoFetch: false } as any
     });
 
-    await expect(
-      window.ppLib.voucherify!.checkQualifications({ scenario: 'ALL' })
-    ).rejects.toThrow('Voucherify API non-OK');
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    const result = await window.ppLib.voucherify!.checkQualifications({ scenario: 'ALL' });
+    expect(result).toEqual({ redeemables: [], total: 0, hasMore: false });
+    expect(logSpy).toHaveBeenCalledWith(
+      'error',
+      expect.stringContaining('checkQualifications failed'),
+      expect.objectContaining({ errorClass: 'VoucherifyApiError', status: 400 })
+    );
   });
 
-  it('throws error when applicationId is missing in direct mode', async () => {
+  it('logs config error and resolves to empty result when applicationId is missing', async () => {
     loadWithCommon('voucherify', { coverable: false });
     window.fetch = mockFetch({});
 
@@ -399,15 +410,17 @@ describe('API Client — Direct Mode', () => {
       pricing: { autoFetch: false } as any
     });
 
-    await expect(
-      window.ppLib.voucherify!.checkQualifications({ scenario: 'ALL' })
-    ).rejects.toThrow('applicationId missing');
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    const result = await window.ppLib.voucherify!.checkQualifications({ scenario: 'ALL' });
+    expect(result).toEqual({ redeemables: [], total: 0, hasMore: false });
+    expect(logSpy).toHaveBeenCalledWith(
+      'error',
+      expect.stringContaining('checkQualifications failed'),
+      expect.objectContaining({ errorClass: 'VoucherifyConfigError' })
+    );
   });
 
-  it('throws VoucherifyConfigError when clientPublicKey is missing in browser-direct mode', async () => {
-    // Browser-direct mode now requires the public token. Missing public AND
-    // secret → "clientPublicKey missing"; if secret happens to be present,
-    // the error specifically refuses to send it from the browser.
+  it('logs config error and resolves to empty result when clientPublicKey is missing', async () => {
     loadWithCommon('voucherify', { coverable: false });
     window.fetch = mockFetch({});
 
@@ -416,12 +429,17 @@ describe('API Client — Direct Mode', () => {
       pricing: { autoFetch: false } as any
     });
 
-    await expect(
-      window.ppLib.voucherify!.checkQualifications({ scenario: 'ALL' })
-    ).rejects.toThrow('clientPublicKey missing');
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    const result = await window.ppLib.voucherify!.checkQualifications({ scenario: 'ALL' });
+    expect(result).toEqual({ redeemables: [], total: 0, hasMore: false });
+    expect(logSpy).toHaveBeenCalledWith(
+      'error',
+      expect.stringContaining('checkQualifications failed'),
+      expect.objectContaining({ errorClass: 'VoucherifyConfigError' })
+    );
   });
 
-  it('throws VoucherifyConfigError refusing to send clientSecretKey from the browser', async () => {
+  it('logs refusal and resolves to empty result when clientSecretKey is set in browser', async () => {
     loadWithCommon('voucherify', { coverable: false });
     window.fetch = mockFetch({});
 
@@ -430,9 +448,14 @@ describe('API Client — Direct Mode', () => {
       pricing: { autoFetch: false } as any
     });
 
-    await expect(
-      window.ppLib.voucherify!.checkQualifications({ scenario: 'ALL' })
-    ).rejects.toThrow('clientSecretKey must not be sent from the browser');
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    const result = await window.ppLib.voucherify!.checkQualifications({ scenario: 'ALL' });
+    expect(result).toEqual({ redeemables: [], total: 0, hasMore: false });
+    expect(logSpy).toHaveBeenCalledWith(
+      'error',
+      expect.stringContaining('checkQualifications failed'),
+      expect.objectContaining({ errorClass: 'VoucherifyConfigError' })
+    );
   });
 });
 
@@ -1118,7 +1141,11 @@ describe('Pricing — Best Discount Selection', () => {
 // 15. PRICING — ERROR HANDLING
 // =========================================================================
 describe('Pricing — Error Handling', () => {
-  it('returns empty array and logs error on fetch failure', async () => {
+  it('falls back to baseline pricing and logs structured error on fetch failure', async () => {
+    // Behavior change: fetchPricing previously returned [] on error, leaving
+    // the DOM cloaked indefinitely. It now renders baseline pricing
+    // (basePrice == discountedPrice, no discount label) so the page is
+    // visually coherent, and emits a structured log carrying errorClass.
     loadWithCommon('voucherify', { coverable: false });
     setupDOM();
     window.fetch = mockFetchReject('Network error');
@@ -1131,8 +1158,13 @@ describe('Pricing — Error Handling', () => {
 
     const results = await window.ppLib.voucherify!.fetchPricing();
 
-    expect(results).toEqual([]);
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('fetchPricing error'), expect.any(Error));
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.every(r => r.discountedPrice === r.basePrice && r.discountAmount === 0)).toBe(true);
+    expect(logSpy).toHaveBeenCalledWith(
+      'error',
+      expect.stringContaining('fetchPricing error'),
+      expect.objectContaining({ errorClass: expect.any(String) })
+    );
   });
 
   it('handles response with missing qualifications gracefully', async () => {

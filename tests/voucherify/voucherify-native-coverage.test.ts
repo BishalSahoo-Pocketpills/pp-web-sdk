@@ -334,8 +334,11 @@ describe('Voucherify native coverage', () => {
     const promise = window.ppLib.voucherify.fetchPricing();
     await vi.advanceTimersByTimeAsync(200);
     const result = await promise;
-    expect(result).toEqual([]); // fetchPricing catches the error
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('fetchPricing error'), expect.any(Error));
+    // fetchPricing now falls back to baseline pricing on error so the
+    // DOM still renders coherent prices instead of staying cloaked.
+    expect(result).toHaveLength(2);
+    expect(result.every(r => r.discountedPrice === r.basePrice && r.discountAmount === 0 && r.discountType === 'NONE')).toBe(true);
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('fetchPricing error'), expect.any(Object));
     vi.useRealTimers();
   });
 
@@ -353,7 +356,8 @@ describe('Voucherify native coverage', () => {
 
     const logSpy = vi.spyOn(window.ppLib, 'log');
     const result = await window.ppLib.voucherify.fetchPricing();
-    expect(result).toEqual([]);
+    expect(result).toHaveLength(2);
+    expect(result.every(r => r.discountedPrice === r.basePrice)).toBe(true);
     expect(window.fetch).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
@@ -395,8 +399,9 @@ describe('Voucherify native coverage', () => {
 
     const logSpy = vi.spyOn(window.ppLib, 'log');
     const result = await window.ppLib.voucherify.fetchPricing();
-    expect(result).toEqual([]);
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('fetchPricing error'), expect.any(Error));
+    expect(result).toHaveLength(2);
+    expect(result.every(r => r.discountedPrice === r.basePrice)).toBe(true);
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('fetchPricing error'), expect.any(Object));
   });
 
   it('cache enabled but empty baseUrl throws (line 119-120)', async () => {
@@ -412,8 +417,9 @@ describe('Voucherify native coverage', () => {
 
     const logSpy = vi.spyOn(window.ppLib, 'log');
     const result = await window.ppLib.voucherify.fetchPricing();
-    expect(result).toEqual([]);
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('fetchPricing error'), expect.any(Error));
+    expect(result).toHaveLength(2);
+    expect(result.every(r => r.discountedPrice === r.basePrice)).toBe(true);
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('fetchPricing error'), expect.any(Object));
   });
 
   it('direct API: missing clientPublicKey rejects with VoucherifyConfigError', async () => {
@@ -432,7 +438,7 @@ describe('Voucherify native coverage', () => {
 
     const logSpy = vi.spyOn(window.ppLib, 'log');
     await window.ppLib.voucherify.fetchPricing();
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('fetchPricing error'), expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('fetchPricing error'), expect.any(Object));
   });
 
   it('direct API missing applicationId only (line 130-131 branches)', async () => {
@@ -448,7 +454,7 @@ describe('Voucherify native coverage', () => {
 
     const logSpy = vi.spyOn(window.ppLib, 'log');
     await window.ppLib.voucherify.fetchPricing();
-    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('fetchPricing error'), expect.any(Error));
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('fetchPricing error'), expect.any(Object));
   });
 
   it('API response not ok — throws error', async () => {
@@ -466,7 +472,8 @@ describe('Voucherify native coverage', () => {
 
     const logSpy = vi.spyOn(window.ppLib, 'log');
     const result = await window.ppLib.voucherify.fetchPricing();
-    expect(result).toEqual([]);
+    expect(result).toHaveLength(2);
+    expect(result.every(r => r.discountedPrice === r.basePrice)).toBe(true);
     vi.useRealTimers();
   });
 

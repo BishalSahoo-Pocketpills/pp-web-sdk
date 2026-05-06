@@ -421,6 +421,29 @@ import { VoucherifyConfigError, VoucherifyApiError } from '@src/voucherify/error
     return results;
   }
 
+  // Baseline fallback — used by the pricing pipeline's outer catch so that
+  // network/edge failures still produce a renderable PricingResult per
+  // product (basePrice == discountedPrice, no discount label). Without this
+  // the renderer is never called, the cloak attribute stays on, and the
+  // user sees an unstyled "loading" state until they reload.
+  function buildBaselineResults(products: DOMProduct[]): PricingResult[] {
+    const results: PricingResult[] = [];
+    for (let i = 0; i < products.length; i++) {
+      const p = products[i];
+      results.push({
+        productId: p.id,
+        basePrice: p.basePrice,
+        discountedPrice: p.basePrice,
+        discountAmount: 0,
+        discountLabel: '',
+        discountType: 'NONE',
+        applicableVouchers: [],
+        campaignName: ''
+      });
+    }
+    return results;
+  }
+
   function injectPricing(products: DOMProduct[], pricingResults: PricingResult[]): void {
     for (let i = 0; i < products.length; i++) {
       const product = products[i];
@@ -590,7 +613,7 @@ import { VoucherifyConfigError, VoucherifyApiError } from '@src/voucherify/error
 
     const response = await win.fetch(url);
     if (!response.ok) {
-      throw new Error('Edge API error: ' + response.status);
+      throw new VoucherifyApiError('Edge pricing API non-OK', { endpoint: '/api/pricing', status: response.status });
     }
 
     const data = await response.json() as EdgePricingResponse;
@@ -632,7 +655,7 @@ import { VoucherifyConfigError, VoucherifyApiError } from '@src/voucherify/error
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
-    if (!response.ok) throw new Error('Edge validate error: ' + response.status);
+    if (!response.ok) throw new VoucherifyApiError('Edge validate non-OK', { endpoint: '/api/validate', status: response.status });
     return response.json() as Promise<VoucherifyApiResponse>;
   }
 
@@ -642,7 +665,7 @@ import { VoucherifyConfigError, VoucherifyApiError } from '@src/voucherify/error
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
-    if (!response.ok) throw new Error('Edge qualify error: ' + response.status);
+    if (!response.ok) throw new VoucherifyApiError('Edge qualify non-OK', { endpoint: '/api/qualify', status: response.status });
     return response.json() as Promise<VoucherifyApiResponse>;
   }
 
@@ -747,7 +770,27 @@ import { VoucherifyConfigError, VoucherifyApiError } from '@src/voucherify/error
 
       return results;
     } catch (e) {
-      ppLib.log('error', '[ppVoucherify] fetchPricing error', e);
+      // Pricing pipeline failed — emit a structured error log and fall back
+      // to baseline pricing (basePrice as both retail and "discounted" so the
+      // DOM renders something coherent). Previously this returned `[]` and
+      // never invoked the renderer, leaving the page in a cloaked state.
+      const errObj = e as { name?: string; context?: { endpoint?: string; status?: number } };
+      ppLib.log('error', '[ppVoucherify] fetchPricing error', {
+        errorClass: (errObj && errObj.name) || 'Error',
+        endpoint: errObj && errObj.context && errObj.context.endpoint,
+        status: errObj && errObj.context && errObj.context.status
+      });
+      try {
+        const products = getProductsFromDOM();
+        if (products.length > 0) {
+          const baseline = buildBaselineResults(products);
+          injectPricing(products, baseline);
+          removeCloakAttribute();
+          return baseline;
+        }
+      } catch (fallbackErr) {
+        ppLib.log('error', '[ppVoucherify] baseline-fallback render failed', fallbackErr);
+      }
       return [];
     }
   }
@@ -778,7 +821,7 @@ import { VoucherifyConfigError, VoucherifyApiError } from '@src/voucherify/error
     const url = CONFIG.edge.edgeUrl + '/api/offers/' + encodeURIComponent(segment);
     const response = await fetchWithRetry(url, { method: 'GET' });
     if (!response.ok) {
-      throw new Error('Edge offers API error: ' + response.status);
+      throw new VoucherifyApiError('Edge offers API non-OK', { endpoint: '/api/offers', status: response.status });
     }
     const data = await response.json();
     return data.offers || emptyBundle();
@@ -1225,6 +1268,18 @@ import { VoucherifyConfigError, VoucherifyApiError } from '@src/voucherify/error
               total_amount: result.order.total_amount || 0
             } : undefined
           } as ValidationResult;
+        }).catch(function(err: unknown) {
+          // Catch async errors from validateFn (network, edge fallback, typed
+          // errors from apiRequest). Without this .catch the rejection
+          // propagated as an unhandled promise rejection — the previous
+          // surrounding try/catch only caught synchronous failures.
+          const errObj = err as { name?: string; context?: { endpoint?: string; status?: number } };
+          ppLib.log('error', '[ppVoucherify] validateVoucher failed', {
+            errorClass: (errObj && errObj.name) || 'Error',
+            endpoint: errObj && errObj.context && errObj.context.endpoint,
+            status: errObj && errObj.context && errObj.context.status
+          });
+          return { valid: false, code: sanitizedCode, reason: 'Validation error' } as ValidationResult;
         });
       } catch (e) {
         ppLib.log('error', '[ppVoucherify] validateVoucher error', e);
@@ -1253,6 +1308,16 @@ import { VoucherifyConfigError, VoucherifyApiError } from '@src/voucherify/error
           total: response.total || 0,
           hasMore: response.has_more || false
         } as QualificationResult;
+      }).catch(function(err: unknown) {
+        // Defensive: callers expect a fulfilled Promise<QualificationResult>;
+        // emit an empty-but-shaped result rather than an unhandled rejection.
+        const errObj = err as { name?: string; context?: { endpoint?: string; status?: number } };
+        ppLib.log('error', '[ppVoucherify] checkQualifications failed', {
+          errorClass: (errObj && errObj.name) || 'Error',
+          endpoint: errObj && errObj.context && errObj.context.endpoint,
+          status: errObj && errObj.context && errObj.context.status
+        });
+        return { redeemables: [], total: 0, hasMore: false } as QualificationResult;
       });
     },
 
