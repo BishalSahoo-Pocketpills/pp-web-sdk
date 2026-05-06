@@ -77,7 +77,10 @@ export function createFormHandler(
       const sanitizedName = ppLib.Security.sanitize(formName);
       /*! v8 ignore start */
       if (!sanitizedName) {
-        ppLib.log('warn', '[ppBraze] Form name was rejected by sanitization: ' + formName);
+        // Drop the rejected value from the log — `formName` is sourced from
+        // a user-controllable HTML attribute and could carry PII if a form
+        // builder names it after a field (e.g. `collect_customer_email_form`).
+        ppLib.log('warn', '[ppBraze] Form name was rejected by sanitization');
         return;
       }
       /*! v8 ignore stop */

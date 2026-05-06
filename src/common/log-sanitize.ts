@@ -11,52 +11,6 @@
  * must not parse redacted output to recover content — there is none.
  */
 
-const ALLOWLIST_KEYS: Record<string, true> = {
-  country: true,
-  language: true,
-  gender: true,
-  currency: true,
-  timezone: true,
-  level: true,
-  status: true,
-  source: true,
-  eventname: true,
-  formname: true,
-  pagepath: true,
-  pagetitle: true
-};
-
-const DENYLIST_KEYS: Record<string, true> = {
-  email: true,
-  phone: true,
-  phonenumber: true,
-  mobile: true,
-  firstname: true,
-  lastname: true,
-  fullname: true,
-  name: true,
-  dob: true,
-  dateofbirth: true,
-  birthday: true,
-  street: true,
-  address: true,
-  addressline1: true,
-  addressline2: true,
-  postal: true,
-  postalcode: true,
-  zip: true,
-  city: true,
-  password: true,
-  token: true,
-  auth: true,
-  authtoken: true,
-  ssn: true,
-  sin: true,
-  healthcard: true,
-  prescription: true,
-  rx: true
-};
-
 const MAX_DEPTH = 4;
 const MAX_ARRAY = 20;
 
@@ -76,6 +30,100 @@ function normalizeKey(key: string): string {
   }
   return out;
 }
+
+// camelCase source-of-truth for the rule sets. Common variants are listed
+// explicitly rather than relying on substring matching (substring would
+// over-redact, e.g. `countryName` would incorrectly hit a `name` substring).
+// `normalizeKey()` populates the lookup tables once at module init so that
+// runtime comparisons stay O(1) regardless of key casing/separators in the
+// caller's payload (`firstName`, `first_name`, `first-name` all match).
+
+const ALLOWLIST_SOURCE: readonly string[] = [
+  'country',
+  'language',
+  'gender',
+  'currency',
+  'timezone',
+  'level',
+  'status',
+  'source',
+  'eventName',
+  'formName',
+  'pagePath',
+  'pageTitle'
+];
+
+const DENYLIST_SOURCE: readonly string[] = [
+  // contact
+  'email',
+  'emailAddress',
+  'userEmail',
+  'customerEmail',
+  'personalEmail',
+  'phone',
+  'phoneNumber',
+  'phoneE164',
+  'mobile',
+  'mobileNumber',
+  'mobilePhone',
+  'cell',
+  'cellPhone',
+  'homePhone',
+  'workPhone',
+  // identity
+  'firstName',
+  'lastName',
+  'fullName',
+  'middleName',
+  'name',
+  'userName',
+  'dob',
+  'dateOfBirth',
+  'birthday',
+  // address
+  'street',
+  'streetAddress',
+  'address',
+  'addressLine1',
+  'addressLine2',
+  'postal',
+  'postalCode',
+  'zip',
+  'zipCode',
+  'city',
+  // credentials / tokens
+  'password',
+  'passwd',
+  'pwd',
+  'token',
+  'accessToken',
+  'refreshToken',
+  'bearerToken',
+  'apiKey',
+  'apiToken',
+  'secret',
+  'clientSecret',
+  'clientSecretKey',
+  'auth',
+  'authToken',
+  'authorization',
+  // sensitive identifiers (PHI / govt)
+  'ssn',
+  'sin',
+  'healthCard',
+  'prescription',
+  'rx'
+];
+
+const ALLOWLIST_KEYS: Record<string, true> = ALLOWLIST_SOURCE.reduce((acc, k) => {
+  acc[normalizeKey(k)] = true;
+  return acc;
+}, {} as Record<string, true>);
+
+const DENYLIST_KEYS: Record<string, true> = DENYLIST_SOURCE.reduce((acc, k) => {
+  acc[normalizeKey(k)] = true;
+  return acc;
+}, {} as Record<string, true>);
 
 function isDeniedRaw(rawKey: string, normalized: string): boolean {
   if (DENYLIST_KEYS[normalized]) return true;
@@ -125,7 +173,16 @@ function redactObject(
     }
 
     if (ALLOWLIST_KEYS[normalized]) {
-      out[key] = value;
+      // An allowlisted key still recurses through container values so a
+      // payload like `{ source: { email: '...' } }` doesn't pass PII through
+      // verbatim. Primitive values pass straight through.
+      if (Array.isArray(value)) {
+        out[key] = redactArray(value, depth + 1, seen);
+      } else if (value !== null && typeof value === 'object') {
+        out[key] = redactObject(value as Record<string, unknown>, depth + 1, seen);
+      } else {
+        out[key] = value;
+      }
       continue;
     }
 

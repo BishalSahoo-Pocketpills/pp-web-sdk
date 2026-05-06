@@ -46,7 +46,9 @@ export function createUserManager(
         return;
       }
       win.braze.changeUser(sanitized);
-      ppLib.log('info', '[ppBraze] identify → <id len=' + sanitized.length + '>');
+      // Length intentionally omitted — even <id len=N> can fingerprint user
+      // class (numeric vs UUID). The act of calling identify is the signal.
+      ppLib.log('info', '[ppBraze] identify → <id>');
     } catch (e) {
       ppLib.log('error', '[ppBraze] identify error', e);
     }

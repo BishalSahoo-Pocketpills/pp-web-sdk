@@ -81,7 +81,10 @@ export function createEventHandler(
       const sanitizedName = ppLib.Security.sanitize(eventName);
       /*! v8 ignore start */
       if (!sanitizedName) {
-        ppLib.log('warn', '[ppBraze] Event name was rejected by sanitization: ' + eventName);
+        // Drop the rejected value from the log. Custom event-source attrs
+        // can carry user-typed strings; bypassing safeLogPayload here would
+        // leak PII through the rejection path itself.
+        ppLib.log('warn', '[ppBraze] Event name was rejected by sanitization');
         return;
       }
       /*! v8 ignore stop */

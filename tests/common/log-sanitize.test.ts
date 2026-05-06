@@ -259,3 +259,100 @@ describe('safeLogPayload — composite Braze-style payload', () => {
     expect(out.session_token).toBe('<redacted>');
   });
 });
+
+describe('safeLogPayload — denylist variant coverage (review fix H-1)', () => {
+  // Common camelCase / snake_case / compound variants of the canonical
+  // denylist keys. The normalize step collapses casing/separators so each
+  // variant maps onto an entry in DENYLIST_KEYS.
+  const variants: Record<string, string> = {
+    emailAddress: 'a@b.com',
+    user_email: 'a@b.com',
+    customerEmail: 'a@b.com',
+    personalEmail: 'a@b.com',
+    'phone-number': '555-1234',
+    phoneE164: '+15551234',
+    mobilePhone: '555-1234',
+    mobile_number: '555-1234',
+    cellPhone: '555-1234',
+    home_phone: '555-1234',
+    workPhone: '555-1234',
+    user_name: 'bob',
+    middle_name: 'Q',
+    full_name: 'Bob Q. Builder',
+    streetAddress: '123 Main St',
+    zipCode: '94110',
+    accessToken: 'tk',
+    refresh_token: 'tk',
+    bearerToken: 'tk',
+    apiKey: 'tk',
+    apiToken: 'tk',
+    clientSecret: 'tk',
+    client_secret_key: 'tk',
+    authorization: 'Bearer x'
+  };
+  Object.keys(variants).forEach((rawKey) => {
+    it('redacts ' + rawKey, () => {
+      const out = safeLogPayload({ [rawKey]: variants[rawKey] }) as Record<string, unknown>;
+      expect(out[rawKey]).toBe('<redacted>');
+    });
+  });
+});
+
+describe('safeLogPayload — allowlisted-key recursion (review fix M-5)', () => {
+  it('recurses into an allowlisted key whose value is an object', () => {
+    // `source` is allowlisted but the inner `email` must still be redacted —
+    // an allowlisted KEY does not whitelist its CONTAINER's contents.
+    const out = safeLogPayload({
+      source: { email: 'x@y.com', country: 'CA' }
+    }) as Record<string, unknown>;
+    const inner = out.source as Record<string, unknown>;
+    expect(inner.email).toBe('<redacted>');
+    expect(inner.country).toBe('CA');
+  });
+
+  it('recurses into an allowlisted key whose value is an array of objects', () => {
+    const out = safeLogPayload({
+      source: [{ email: 'x@y.com' }, { country: 'CA' }]
+    }) as Record<string, unknown>;
+    const arr = out.source as Array<Record<string, unknown>>;
+    expect(arr[0].email).toBe('<redacted>');
+    expect(arr[1].country).toBe('CA');
+  });
+});
+
+describe('safeLogPayload — idempotency + serialization (review fixes L-2/L-3)', () => {
+  it('is idempotent on allowlist + denylist values', () => {
+    // Values that have already been redacted (`<redacted>`) or are
+    // allowlisted strings stay stable under a second pass. Shape-hint
+    // strings (`<string len=N>`) are intentionally NOT idempotent —
+    // re-running produces `<string len=14>` because the prior hint is
+    // itself a string longer than 3 chars. That's an acceptable cost; the
+    // helper's contract is "no PII in output", not "stable encoding".
+    const payload = {
+      email: 'x@y.com',
+      firstName: 'Bob',
+      country: 'CA',
+      gender: 'M'
+    };
+    const once = safeLogPayload(payload);
+    const twice = safeLogPayload(once);
+    expect(twice).toEqual(once);
+  });
+
+  it('produces JSON.stringify-safe output without leaking redacted values', () => {
+    const out = safeLogPayload({
+      email: 'leaky@example.com',
+      firstName: 'Bob',
+      session_token: 'sekret-value-12345',
+      country: 'CA'
+    });
+    // No throw on serialization — Sentry / DataDog ingestion won't choke.
+    expect(() => JSON.stringify(out)).not.toThrow();
+    const serialized = JSON.stringify(out);
+    expect(serialized).not.toContain('leaky@example.com');
+    expect(serialized).not.toContain('Bob');
+    expect(serialized).not.toContain('sekret-value-12345');
+    // Allowlisted CA still surfaces.
+    expect(serialized).toContain('CA');
+  });
+});
