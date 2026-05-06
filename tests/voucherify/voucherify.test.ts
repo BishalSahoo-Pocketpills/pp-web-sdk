@@ -122,10 +122,10 @@ describe('Configuration', () => {
   it('merges partial config via configure()', () => {
     loadWithCommon('voucherify', { coverable: false });
     const config = window.ppLib.voucherify!.configure({
-      api: { applicationId: 'test-app-id', clientSecretKey: 'test-secret' } as any
+      api: { applicationId: 'test-app-id', clientPublicKey: 'test-public' } as any
     });
     expect(config.api.applicationId).toBe('test-app-id');
-    expect(config.api.clientSecretKey).toBe('test-secret');
+    expect(config.api.clientPublicKey).toBe('test-public');
   });
 
   it('getConfig returns the config object', () => {
@@ -340,7 +340,7 @@ describe('API Client — Direct Mode', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'my-app-id', clientSecretKey: 'my-secret', baseUrl: 'https://as1.api.voucherify.io' } as any,
+      api: { applicationId: 'my-app-id', clientPublicKey: 'my-public', baseUrl: 'https://as1.api.voucherify.io' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -353,7 +353,7 @@ describe('API Client — Direct Mode', () => {
         headers: expect.objectContaining({
           'Content-Type': 'application/json',
           'X-Client-Application-Id': 'my-app-id',
-          'X-Client-Token': 'my-secret'
+          'X-Client-Token': 'my-public'
         }),
         body: expect.any(String)
       })
@@ -366,7 +366,7 @@ describe('API Client — Direct Mode', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key', origin: 'https://pocketpills.com' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public', origin: 'https://pocketpills.com' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -381,13 +381,13 @@ describe('API Client — Direct Mode', () => {
     window.fetch = mockFetch({}, 400);
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
     await expect(
       window.ppLib.voucherify!.checkQualifications({ scenario: 'ALL' })
-    ).rejects.toThrow('Voucherify /qualifications: 400');
+    ).rejects.toThrow('Voucherify API non-OK');
   });
 
   it('throws error when applicationId is missing in direct mode', async () => {
@@ -395,27 +395,44 @@ describe('API Client — Direct Mode', () => {
     window.fetch = mockFetch({});
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: '', clientSecretKey: 'key' } as any,
+      api: { applicationId: '', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
     await expect(
       window.ppLib.voucherify!.checkQualifications({ scenario: 'ALL' })
-    ).rejects.toThrow('Voucherify API credentials missing');
+    ).rejects.toThrow('applicationId missing');
   });
 
-  it('throws error when clientSecretKey is missing in direct mode', async () => {
+  it('throws VoucherifyConfigError when clientPublicKey is missing in browser-direct mode', async () => {
+    // Browser-direct mode now requires the public token. Missing public AND
+    // secret → "clientPublicKey missing"; if secret happens to be present,
+    // the error specifically refuses to send it from the browser.
     loadWithCommon('voucherify', { coverable: false });
     window.fetch = mockFetch({});
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: '' } as any,
+      api: { applicationId: 'app' } as any,
       pricing: { autoFetch: false } as any
     });
 
     await expect(
       window.ppLib.voucherify!.checkQualifications({ scenario: 'ALL' })
-    ).rejects.toThrow('Voucherify API credentials missing');
+    ).rejects.toThrow('clientPublicKey missing');
+  });
+
+  it('throws VoucherifyConfigError refusing to send clientSecretKey from the browser', async () => {
+    loadWithCommon('voucherify', { coverable: false });
+    window.fetch = mockFetch({});
+
+    window.ppLib.voucherify!.configure({
+      api: { applicationId: 'app', clientSecretKey: 'leaked-secret' } as any,
+      pricing: { autoFetch: false } as any
+    });
+
+    await expect(
+      window.ppLib.voucherify!.checkQualifications({ scenario: 'ALL' })
+    ).rejects.toThrow('clientSecretKey must not be sent from the browser');
   });
 });
 
@@ -473,7 +490,7 @@ describe('In-memory Cache', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -491,7 +508,7 @@ describe('In-memory Cache', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -507,7 +524,7 @@ describe('In-memory Cache', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -526,7 +543,7 @@ describe('In-memory Cache', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any,
       cache: { ttl: 1 } as any // 1ms TTL so entries expire quickly
     });
@@ -559,7 +576,7 @@ describe('Context Builder', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -589,7 +606,7 @@ describe('Context Builder', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -616,7 +633,7 @@ describe('Context Builder', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -633,7 +650,7 @@ describe('Context Builder', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -656,7 +673,7 @@ describe('Context Builder', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any,
       context: { includeLoginState: false } as any
     });
@@ -689,7 +706,7 @@ describe('Context Builder', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any,
       context: { includeUtmParams: false } as any
     });
@@ -715,7 +732,7 @@ describe('Context Builder', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any,
       context: { includeLoginState: false, includeUtmParams: false } as any
     });
@@ -735,7 +752,7 @@ describe('Context Builder', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -762,7 +779,7 @@ describe('DOM Scanning', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -782,7 +799,7 @@ describe('DOM Scanning', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -799,7 +816,7 @@ describe('DOM Scanning', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -827,7 +844,7 @@ describe('DOM Scanning', () => {
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -854,7 +871,7 @@ describe('Pricing — Percent Discount', () => {
     window.fetch = mockFetch(response);
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -904,7 +921,7 @@ describe('Pricing — Nested redeemables.data response format', () => {
     window.fetch = mockFetch(response);
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -933,7 +950,7 @@ describe('Pricing — Amount Discount', () => {
     window.fetch = mockFetch(response);
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -958,7 +975,7 @@ describe('Pricing — No Discount', () => {
     window.fetch = mockFetch(qualificationsResponse());
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -995,7 +1012,7 @@ describe('Pricing — Fixed Discount', () => {
     window.fetch = mockFetch(response);
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1023,7 +1040,7 @@ describe('Pricing — Unit Discount', () => {
     window.fetch = mockFetch(response);
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1056,7 +1073,7 @@ describe('Pricing — Unit Discount', () => {
     window.fetch = mockFetch(response);
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1084,7 +1101,7 @@ describe('Pricing — Best Discount Selection', () => {
     window.fetch = mockFetch(response);
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1108,7 +1125,7 @@ describe('Pricing — Error Handling', () => {
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1124,7 +1141,7 @@ describe('Pricing — Error Handling', () => {
     window.fetch = mockFetch({});
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1148,7 +1165,7 @@ describe('Pricing — Error Handling', () => {
     window.fetch = mockFetch(response);
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1180,7 +1197,7 @@ describe('validateVoucher()', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1209,7 +1226,7 @@ describe('validateVoucher()', () => {
     window.fetch = mockFetch(invalidResponse);
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1224,7 +1241,7 @@ describe('validateVoucher()', () => {
     loadWithCommon('voucherify', { coverable: false });
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1240,7 +1257,7 @@ describe('validateVoucher()', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1260,7 +1277,7 @@ describe('validateVoucher()', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1292,7 +1309,7 @@ describe('checkQualifications()', () => {
     window.fetch = mockFetch(response);
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1309,7 +1326,7 @@ describe('checkQualifications()', () => {
     window.fetch = fetchMock;
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1324,7 +1341,7 @@ describe('checkQualifications()', () => {
     window.fetch = mockFetch({ has_more: true, total: 5 });
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1351,7 +1368,7 @@ describe('Price Formatting', () => {
     window.fetch = mockFetch(response);
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false, currency: 'CAD', locale: 'en-CA' } as any
     });
 
@@ -1387,7 +1404,7 @@ describe('DOM Injection Edge Cases', () => {
     window.fetch = mockFetch(response);
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1408,7 +1425,7 @@ describe('DOM Injection Edge Cases', () => {
     window.fetch = mockFetch(qualificationsResponse());
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1429,7 +1446,7 @@ describe('DOM Injection Edge Cases', () => {
     window.fetch = mockFetch(response);
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1455,7 +1472,7 @@ describe('Campaign Name', () => {
     window.fetch = mockFetch(response);
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1530,7 +1547,7 @@ describe('Unknown Discount Type Warning', () => {
     window.fetch = mockFetch(response);
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 
@@ -1564,7 +1581,7 @@ describe('Unknown Discount Type Warning', () => {
     window.fetch = mockFetch(response);
 
     window.ppLib.voucherify!.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any
     });
 

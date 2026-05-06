@@ -367,7 +367,7 @@ describe('Voucherify native coverage', () => {
     setupDOM();
     window.fetch = mockFetch({ qualifications: [], total: 0, has_more: false });
     window.ppLib.voucherify.configure({
-      api: { applicationId: 'app-id', clientSecretKey: 'secret', baseUrl: 'https://api.test.com', origin: 'https://example.com' } as any,
+      api: { applicationId: 'app-id', clientPublicKey: 'public', baseUrl: 'https://api.test.com', origin: 'https://example.com' } as any,
       cache: { enabled: false } as any,
       pricing: { autoFetch: false } as any,
       consent: { required: false } as any
@@ -416,11 +416,14 @@ describe('Voucherify native coverage', () => {
     expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('fetchPricing error'), expect.any(Error));
   });
 
-  it('direct API missing clientSecretKey only (line 130-131 branches)', async () => {
+  it('direct API: missing clientPublicKey rejects with VoucherifyConfigError', async () => {
+    // applicationId set but no public key — the browser-direct credential
+    // is missing, apiRequest must refuse rather than fall through to
+    // sending nothing or to leaking clientSecretKey.
     await freshLoad();
     setupDOM();
     window.ppLib.voucherify.configure({
-      api: { applicationId: 'app-id', clientSecretKey: '' } as any,
+      api: { applicationId: 'app-id' } as any,
       cache: { enabled: false } as any,
       pricing: { autoFetch: false } as any,
       consent: { required: false } as any
@@ -436,7 +439,7 @@ describe('Voucherify native coverage', () => {
     await freshLoad();
     setupDOM();
     window.ppLib.voucherify.configure({
-      api: { applicationId: '', clientSecretKey: 'secret' } as any,
+      api: { applicationId: '', clientPublicKey: 'public' } as any,
       cache: { enabled: false } as any,
       pricing: { autoFetch: false } as any,
       consent: { required: false } as any
@@ -975,7 +978,7 @@ describe('Voucherify native coverage', () => {
       redeemables: [{ status: 'APPLICABLE', result: { discount: { type: 'PERCENT', percent_off: 10 }, order: { amount: 6000, discount_amount: 600, total_amount: 5400 } } }]
     });
     window.ppLib.voucherify.configure({
-      api: { applicationId: 'app', clientSecretKey: 'key', baseUrl: 'https://api.test.com', origin: '' } as any,
+      api: { applicationId: 'app', clientPublicKey: 'public', baseUrl: 'https://api.test.com', origin: '' } as any,
       cache: { enabled: false } as any,
       consent: { required: false } as any
     });
@@ -1263,7 +1266,10 @@ describe('Voucherify native coverage', () => {
   // CREDENTIAL WARNING (H5)
   // =====================================================
 
-  it('blocks init when API credentials are exposed in direct API mode', async () => {
+  it('blocks init when clientSecretKey is exposed in browser-direct mode', async () => {
+    // Critical security guard: clientSecretKey MUST NOT reach the browser.
+    // The block must fire whenever there is no proxy (cache.enabled=false)
+    // and no edge consumer (edge.mode !== 'edge').
     await freshLoad();
     setupDOM();
     window.fetch = mockFetch({ qualifications: [], total: 0, has_more: false });
@@ -1280,11 +1286,12 @@ describe('Voucherify native coverage', () => {
       'error',
       expect.stringContaining('BLOCKED')
     );
-    // Module should NOT be initialized
     expect(window.ppLib.voucherify.isReady()).toBe(false);
   });
 
-  it('does not warn about credentials when cache is enabled', async () => {
+  it('does not block when clientSecretKey is set and cache proxy is enabled', async () => {
+    // With a proxy in front, the secret never reaches the browser at runtime
+    // — proxy consumes it server-side. Init must succeed.
     await freshLoad();
     setupDOM();
     window.fetch = mockFetch({ qualifications: [], total: 0, has_more: false });
@@ -1298,9 +1305,55 @@ describe('Voucherify native coverage', () => {
     window.ppLib.voucherify.init();
 
     expect(logSpy).not.toHaveBeenCalledWith(
-      'warn',
-      expect.stringContaining('Direct API mode exposes credentials')
+      'error',
+      expect.stringContaining('BLOCKED')
     );
+  });
+
+  it('does not block when clientSecretKey is set and edge mode consumes it', async () => {
+    await freshLoad();
+    setupDOM();
+    window.fetch = mockFetch({ qualifications: [], total: 0, has_more: false });
+    window.ppLib.voucherify.configure({
+      api: { applicationId: 'test-app', clientSecretKey: 'secret-key' } as any,
+      cache: { enabled: false } as any,
+      edge: { mode: 'edge', edgeUrl: 'https://edge.example.com' } as any,
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any
+    });
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    window.ppLib.voucherify.init();
+
+    expect(logSpy).not.toHaveBeenCalledWith(
+      'error',
+      expect.stringContaining('BLOCKED')
+    );
+  });
+
+  it('blocks init for every non-edge edge.mode value when clientSecretKey is set', async () => {
+    // Regression guard: the previous warn-only check fired only on the literal
+    // string 'direct' — undefined / empty / 'cms' bypassed it. The new block
+    // must catch every non-'edge' value when no cache proxy is set.
+    for (const mode of [undefined, '', 'cms', 'direct']) {
+      await freshLoad();
+      setupDOM();
+      window.fetch = mockFetch({ qualifications: [], total: 0, has_more: false });
+      window.ppLib.voucherify.configure({
+        api: { applicationId: 'test-app', clientSecretKey: 'secret-key' } as any,
+        cache: { enabled: false } as any,
+        edge: { mode, edgeUrl: '' } as any,
+        pricing: { autoFetch: false } as any,
+        consent: { required: false } as any
+      });
+      const logSpy = vi.spyOn(window.ppLib, 'log');
+      window.ppLib.voucherify.init();
+
+      expect(logSpy).toHaveBeenCalledWith(
+        'error',
+        expect.stringContaining('BLOCKED')
+      );
+      expect(window.ppLib.voucherify.isReady()).toBe(false);
+    }
   });
 
   // =====================================================
@@ -1463,7 +1516,7 @@ describe('Voucherify native coverage', () => {
     }) as any;
 
     window.ppLib.voucherify.configure({
-      api: { applicationId: 'app-id', clientSecretKey: 'secret' } as any,
+      api: { applicationId: 'app-id', clientPublicKey: 'public' } as any,
       edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
       pricing: { autoFetch: false } as any,
       consent: { required: false } as any
@@ -1498,7 +1551,7 @@ describe('Voucherify native coverage', () => {
     }) as any;
 
     window.ppLib.voucherify.configure({
-      api: { applicationId: 'app-id', clientSecretKey: 'secret' } as any,
+      api: { applicationId: 'app-id', clientPublicKey: 'public' } as any,
       edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
       pricing: { autoFetch: false } as any,
       consent: { required: false } as any
@@ -1592,7 +1645,7 @@ describe('Voucherify native coverage', () => {
     }) as any;
 
     window.ppLib.voucherify.configure({
-      api: { applicationId: 'app-id', clientSecretKey: 'secret' } as any,
+      api: { applicationId: 'app-id', clientPublicKey: 'public' } as any,
       edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
       pricing: { autoFetch: false } as any,
       consent: { required: false } as any
@@ -1650,7 +1703,7 @@ describe('Voucherify native coverage', () => {
     }) as any;
 
     window.ppLib.voucherify.configure({
-      api: { applicationId: 'app-id', clientSecretKey: 'secret' } as any,
+      api: { applicationId: 'app-id', clientPublicKey: 'public' } as any,
       edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
       pricing: { autoFetch: false } as any,
       consent: { required: false } as any
@@ -3256,7 +3309,7 @@ describe('Voucherify native coverage', () => {
     document.cookie = 'userId=user123';
 
     window.ppLib.voucherify.configure({
-      api: { applicationId: 'test', clientSecretKey: 'test' } as any,
+      api: { applicationId: 'test', clientPublicKey: 'public' } as any,
       pricing: { autoFetch: false } as any,
       consent: { required: false } as any,
       segments: {

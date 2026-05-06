@@ -7,6 +7,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { VoucherifyConfig, ValidationContext, QualificationContext, PricingResult, ValidationResult, QualificationResult, OrderItem, DOMProduct, OffersResult, OffersBundle, OfferEntry, OfferCategory, FetchOffersOptions, VoucherifyRedeemable, VoucherifyApiResponse, EdgePricingResponse, CustomerMetadata } from '@src/types/voucherify.types';
+import { VoucherifyConfigError, VoucherifyApiError } from '@src/voucherify/errors';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -20,6 +21,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
   const CONFIG: VoucherifyConfig = {
     api: {
       applicationId: '',
+      clientPublicKey: '',
       clientSecretKey: '',
       baseUrl: 'https://as1.api.voucherify.io',
       origin: ''
@@ -147,7 +149,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
 
     if (CONFIG.cache.enabled) {
       if (!CONFIG.cache.baseUrl) {
-        throw new Error('Voucherify cache.baseUrl is not configured');
+        throw new VoucherifyConfigError('cache.baseUrl is not configured', { endpoint });
       }
       apiResponse = await fetchWithRetry(CONFIG.cache.baseUrl + endpoint, {
         method: 'POST',
@@ -155,10 +157,22 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
         body: JSON.stringify(body)
       });
     } else {
-      if (!CONFIG.api.applicationId || !CONFIG.api.clientSecretKey) {
-        throw new Error('Voucherify API credentials missing: ' +
-          (!CONFIG.api.applicationId ? 'applicationId ' : '') +
-          (!CONFIG.api.clientSecretKey ? 'clientSecretKey' : ''));
+      if (!CONFIG.api.applicationId) {
+        throw new VoucherifyConfigError('Voucherify API applicationId missing', { endpoint });
+      }
+      // Browser-direct mode requires a public client token. The init() guard
+      // already refused to start the module if clientSecretKey is set without
+      // a proxy/edge consumer, but we re-check here so direct invocations of
+      // the public API after a misconfigured runtime override still fail safe.
+      const browserToken = CONFIG.api.clientPublicKey;
+      if (!browserToken) {
+        if (CONFIG.api.clientSecretKey) {
+          throw new VoucherifyConfigError(
+            'clientSecretKey must not be sent from the browser; configure clientPublicKey, or use cache.enabled=true with a proxy, or edge.mode="edge".',
+            { endpoint }
+          );
+        }
+        throw new VoucherifyConfigError('Voucherify clientPublicKey missing', { endpoint });
       }
       /*! v8 ignore start — jsdom location.origin is always http://localhost */
       const origin = CONFIG.api.origin || win.location.origin;
@@ -168,7 +182,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
         headers: {
           'Content-Type': 'application/json',
           'X-Client-Application-Id': CONFIG.api.applicationId,
-          'X-Client-Token': CONFIG.api.clientSecretKey,
+          'X-Client-Token': browserToken,
           'origin': origin
         },
         body: JSON.stringify(body)
@@ -176,7 +190,7 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
     }
 
     if (!apiResponse.ok) {
-      throw new Error('Voucherify ' + endpoint + ': ' + apiResponse.status);
+      throw new VoucherifyApiError('Voucherify API non-OK', { endpoint, status: apiResponse.status });
     }
 
     const data = await apiResponse.json();
@@ -1108,9 +1122,19 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
       return;
     }
 
-    // Block credential exposure in direct API mode (security enforcement)
-    if (!CONFIG.cache.enabled && CONFIG.api.clientSecretKey && CONFIG.edge.mode === 'direct') {
-      ppLib.log('error', '[ppVoucherify] BLOCKED: Direct API mode with clientSecretKey exposes credentials in browser. Use cache proxy (cache.enabled: true) or edge mode (edge.mode: "edge").');
+    // Hard-block credential exposure in any browser-direct mode. The
+    // previous warn-only check was conditional on `edge.mode === 'direct'`,
+    // which let undefined/empty/'cms' values bypass it. The condition below
+    // fires whenever the secret would actually reach Voucherify from the
+    // browser — i.e. when there is no cache proxy AND the edge worker is
+    // not the consumer.
+    const willExposeSecretInBrowser =
+      !CONFIG.cache.enabled && CONFIG.edge.mode !== 'edge' && !!CONFIG.api.clientSecretKey;
+    if (willExposeSecretInBrowser) {
+      ppLib.log(
+        'error',
+        '[ppVoucherify] BLOCKED init: clientSecretKey is set in browser-direct mode and would leak Voucherify credentials. Set cache.enabled=true with a server proxy, or edge.mode="edge". To use the direct API in the browser, remove clientSecretKey and configure clientPublicKey only.'
+      );
       return;
     }
 

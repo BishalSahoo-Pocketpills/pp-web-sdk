@@ -1,5 +1,18 @@
 export interface VoucherifyApiConfig {
   applicationId: string;
+  /**
+   * Voucherify "Client-side API token" intended for browser use.
+   * Safe to ship in browser bundles. When present, it is used as the
+   * `X-Client-Token` header in browser-direct mode.
+   */
+  clientPublicKey?: string;
+  /**
+   * Voucherify "Server-side API token". MUST NOT be exposed to the browser.
+   * The SDK's `init()` will refuse to initialize if this is set in
+   * browser-direct mode (no cache proxy and no edge mode). Use it only
+   * via a server-side proxy (cache.enabled=true) or via the edge worker
+   * (edge.mode='edge').
+   */
   clientSecretKey: string;
   baseUrl: string;
   origin: string;
