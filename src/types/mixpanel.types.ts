@@ -45,6 +45,6 @@ export interface MixpanelAPI {
    * Returns true when forwarded.
    */
   track: (eventName: string, properties?: Record<string, unknown>) => boolean;
-  getMixpanelCookieData: () => Record<string, any>;
+  getMixpanelCookieData: () => Record<string, unknown>;
   getConfig: () => MixpanelConfig;
 }

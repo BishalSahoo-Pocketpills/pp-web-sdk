@@ -13,7 +13,7 @@ interface PPLibReadyCallback {
 
 // Minimal Mixpanel API surface we actually call. Keeps callers honest
 // about what we depend on without claiming to model the full SDK.
-interface MixpanelGlobal {
+export interface MixpanelGlobal {
   __SV?: number;
   init: (token: string, config?: Record<string, unknown>, name?: string) => void;
   track: (event: string, properties?: Record<string, unknown>) => void;
@@ -40,7 +40,7 @@ interface MixpanelGlobal {
 // STANDARD_ATTRS map (`user[setter](value)`). The trailing index signature
 // keeps dynamic indexed access typed (returns `unknown` — caller narrows
 // with `typeof user[k] === 'function'` and casts at the call site).
-interface BrazeUser {
+export interface BrazeUser {
   setEmail: (email: string) => void;
   setFirstName: (val: string) => void;
   setLastName: (val: string) => void;
@@ -54,7 +54,7 @@ interface BrazeUser {
 }
 
 // VWO experiment record (window._vwo_exp[id]) — only the fields the SDK reads.
-interface VwoExperiment {
+export interface VwoExperiment {
   combination_chosen?: number | string;
   comb_n?: Record<string, string>;
   [key: string]: unknown;
@@ -62,13 +62,13 @@ interface VwoExperiment {
 
 // VWO loader/runtime global. Verbatim from the VWO snippet — methods are
 // invoked dynamically; index signature keeps the surface flexible.
-interface VwoCodeGlobal {
+export interface VwoCodeGlobal {
   finished_loading?: () => boolean;
   finish?: () => unknown;
   [key: string]: unknown;
 }
 
-interface BrazeGlobal {
+export interface BrazeGlobal {
   initialize: (apiKey: string, options?: Record<string, unknown>) => void;
   changeUser: (userId: string) => void;
   openSession: () => void;

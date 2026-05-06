@@ -7,6 +7,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { MixpanelConfig } from '@src/types/mixpanel.types';
+import type { MixpanelGlobal } from '@src/types/window';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -43,7 +44,7 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
   function trackFacade(eventName: string, properties?: Record<string, unknown>): boolean {
     try {
       if (!CONFIG.enabled) return false;
-      const mp = (win as any).mixpanel;
+      const mp = win.mixpanel;
       if (!mp || typeof mp.track !== 'function') return false;
       if (typeof eventName !== 'string' || !eventName) {
         ppLib.log('warn', '[ppMixpanel] track called with empty eventName');
@@ -183,7 +184,19 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
   // SESSION MANAGEMENT
   // =====================================================
 
-  let mixpanel: any;
+  // Module-local reference to the global Mixpanel instance. Populated by
+  // loadMixpanelSDK (stub queue) before SessionManager is ever invoked, then
+  // replaced with the real SDK from inside the `loaded` callback. The
+  // SessionManager methods below all run after that assignment, so the
+  // non-null assertions are correct under the runtime contract.
+  let mixpanel: MixpanelGlobal | undefined;
+
+  function mp(): MixpanelGlobal {
+    if (!mixpanel) {
+      throw new Error('[ppMixpanel] SessionManager invoked before init');
+    }
+    return mixpanel;
+  }
 
   const SessionManager = {
     timeout: CONFIG.sessionTimeout,
@@ -198,22 +211,24 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
     },
 
     setId: function(): void {
-      mixpanel.register({ 'session ID': this.generateId() });
+      mp().register({ 'session ID': this.generateId() });
     },
 
     check: function(): void {
+      const m = mp();
       /*! v8 ignore start */
-      if (!mixpanel.get_property('last event time')) {
+      if (!m.get_property('last event time')) {
       /*! v8 ignore stop */
         this.setId();
       }
       /*! v8 ignore start */
-      if (!mixpanel.get_property('session ID')) {
+      if (!m.get_property('session ID')) {
       /*! v8 ignore stop */
         this.setId();
       }
+      const lastEventTime = m.get_property('last event time');
       /*! v8 ignore start */
-      if (Date.now() - mixpanel.get_property('last event time') > this.timeout) {
+      if (typeof lastEventTime === 'number' && Date.now() - lastEventTime > this.timeout) {
       /*! v8 ignore stop */
         this.setId();
         resetCampaign();
@@ -259,9 +274,10 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
 
   function resetCampaign(): void {
     // Session reset: clear last-touch attribution to canonical defaults.
+    const m = mp();
     const params = buildTouchParams(emptyUtmTouch(), '[last touch]');
-    mixpanel.people.set(params);
-    mixpanel.register(params);
+    m.people.set(params);
+    m.register(params);
   }
 
   function campaignParams(): void {
@@ -290,18 +306,19 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
       lastParams['fbclid'] = fbclid;
     }
 
-    mixpanel.people.set(lastParams);
-    mixpanel.people.set(firstParams);
-    mixpanel.register(lastParams);
-    mixpanel.register(firstParams);
+    const m = mp();
+    m.people.set(lastParams);
+    m.people.set(firstParams);
+    m.register(lastParams);
+    m.register(firstParams);
   }
 
   // =====================================================
   // MIXPANEL COOKIE DATA READER
   // =====================================================
 
-  function getMixpanelCookieData(): Record<string, any> {
-    let mixpanelData: Record<string, any> = {};
+  function getMixpanelCookieData(): Record<string, unknown> {
+    let mixpanelData: Record<string, unknown> = {};
     const regex = /^mp_([a-zA-Z0-9]+)_mixpanel$/i;
 
     try {
@@ -312,7 +329,7 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
         if (regex.test(name)) {
         /*! v8 ignore stop */
           const value = decodeURIComponent(parts.splice(1).join('='));
-          mixpanelData = ppLib.Security.json.parse(value, {});
+          mixpanelData = ppLib.Security.json.parse(value, {} as Record<string, unknown>);
         }
       });
     } catch (e) {
@@ -342,7 +359,7 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
     }
 
     loadMixpanelSDK();
-    mixpanel = (win as any).mixpanel;
+    mixpanel = win.mixpanel;
 
     // Read the distinct_id from any existing Mixpanel cookie BEFORE init.
     // After init with cross_subdomain_cookie: true, Mixpanel will create a new
@@ -378,11 +395,11 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
       }
     }
 
-    mixpanel.init(CONFIG.token, {
+    mp().init(CONFIG.token, {
       cross_subdomain_cookie: CONFIG.crossSubdomainCookie,
       opt_out_tracking_by_default: CONFIG.optOutByDefault,
       api_transport: 'sendBeacon',
-      loaded: function(mp: any) {
+      loaded: function(mp: MixpanelGlobal) {
         mixpanel = mp;
         if (!CONFIG.optOutByDefault) {
           mp.opt_in_tracking();
@@ -437,17 +454,26 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
 
         // Monkey-patch track() to always check session.
         // Uses stored original to prevent wrapper nesting across re-inits.
-        const originalTrack = mp.track._ppOriginal || mp.track;
-        mp.track = function() {
+        // The `_ppOriginal` augmentation is our own runtime addition; cast
+        // to AugmentedTrack at the access boundary.
+        type AugmentedTrack = MixpanelGlobal['track'] & {
+          _ppOriginal?: MixpanelGlobal['track'];
+        };
+        const augmented = mp.track as AugmentedTrack;
+        const originalTrack: MixpanelGlobal['track'] = augmented._ppOriginal || mp.track;
+        // Variadic forwarding preserves any 3rd+ args Mixpanel adds in
+        // future SDK versions (callbacks, options, etc.).
+        const wrappedTrack: AugmentedTrack = function(this: MixpanelGlobal, ...args: unknown[]): void {
           SessionManager.check();
           mp.register({ 'last event time': Date.now() });
-          originalTrack.apply(mp, arguments);
-        };
-        mp.track._ppOriginal = originalTrack;
+          (originalTrack as (...a: unknown[]) => void).apply(mp, args);
+        } as AugmentedTrack;
+        wrappedTrack._ppOriginal = originalTrack;
+        mp.track = wrappedTrack;
         ppLib._mpTrackPatched = true;
 
         // Register base properties
-        const baseProps: Record<string, any> = {
+        const baseProps: Record<string, unknown> = {
           'last event time': Date.now(),
           pp_user_agent: win.navigator.userAgent
         };
