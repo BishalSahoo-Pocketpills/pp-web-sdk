@@ -17,6 +17,7 @@ import { createAttributionService } from '@src/common/attribution';
 import { createSessionService } from '@src/common/session';
 import { createDataLayerEnricher } from '@src/common/datalayer-enricher';
 import { createEventPropertiesBuilder } from '@src/common/event-properties-builder';
+import { safeLogPayload } from '@src/common/log-sanitize';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -76,6 +77,16 @@ import { createEventPropertiesBuilder } from '@src/common/event-properties-build
   // =====================================================
 
   ppLib.Security = createSecurity(ppLib.config, ppLib.SafeUtils, ppLib.log);
+
+  // =====================================================
+  // PII-SAFE LOG PAYLOAD HELPER
+  // Modules wrap user-attribute / event-property bags through this before
+  // emitting `ppLib.log('info', ..., data)` so PII never lands in console
+  // / DevTools / Sentry. The contract is the log SHAPE — values are redacted
+  // or replaced with shape hints, never present.
+  // =====================================================
+
+  ppLib.safeLogPayload = safeLogPayload;
 
   // =====================================================
   // STORAGE MODULE (NULL-SAFE)

@@ -518,6 +518,32 @@ describe('setUserAttributes()', () => {
     window.ppLib.braze!.setUserAttributes(null as any);
     expect(mockBraze.getUser).not.toHaveBeenCalled();
   });
+
+  it('does NOT leak PII into console / log payload', () => {
+    loadWithCommon('braze');
+    const mockBraze = createMockBraze();
+    window.braze = mockBraze as any;
+    window.ppLib.config.debug = true; // ensure 'info' logs go through
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+
+    window.ppLib.braze!.setUserAttributes({
+      email: 'x@y.com',
+      firstName: 'Bob',
+      country: 'CA'
+    });
+
+    const setUserAttrCall = logSpy.mock.calls.find(c =>
+      typeof c[1] === 'string' && (c[1] as string).indexOf('setUserAttributes') !== -1
+    );
+    expect(setUserAttrCall).toBeDefined();
+    const serialized = JSON.stringify(setUserAttrCall);
+    expect(serialized).not.toContain('x@y.com');
+    expect(serialized).not.toContain('Bob');
+    // Allowlisted code stays verbatim
+    expect(serialized).toContain('CA');
+    // PII fields are redacted with the literal marker
+    expect(serialized).toContain('<redacted>');
+  });
 });
 
 // =========================================================================
@@ -544,6 +570,21 @@ describe('setEmail()', () => {
 
     expect(mockBraze._mockUser.setEmail).not.toHaveBeenCalled();
     expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('setEmail called with empty email'));
+  });
+
+  it('does NOT leak the email value into the success log', () => {
+    loadWithCommon('braze');
+    const mockBraze = createMockBraze();
+    window.braze = mockBraze as any;
+    window.ppLib.config.debug = true;
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+
+    window.ppLib.braze!.setEmail('hello@world.com');
+
+    const serialized = JSON.stringify(logSpy.mock.calls);
+    expect(serialized).not.toContain('hello@world.com');
+    // The success signal is still emitted — we just dropped the value.
+    expect(serialized).toContain('setEmail');
   });
 });
 

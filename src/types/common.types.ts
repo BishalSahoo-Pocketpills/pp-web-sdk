@@ -70,6 +70,10 @@ export interface PPLib {
   deleteCookie: (name: string) => void;
   getQueryParam: (url: string, findParam: string) => string;
   log: (level: string, message: string, data?: unknown) => void;
+  // PII-safe payload helper. Wraps untrusted user-attribute / event-property
+  // bags before they reach console / DevTools / Sentry. See
+  // src/common/log-sanitize.ts for the redaction rules.
+  safeLogPayload?: (value: unknown) => unknown;
   extend: <T extends object, U>(target: T, source: U) => T & U;
   ready: (callback: (ppLib: PPLib) => void) => void;
   attribution: import('../common/attribution').AttributionService;

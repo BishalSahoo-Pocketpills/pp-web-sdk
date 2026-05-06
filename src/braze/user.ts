@@ -46,7 +46,7 @@ export function createUserManager(
         return;
       }
       win.braze.changeUser(sanitized);
-      ppLib.log('info', '[ppBraze] identify → ' + sanitized);
+      ppLib.log('info', '[ppBraze] identify → <id len=' + sanitized.length + '>');
     } catch (e) {
       ppLib.log('error', '[ppBraze] identify error', e);
     }
@@ -83,7 +83,8 @@ export function createUserManager(
         }
       }
 
-      ppLib.log('info', '[ppBraze] setUserAttributes', attrs);
+      const safeAttrs = ppLib.safeLogPayload ? ppLib.safeLogPayload(attrs) : '<redacted>';
+      ppLib.log('info', '[ppBraze] setUserAttributes', safeAttrs);
     } catch (e) {
       ppLib.log('error', '[ppBraze] setUserAttributes error', e);
     }
@@ -98,12 +99,12 @@ export function createUserManager(
       const sanitized = ppLib.Security.sanitize(email);
       /*! v8 ignore start */
       if (!sanitized) {
-        ppLib.log('warn', '[ppBraze] Email was rejected by sanitization: ' + email);
+        ppLib.log('warn', '[ppBraze] Email was rejected by sanitization');
         return;
       }
       /*! v8 ignore stop */
       win.braze.getUser().setEmail(sanitized);
-      ppLib.log('info', '[ppBraze] setEmail → ' + sanitized);
+      ppLib.log('info', '[ppBraze] setEmail → <redacted email>');
     } catch (e) {
       ppLib.log('error', '[ppBraze] setEmail error', e);
     }
