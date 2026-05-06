@@ -142,9 +142,7 @@ import { createPurchaseHandler } from '@src/braze/purchases';
         win.braze.logCustomEvent(sanitized);
       }
 
-      const safeProps = sanitizedProps && ppLib.safeLogPayload
-        ? ppLib.safeLogPayload(sanitizedProps)
-        : sanitizedProps;
+      const safeProps = sanitizedProps ? ppLib.safeLogPayload(sanitizedProps) : undefined;
       ppLib.log('info', '[ppBraze] trackEvent → ' + sanitized, safeProps);
       /*! v8 ignore stop */
     } catch (e) {

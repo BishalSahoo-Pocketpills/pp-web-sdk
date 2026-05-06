@@ -78,13 +78,18 @@ export interface PPLib {
   // PII-safe payload helper. Wraps untrusted user-attribute / event-property
   // bags before they reach console / DevTools / Sentry. See
   // src/common/log-sanitize.ts for the redaction rules.
-  safeLogPayload?: (value: unknown) => unknown;
+  // Required (not optional) — installed unconditionally by the common module
+  // at boot, mirroring `safeLogError` below. Defensive null-checks at call
+  // sites are unnecessary noise.
+  safeLogPayload: (value: unknown) => unknown;
   // PII-safe error helper. Wraps caught exceptions before they reach the log
   // pipeline. Drops `message` (PII risk) and `stack` (URL-leak risk),
   // surfacing `errorClass`, `messageShape`, and the typed-error context
   // fields (`endpoint`, `status`, `attempt`, `cause`) instead. Honours
-  // `config.debugErrors` to surface verbatim text in local debug builds.
-  safeLogError: (err: unknown) => Record<string, unknown>;
+  // `config.debugErrors` (read dynamically at call time, so toggling it at
+  // runtime takes effect for the very next error). Returns a discriminated
+  // union; callers branching on `errorClass` get safe field narrowing.
+  safeLogError: (err: unknown) => import('../common/log-sanitize').SafeLogErrorResult;
   extend: <T extends object, U>(target: T, source: U) => T & U;
   ready: (callback: (ppLib: PPLib) => void) => void;
   attribution: import('../common/attribution').AttributionService;

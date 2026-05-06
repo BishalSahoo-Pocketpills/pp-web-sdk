@@ -85,7 +85,7 @@ export function createUserManager(
         }
       }
 
-      const safeAttrs = ppLib.safeLogPayload ? ppLib.safeLogPayload(attrs) : '<redacted>';
+      const safeAttrs = ppLib.safeLogPayload(attrs);
       ppLib.log('info', '[ppBraze] setUserAttributes', safeAttrs);
     } catch (e) {
       ppLib.log('error', '[ppBraze] setUserAttributes error', ppLib.safeLogError(e));

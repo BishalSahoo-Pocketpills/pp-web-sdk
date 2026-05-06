@@ -547,3 +547,70 @@ describe('safeLogError — robustness', () => {
     expect(typeof safeLogError(function() {})).toBe('object');
   });
 });
+
+describe('safeLogError — review-fix coverage gaps', () => {
+  it('does not leak source_id-shaped Voucherify identifier in context', () => {
+    // Customer source IDs (e.g. cookie-derived UUIDs) are unknown-key strings
+    // longer than the 3-char allowlist threshold, so safeLogPayload turns
+    // them into shape hints. Verify that contract for a Voucherify-typed
+    // error specifically — operators must NOT see raw customer identifiers
+    // in production logs.
+    const err = new (class extends Error {
+      context = { source_id: 'cust-1234567890' };
+      name = 'VoucherifyApiError';
+    })('boom');
+    const out = safeLogError(err);
+    const serialized = JSON.stringify(out);
+    expect(serialized).not.toContain('cust-1234567890');
+    expect(serialized).toContain('<string len=15>');
+  });
+
+  it('does not leak free-form URL strings embedded in context values', () => {
+    // Realistic exception pattern: a NetworkError carries the failing URL
+    // including any PII embedded in its query string. URL key is not in
+    // the allowlist; the value must shape-hint, not pass through verbatim.
+    const err = new (class extends Error {
+      context = { url: 'https://api.voucherify.io/v1/qualify?email=user%40example.com' };
+      name = 'VoucherifyApiError';
+    })('network');
+    const out = safeLogError(err);
+    const serialized = JSON.stringify(out);
+    expect(serialized).not.toContain('user@example.com');
+    expect(serialized).not.toContain('user%40example.com');
+  });
+
+  it('handles Proxy-wrapped errors without throwing', () => {
+    const inner = new Error('proxied');
+    inner.name = 'VoucherifyApiError';
+    (inner as Error & { context?: unknown }).context = { endpoint: '/p', status: 502 };
+    const wrapped = new Proxy(inner, {});
+    expect(() => safeLogError(wrapped)).not.toThrow();
+    const out = safeLogError(wrapped);
+    expect(out.errorClass).toBe('VoucherifyApiError');
+  });
+
+  it('handles frozen errors without throwing', () => {
+    const inner = new Error('frozen');
+    inner.name = 'VoucherifyApiError';
+    (inner as Error & { context?: unknown }).context = { endpoint: '/f', status: 500 };
+    const frozen = Object.freeze(inner);
+    expect(() => safeLogError(frozen)).not.toThrow();
+    const out = safeLogError(frozen);
+    expect(out.errorClass).toBe('VoucherifyApiError');
+  });
+
+  it('handles errors whose context getter throws without crashing the helper', () => {
+    // Adversarial case: a custom Error whose `context` getter raises. The
+    // helper must still return a usable shape — log emission cannot become a
+    // second exception.
+    const exploding = new (class extends Error {
+      get context(): Record<string, unknown> {
+        throw new Error('trap');
+      }
+    })('x');
+    expect(() => safeLogError(exploding)).not.toThrow();
+    const out = safeLogError(exploding);
+    expect(typeof out).toBe('object');
+    expect(out.errorClass).toBeDefined();
+  });
+});

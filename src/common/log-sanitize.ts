@@ -273,8 +273,54 @@ export function safeLogPayload(value: unknown): unknown {
  * the option explicitly.
  */
 export interface SafeLogErrorOptions {
+  /**
+   * When true, the helper additionally surfaces verbatim `messageRaw` and
+   * `stack` fields so a developer can read the original exception text.
+   * Intended for local debug builds only — never enable in production. The
+   * runtime config flag `PPLibConfig.debugErrors` is forwarded by the
+   * common-module installer; standalone callers may override per-call.
+   */
   debugErrors?: boolean;
 }
+
+/**
+ * Discriminated union of `safeLogError` outputs. The `errorClass` field is
+ * always present; downstream consumers can branch on its value to know which
+ * other fields are guaranteed.
+ *
+ * Note: `errorClass` for an `Error` instance reflects the constructor name
+ * (e.g. `'TypeError'`, `'VoucherifyApiError'`) — it is intentionally NOT
+ * literal-typed because the set is open across the codebase.
+ */
+export type SafeLogErrorResult =
+  | {
+      errorClass: string;
+      messageShape: string;
+      code?: number;
+      endpoint?: string;
+      status?: number;
+      attempt?: number;
+      cause?: string;
+      context?: unknown;
+      messageRaw?: string;
+      stack?: string;
+    }
+  | {
+      errorClass: 'string';
+      primitive: 'string';
+      messageShape: string;
+    }
+  | {
+      errorClass: 'number' | 'boolean' | 'bigint' | 'symbol';
+      primitive: 'number' | 'boolean' | 'bigint' | 'symbol';
+    }
+  | {
+      errorClass: 'Object';
+      context: unknown;
+    }
+  | {
+      errorClass: 'null' | 'undefined' | 'function' | string;
+    };
 
 interface ErrorWithContext {
   name?: unknown;
@@ -287,7 +333,7 @@ interface ErrorWithContext {
 export function safeLogError(
   err: unknown,
   opts?: SafeLogErrorOptions
-): Record<string, unknown> {
+): SafeLogErrorResult {
   const debug = !!(opts && opts.debugErrors);
 
   if (err instanceof Error) {
@@ -305,8 +351,18 @@ export function safeLogError(
       out.code = e.code;
     }
 
-    if (e.context !== null && typeof e.context === 'object') {
-      const ctx = e.context as Record<string, unknown>;
+    // Adversarial defense: a custom Error subclass might define `context` as
+    // a getter that throws. The helper must still return a usable shape —
+    // log emission cannot become a second exception.
+    let ctxValue: unknown;
+    try {
+      ctxValue = e.context;
+    } catch (_) {
+      ctxValue = undefined;
+    }
+
+    if (ctxValue !== null && typeof ctxValue === 'object') {
+      const ctx = ctxValue as Record<string, unknown>;
       // Lift well-known typed-error keys verbatim with strict type checks.
       // Anything that doesn't match the expected primitive type is dropped
       // (not coerced) so a future caller stuffing an Error.cause object into
@@ -339,7 +395,7 @@ export function safeLogError(
       out.stack = typeof e.stack === 'string' ? e.stack : undefined;
     }
 
-    return out;
+    return out as SafeLogErrorResult;
   }
 
   // Non-Error throws. JS allows `throw <anything>` so log sites can receive
@@ -361,10 +417,15 @@ export function safeLogError(
   if (t === 'number' || t === 'boolean' || t === 'bigint' || t === 'symbol') {
     return {
       errorClass: t,
-      primitive: t
+      primitive: t as 'number' | 'boolean' | 'bigint' | 'symbol'
     };
   }
   if (t === 'object') {
+    // Note: free-form string values inside the object (e.g. `{ url: 'https://api/?email=...' }`)
+    // pass through `safeLogPayload`, which redacts by KEY name only. Such
+    // values become `<string len=N>` shape hints — the email content is
+    // invisible. URL/URI/path keys are intentionally NOT in the allowlist
+    // for this reason; see log-sanitize allowlist source comment.
     return {
       errorClass: 'Object',
       context: safeLogPayload(err)

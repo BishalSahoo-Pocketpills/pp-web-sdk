@@ -149,7 +149,7 @@ export function createFormHandler(
       };
 
       win.braze.logCustomEvent(eventName, properties);
-      const safeProps = ppLib.safeLogPayload ? ppLib.safeLogPayload(properties) : '<redacted>';
+      const safeProps = ppLib.safeLogPayload(properties);
       ppLib.log('info', '[ppBraze] Form tracked → ' + eventName, safeProps);
 
       // Flush before navigation

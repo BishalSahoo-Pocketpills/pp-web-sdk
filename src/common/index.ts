@@ -93,7 +93,10 @@ import { safeLogPayload, safeLogError } from '@src/common/log-sanitize';
   // embed emails, tokens, payload fragments) never reach console / Sentry.
   // Honours `config.debugErrors` to opt local debug builds back into raw
   // message + stack.
-  ppLib.safeLogError = function(err: unknown): Record<string, unknown> {
+  // Wrapper reads `config.debugErrors` dynamically at each call so toggling
+  // the flag at runtime takes effect for the very next error — operators can
+  // flip it from a console session without redeploying.
+  ppLib.safeLogError = function(err: unknown) {
     return safeLogError(err, { debugErrors: !!ppLib.config.debugErrors });
   };
 

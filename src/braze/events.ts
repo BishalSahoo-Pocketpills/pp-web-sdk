@@ -108,7 +108,7 @@ export function createEventHandler(
       }
 
       win.braze.logCustomEvent(sanitizedName, properties);
-      const safeProps = ppLib.safeLogPayload ? ppLib.safeLogPayload(properties) : '<redacted>';
+      const safeProps = ppLib.safeLogPayload(properties);
       ppLib.log('info', '[ppBraze] Event tracked → ' + sanitizedName, safeProps);
     } catch (err) {
       ppLib.log('error', '[ppBraze] handleInteraction error', ppLib.safeLogError(err));
