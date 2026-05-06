@@ -7,7 +7,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { VoucherifyConfig, ValidationContext, QualificationContext, PricingResult, ValidationResult, QualificationResult, OrderItem, DOMProduct, OffersResult, OffersBundle, OfferEntry, OfferCategory, FetchOffersOptions, VoucherifyRedeemable, VoucherifyApiResponse, EdgePricingResponse, CustomerMetadata } from '@src/types/voucherify.types';
-import { VoucherifyConfigError, VoucherifyApiError } from '@src/voucherify/errors';
+import { VoucherifyConfigError, VoucherifyApiError, VoucherifyPricingError } from '@src/voucherify/errors';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -430,10 +430,17 @@ import { VoucherifyConfigError, VoucherifyApiError } from '@src/voucherify/error
     const results: PricingResult[] = [];
     for (let i = 0; i < products.length; i++) {
       const p = products[i];
+      // Guard against NaN / negative `basePrice` from a malformed DOM
+      // attribute. parseFloat in `getProductsFromDOM` returns NaN for
+      // non-numeric strings; a negative price would render as a credit.
+      const safePrice =
+        typeof p.basePrice === 'number' && isFinite(p.basePrice) && p.basePrice >= 0
+          ? p.basePrice
+          : 0;
       results.push({
         productId: p.id,
-        basePrice: p.basePrice,
-        discountedPrice: p.basePrice,
+        basePrice: safePrice,
+        discountedPrice: safePrice,
         discountAmount: 0,
         discountLabel: '',
         discountType: 'NONE',
@@ -672,8 +679,12 @@ import { VoucherifyConfigError, VoucherifyApiError } from '@src/voucherify/error
   let inflightPricing: Promise<PricingResult[]> | null = null;
 
   async function fetchPricingImpl(productIds?: string[]): Promise<PricingResult[]> {
+    // Hoisted out of the try block so the catch can reuse the same DOM scan
+    // for baseline rendering. `getProductsFromDOM` runs `querySelectorAll` on
+    // a configurable attribute — non-trivial cost on large product pages —
+    // and was previously called twice on every fetch failure.
+    const products = getProductsFromDOM();
     try {
-      const products = getProductsFromDOM();
       const ids = productIds || products.map(function(p) { return p.id; });
       if (ids.length === 0) return [];
 
@@ -781,7 +792,7 @@ import { VoucherifyConfigError, VoucherifyApiError } from '@src/voucherify/error
         status: errObj && errObj.context && errObj.context.status
       });
       try {
-        const products = getProductsFromDOM();
+        // Reuse the products from the outer scope — already scanned once.
         if (products.length > 0) {
           const baseline = buildBaselineResults(products);
           injectPricing(products, baseline);
@@ -789,7 +800,16 @@ import { VoucherifyConfigError, VoucherifyApiError } from '@src/voucherify/error
           return baseline;
         }
       } catch (fallbackErr) {
-        ppLib.log('error', '[ppVoucherify] baseline-fallback render failed', fallbackErr);
+        // Renderer / DOM mutation failed during baseline emission. Wrap as a
+        // typed pricing error so the log carries `errorClass:
+        // VoucherifyPricingError` instead of an opaque object.
+        const wrapped = new VoucherifyPricingError('baseline-fallback render failed', {
+          cause: (fallbackErr as { message?: string } | null)?.message
+        });
+        ppLib.log('error', '[ppVoucherify] ' + wrapped.message, {
+          errorClass: wrapped.name,
+          cause: wrapped.context && wrapped.context.cause
+        });
       }
       return [];
     }
