@@ -157,13 +157,13 @@ import { createDebounceTracker } from '@src/common/debounce';
         b.type = 'text/javascript';
         if (CONFIG.nonce) b.setAttribute('nonce', CONFIG.nonce);
         b.onerror = function() {
-          win._vwo_code.finish();
+          win._vwo_code && win._vwo_code.finish && win._vwo_code.finish();
         };
         d.getElementsByTagName('head')[0].appendChild(b);
       },
       init: function() {
         const settings_timer = win.setTimeout(function() {
-          win._vwo_code.finish();
+          win._vwo_code && win._vwo_code.finish && win._vwo_code.finish();
         }, settings_tolerance);
 
         const a = d.createElement('style');

@@ -1,9 +1,9 @@
-import type { PPLibConfig, SafeUtils, Security } from '@src/types/common.types';
+import type { PPLibConfig, SafeUtils, Security, SecurityJson } from '@src/types/common.types';
 
 export function createSecurity(
   config: PPLibConfig,
   safeUtils: SafeUtils,
-  log: (level: string, message: string, data?: any) => void
+  log: (level: string, message: string, data?: unknown) => void
 ): Security {
   // Precompiled regex constants — avoids recompilation on every call
   const SPECIAL_CHARS_RE = /[<>'"]/g;
@@ -15,8 +15,11 @@ export function createSecurity(
   const EVAL_RE = /eval\(/i;
   const EXPRESSION_RE = /expression\(/i;
 
+  // Single implementation backs all SecurityJson.parse overloads; we cast
+  // the json literal to the interface type below so TypeScript accepts the
+  // overload-vs-impl asymmetry inside an object literal.
   return {
-    sanitize(input: any): string {
+    sanitize(input: unknown): string {
       try {
         if (!config.security.enableSanitization) return safeUtils.toString(input);
         if (!safeUtils.exists(input)) return '';
@@ -56,27 +59,30 @@ export function createSecurity(
       }
     },
 
+    // Implementation function backs all parse overloads; cast to SecurityJson
+    // because TypeScript can't reconcile a single impl signature against
+    // multiple call signatures inside an object literal.
     json: {
-      parse(str: string, fallback?: any): any {
+      parse(str: string, fallback?: unknown): unknown {
         try {
-          if (!safeUtils.exists(str)) return fallback || null;
+          if (!safeUtils.exists(str)) return fallback === undefined ? null : fallback;
 
           const parsed = JSON.parse(str);
           const stringified = JSON.stringify(parsed);
 
           if (stringified.length > config.security.maxStorageSize) {
             log('error', 'Data exceeds size limit');
-            return fallback || null;
+            return fallback === undefined ? null : fallback;
           }
 
           return parsed;
         } catch (e) {
           log('verbose', 'JSON parse error', e);
-          return fallback || null;
+          return fallback === undefined ? null : fallback;
         }
       },
 
-      stringify(obj: any): string | null {
+      stringify(obj: unknown): string | null {
         try {
           if (!obj) return null;
 
@@ -93,9 +99,9 @@ export function createSecurity(
           return null;
         }
       }
-    },
+    } as SecurityJson,
 
-    validateData(data: any): boolean {
+    validateData(data: unknown): boolean {
       try {
         if (!data || typeof data !== 'object') return false;
 

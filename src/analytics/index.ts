@@ -701,7 +701,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
             }
 
             /*! v8 ignore start */
-            if (win.mixpanel && win.mixpanel.register) {
+            if (win.mixpanel && typeof win.mixpanel.register === 'function') {
               clearInterval(self._intervalId!);
               self._intervalId = null;
               self._checking = false;

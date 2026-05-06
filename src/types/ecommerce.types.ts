@@ -46,6 +46,9 @@ export interface EcommerceData {
   value: number;
   currency: string;
   items: EcommerceItem[];
+  // Index signature so this shape is assignable to Mixpanel.track's
+  // Record<string, unknown> parameter without a cast at the call site.
+  [key: string]: unknown;
 }
 
 export interface EcommerceAPI {
