@@ -52,7 +52,7 @@ export function createUserManager(
     }
   }
 
-  function setUserAttributes(attrs: Record<string, any>): void {
+  function setUserAttributes(attrs: Record<string, unknown>): void {
     try {
       /*! v8 ignore start */
       if (!attrs || typeof attrs !== 'object') return;

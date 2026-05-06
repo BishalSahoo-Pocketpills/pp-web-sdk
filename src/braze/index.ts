@@ -114,14 +114,14 @@ import { createPurchaseHandler } from '@src/braze/purchases';
     return JSON.parse(JSON.stringify(CONFIG));
   }
 
-  function trackEvent(eventName: string, properties?: Record<string, any>): void {
+  function trackEvent(eventName: string, properties?: Record<string, unknown>): void {
     try {
       const sanitized = ppLib.Security.sanitize(eventName);
       /*! v8 ignore start */
       if (!sanitized) return;
       /*! v8 ignore stop */
 
-      let sanitizedProps: Record<string, any> | undefined;
+      let sanitizedProps: Record<string, unknown> | undefined;
       /*! v8 ignore start */
       if (properties && typeof properties === 'object') {
         sanitizedProps = {};
@@ -166,7 +166,7 @@ import { createPurchaseHandler } from '@src/braze/purchases';
     },
 
     /*! v8 ignore start */
-    setUserAttributes: function(attrs: Record<string, any>) {
+    setUserAttributes: function(attrs: Record<string, unknown>) {
       userManager.setUserAttributes(attrs);
     },
     /*! v8 ignore stop */
@@ -179,7 +179,7 @@ import { createPurchaseHandler } from '@src/braze/purchases';
 
     trackEvent: trackEvent,
 
-    trackPurchase: function(productId: string, price: number, currency?: string, quantity?: number, properties?: Record<string, any>) {
+    trackPurchase: function(productId: string, price: number, currency?: string, quantity?: number, properties?: Record<string, unknown>) {
       purchaseHandler.trackPurchase(productId, price, currency, quantity, properties);
     },
 

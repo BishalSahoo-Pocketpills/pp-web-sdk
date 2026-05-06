@@ -140,11 +140,11 @@ export interface DataLayerAPI {
   setUserDataHashed: (data: UserDataHashedInput) => void;
 
   // Generic push
-  push: (eventName: string, data?: Record<string, any>) => void;
-  pushEcommerce: (eventName: string, items: DataLayerItemInput[], data?: Record<string, any>) => void;
+  push: (eventName: string, data?: Record<string, unknown>) => void;
+  pushEcommerce: (eventName: string, items: DataLayerItemInput[], data?: Record<string, unknown>) => void;
 
   // Core events
-  pageview: (data?: Record<string, any>) => void;
+  pageview: (data?: Record<string, unknown>) => void;
   loginView: (data: { method: string }) => void;
   loginSuccess: (data: { method: string; pp_user_id?: string; pp_patient_id?: string }) => void;
   signupView: (data: { method: string; signup_flow?: string }) => void;

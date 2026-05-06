@@ -56,10 +56,10 @@ export interface BrazeAPI {
   configure: (options?: Partial<BrazeConfig>) => BrazeConfig;
   init: () => void;
   identify: (userId: string) => void;
-  setUserAttributes: (attrs: Record<string, any>) => void;
+  setUserAttributes: (attrs: Record<string, unknown>) => void;
   setEmail: (email: string) => void;
-  trackEvent: (eventName: string, properties?: Record<string, any>) => void;
-  trackPurchase: (productId: string, price: number, currency?: string, quantity?: number, properties?: Record<string, any>) => void;
+  trackEvent: (eventName: string, properties?: Record<string, unknown>) => void;
+  trackPurchase: (productId: string, price: number, currency?: string, quantity?: number, properties?: Record<string, unknown>) => void;
   flush: () => void;
   isReady: () => boolean;
   getConfig: () => BrazeConfig;

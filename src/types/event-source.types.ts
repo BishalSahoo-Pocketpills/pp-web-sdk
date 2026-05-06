@@ -40,6 +40,6 @@ export interface EventSourceAPI {
   configure: (options?: Partial<EventSourceConfig>) => EventSourceConfig;
   init: () => void;
   trackElement: (element: Element) => void;
-  trackCustom: (eventSource: string, properties?: Record<string, any>) => void;
+  trackCustom: (eventSource: string, properties?: Record<string, unknown>) => void;
   getConfig: () => EventSourceConfig;
 }
