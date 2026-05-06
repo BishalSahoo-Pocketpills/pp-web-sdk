@@ -9,11 +9,33 @@
 import type { PPLib } from '@src/types/common.types';
 import type { DataLayerConfig } from '@src/types/datalayer.types';
 
+type PushFn = (...args: unknown[]) => number;
+
+// Minimal shape we treat as an "event" — anything pushed onto the dataLayer
+// with an `event` field. Other arg shapes (e.g. `{ ecommerce: null }`) flow
+// through unmodified.
+interface DataLayerEventShape {
+  event: string;
+  userProperties?: unknown;
+  eventProperties?: unknown;
+  page?: unknown;
+  attribution?: unknown;
+  [key: string]: unknown;
+}
+
+function isEventShape(value: unknown): value is DataLayerEventShape {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { event?: unknown }).event === 'string'
+  );
+}
+
 export function createEventPropertiesEnricher(
   win: Window & typeof globalThis,
   ppLib: PPLib,
   CONFIG: DataLayerConfig
-): (pushFn: (...args: any[]) => number) => (...args: any[]) => number {
+): (pushFn: PushFn) => PushFn {
 
   // Configure the shared builder with this module's cookie names + platform.
   // Safe to call repeatedly; the builder owns its own state.
@@ -29,12 +51,11 @@ export function createEventPropertiesEnricher(
     });
   }
 
-  return function withEventProperties(pushFn: (...args: any[]) => number) {
-    return function() {
-      const args = Array.prototype.slice.call(arguments) as any[];
+  return function withEventProperties(pushFn: PushFn): PushFn {
+    return function(...args: unknown[]): number {
       for (let i = 0; i < args.length; i++) {
         const arg = args[i];
-        if (arg && typeof arg === 'object' && arg.event) {
+        if (isEventShape(arg)) {
           const builder = ppLib.eventPropertiesBuilder;
           /*! v8 ignore start */
           if (!builder) continue;

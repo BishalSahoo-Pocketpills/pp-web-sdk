@@ -388,13 +388,20 @@ export function createAttributionService(
   // Replaces the former direct dataLayer.push monkey-patch.
   // ---------------------------------------------------------------------------
 
-  function getEnricher(): (pushFn: (...args: any[]) => number) => (...args: any[]) => number {
-    return function withAttribution(pushFn: (...args: any[]) => number) {
-      return function() {
-        const args = Array.prototype.slice.call(arguments) as any[];
+  type AttributionPushFn = (...args: unknown[]) => number;
+
+  function isEnrichableEvent(value: unknown): value is Record<string, unknown> {
+    if (typeof value !== 'object' || value === null) return false;
+    const obj = value as Record<string, unknown>;
+    return typeof obj.event === 'string' && !obj.marketingAttribution;
+  }
+
+  function getEnricher(): (pushFn: AttributionPushFn) => AttributionPushFn {
+    return function withAttribution(pushFn: AttributionPushFn): AttributionPushFn {
+      return function(...args: unknown[]): number {
         for (let i = 0; i < args.length; i++) {
-          if (args[i] && typeof args[i] === 'object' && args[i].event && !args[i].marketingAttribution) {
-            enrichEvent(args[i]);
+          if (isEnrichableEvent(args[i])) {
+            enrichEvent(args[i] as Record<string, unknown>);
           }
         }
         return pushFn.apply(null, args);
