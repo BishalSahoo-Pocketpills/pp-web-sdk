@@ -8,6 +8,14 @@
 import type { PPLib } from '@src/types/common.types';
 import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, CustomPlatform } from '@src/types/analytics.types';
 
+// Internal Mixpanel-platform queue payload — discriminator decides whether
+// the upstream call goes to mixpanel.register or mixpanel.track.
+type MixpanelQueueData = {
+  type: 'register' | 'track';
+  eventName?: string;
+  properties?: Record<string, unknown>;
+};
+
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
 
@@ -130,13 +138,14 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
     },
 
     /*! v8 ignore start */
-    log: function(level: string, message: string, data?: any): void {
+    log: function(level: string, message: string, data?: unknown): void {
       if (!CONFIG.debug) return;
       if (level === 'verbose' && !CONFIG.verbose) return;
 
       try {
         const prefix = '[ppAnalytics v' + CONFIG.version + ']';
-        const logFn = (console as any)[level] || console.log;
+        const consoleObj = console as unknown as Record<string, ((...args: unknown[]) => void) | undefined>;
+        const logFn = consoleObj[level] || console.log;
         logFn.call(console, prefix, message, data || '');
       } catch (e) {
         // Silent fail for logging
@@ -341,7 +350,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
 
     getTrackedParams: function(): TrackedParams | null {
       try {
-        const params: any = this.getParams();
+        const params = this.getParams() as TrackedParams;
 
         /*! v8 ignore start */
         if (!params || Object.keys(params).length === 0) {
@@ -578,7 +587,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
             Platforms.GTM.push(event.data);
           }
         } else if (eventType === 'mixpanel' && SafeUtils.get(CONFIG, 'platforms.mixpanel.enabled', true)) {
-          Platforms.Mixpanel.send(event.data);
+          Platforms.Mixpanel.send(event.data as MixpanelQueueData);
         /*! v8 ignore stop */
         /*! v8 ignore start */
         } else if (eventType === 'custom') {
@@ -599,7 +608,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
 
   const Platforms = {
     GTM: {
-      push: function(data: any): void {
+      push: function(data: Record<string, unknown>): void {
         try {
           /*! v8 ignore start */
           if (!data || typeof data !== 'object') return;
@@ -628,9 +637,9 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
       ready: false,
       _checking: false,
       _intervalId: null as ReturnType<typeof setInterval> | null,
-      queue: [] as any[],
+      queue: [] as MixpanelQueueData[],
 
-      send: function(data: any): void {
+      send: function(data: MixpanelQueueData): void {
         try {
           /*! v8 ignore start */
           if (!data || typeof data !== 'object') return;
@@ -737,7 +746,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
       /*! v8 ignore stop */
     },
 
-    register: function(name: string, handler: (data: any) => void): void {
+    register: function(name: string, handler: (data: Record<string, unknown>) => void): void {
       try {
         /*! v8 ignore start */
         if (!SafeUtils.exists(name) || typeof handler !== 'function') {
@@ -983,7 +992,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
       }
     },
 
-    track: function(eventName: string, properties?: any): void {
+    track: function(eventName: string, properties?: Record<string, unknown>): void {
       try {
         /*! v8 ignore start */
         if (!this.initialized) {
@@ -1101,7 +1110,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
       }
     },
 
-    track: function(eventName: string, properties?: any): void {
+    track: function(eventName: string, properties?: Record<string, unknown>): void {
       Tracker.track(eventName, properties);
     },
 
@@ -1109,7 +1118,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
       return Tracker.getAttribution();
     },
 
-    registerPlatform: function(name: string, handler: (data: any) => void): void {
+    registerPlatform: function(name: string, handler: (data: Record<string, unknown>) => void): void {
       Platforms.register(name, handler);
     },
 

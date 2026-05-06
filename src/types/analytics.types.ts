@@ -78,7 +78,7 @@ export interface MixpanelPlatformConfig {
 
 export interface CustomPlatform {
   name: string;
-  handler: (data: any) => void;
+  handler: (data: Record<string, unknown>) => void;
 }
 
 export interface PlatformsConfig {
@@ -113,8 +113,8 @@ export interface RateLimitEntry {
 
 export interface QueueEvent {
   type: string;
-  data: any;
-  handler?: (data: any) => void;
+  data: Record<string, unknown>;
+  handler?: (data: Record<string, unknown>) => void;
 }
 
 export interface TrackedParams {
@@ -137,9 +137,9 @@ export interface AnalyticsAPI {
     revoke: () => void;
     status: () => boolean;
   };
-  track: (eventName: string, properties?: Record<string, any>) => void;
+  track: (eventName: string, properties?: Record<string, unknown>) => void;
   getAttribution: () => AttributionData;
-  registerPlatform: (name: string, handler: (data: any) => void) => void;
+  registerPlatform: (name: string, handler: (data: Record<string, unknown>) => void) => void;
   clear: () => void;
   init: () => void;
 }
