@@ -23,6 +23,11 @@ import { VoucherifyConfigError, VoucherifyApiError, VoucherifyPricingError } fro
       applicationId: '',
       clientPublicKey: '',
       clientSecretKey: '',
+      // Voucherify regional endpoint. `as1.` (Asia-Singapore) is the
+      // production region for Pocketpills' tenant — DO NOT change this to
+      // the global `api.voucherify.io` or `us1.` / `eu1.` subdomains
+      // without coordinating a tenant migration. Overridable per-deploy
+      // via `ppLib.voucherify.configure({ api: { baseUrl: '...' } })`.
       baseUrl: 'https://as1.api.voucherify.io',
       origin: ''
     },
