@@ -911,6 +911,105 @@ describe('Security.isValidUrl()', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 14b. Security.isSafeRedirectUrl()
+// ---------------------------------------------------------------------------
+describe('Security.isSafeRedirectUrl()', () => {
+  let ppLib;
+
+  beforeEach(() => {
+    loadModule('common');
+    ppLib = window.ppLib;
+  });
+
+  it('allows same-origin absolute URL', () => {
+    const sameOrigin = window.location.origin + '/foo';
+    expect(ppLib.Security.isSafeRedirectUrl(sameOrigin)).toBe(true);
+  });
+
+  it('allows relative path (resolves to same origin)', () => {
+    expect(ppLib.Security.isSafeRedirectUrl('/app')).toBe(true);
+  });
+
+  it('allows allowlisted exact host', () => {
+    expect(
+      ppLib.Security.isSafeRedirectUrl('https://www.pocketpills.com/x', ['pocketpills.com'])
+    ).toBe(true);
+  });
+
+  it('allows allowlisted subdomain via dot suffix', () => {
+    expect(
+      ppLib.Security.isSafeRedirectUrl('https://try.pocketpills.com/', ['pocketpills.com'])
+    ).toBe(true);
+  });
+
+  it('rejects non-allowlisted cross-origin host', () => {
+    expect(
+      ppLib.Security.isSafeRedirectUrl('https://attacker.com/phish', ['pocketpills.com'])
+    ).toBe(false);
+  });
+
+  it('rejects javascript: scheme', () => {
+    expect(ppLib.Security.isSafeRedirectUrl('javascript:alert(1)')).toBe(false);
+  });
+
+  it('rejects data: scheme', () => {
+    expect(ppLib.Security.isSafeRedirectUrl('data:text/html,<h1>x</h1>')).toBe(false);
+  });
+
+  it('rejects empty string', () => {
+    expect(ppLib.Security.isSafeRedirectUrl('')).toBe(false);
+  });
+
+  it('rejects null', () => {
+    expect(ppLib.Security.isSafeRedirectUrl(null)).toBe(false);
+  });
+
+  it('rejects non-string input', () => {
+    expect(ppLib.Security.isSafeRedirectUrl(123)).toBe(false);
+  });
+
+  it('rejects malformed URL', () => {
+    // A bare token like "not a url" still parses as a path relative to base,
+    // so we exercise the truly-malformed branch with a bad protocol.
+    expect(ppLib.Security.isSafeRedirectUrl('http://')).toBe(false);
+  });
+
+  it('blocks suffix-evasion (`evilpocketpills.com` against `pocketpills.com`)', () => {
+    // Critical correctness test: a bare suffix check would incorrectly
+    // allow `evilpocketpills.com`. The dot prefix prevents this.
+    expect(
+      ppLib.Security.isSafeRedirectUrl('https://evilpocketpills.com/', ['pocketpills.com'])
+    ).toBe(false);
+  });
+
+  it('rejects file: scheme', () => {
+    expect(ppLib.Security.isSafeRedirectUrl('file:///etc/passwd')).toBe(false);
+  });
+
+  it('rejects ftp: scheme', () => {
+    expect(ppLib.Security.isSafeRedirectUrl('ftp://example.com')).toBe(false);
+  });
+
+  it('rejects when host matches no allowlist entry and allowlist is empty', () => {
+    expect(ppLib.Security.isSafeRedirectUrl('https://attacker.com/', [])).toBe(false);
+  });
+
+  it('skips empty / non-string allowlist entries safely', () => {
+    expect(
+      ppLib.Security.isSafeRedirectUrl(
+        'https://www.pocketpills.com/',
+        ['', null as unknown as string, 'pocketpills.com']
+      )
+    ).toBe(true);
+  });
+
+  it('rejects URL exceeding maxUrlLength after resolution', () => {
+    const longPath = '/' + 'a'.repeat(2100);
+    expect(ppLib.Security.isSafeRedirectUrl(longPath)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 15. Security.json.parse()
 // ---------------------------------------------------------------------------
 describe('Security.json.parse()', () => {

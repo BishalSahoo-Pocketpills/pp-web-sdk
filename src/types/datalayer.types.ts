@@ -45,6 +45,10 @@ export interface DataLayerConfig {
   navigationDelay: number;
   initDelay: number;
   autoViewItem: boolean;
+  // Allowlist for cross-origin redirects from `<a data-dl-event>` clicks.
+  // Same-origin / relative hrefs are always allowed; cross-origin hrefs
+  // must match an entry exactly or as a subdomain (`.host` suffix).
+  allowedRedirectHosts: string[];
 }
 
 // =====================================================

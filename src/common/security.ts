@@ -3,7 +3,8 @@ import type { PPLibConfig, SafeUtils, Security, SecurityJson } from '@src/types/
 export function createSecurity(
   config: PPLibConfig,
   safeUtils: SafeUtils,
-  log: (level: string, message: string, data?: unknown) => void
+  log: (level: string, message: string, data?: unknown) => void,
+  win: Window & typeof globalThis
 ): Security {
   // Precompiled regex constants — avoids recompilation on every call
   const SPECIAL_CHARS_RE = /[<>'"]/g;
@@ -55,6 +56,44 @@ export function createSecurity(
         return parsed.protocol === 'http:' || parsed.protocol === 'https:';
       } catch (e) {
         log('verbose', 'isValidUrl parse error', e);
+        return false;
+      }
+    },
+
+    isSafeRedirectUrl(url: string, allowedHosts?: string[]): boolean {
+      try {
+        // Reuse isValidUrl's hardening — rejects empty/oversize/non-http(s)/
+        // unparseable, which covers javascript:, data:, file:, ftp:, etc.
+        // We hand it the absolute form so a bare relative path like `/app`
+        // still passes via the same-origin branch below.
+        if (!url || typeof url !== 'string') return false;
+
+        // Resolve against current origin so relative paths normalize naturally.
+        const base = win.location.href;
+        const parsed = new URL(url, base);
+
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          return false;
+        }
+        if (parsed.href.length > config.security.maxUrlLength) return false;
+
+        if (parsed.origin === win.location.origin) return true;
+
+        if (allowedHosts && allowedHosts.length) {
+          const host = parsed.hostname;
+          for (let i = 0; i < allowedHosts.length; i++) {
+            const allowed = allowedHosts[i];
+            if (!allowed || typeof allowed !== 'string') continue;
+            // The `'.' + allowed` prefix is load-bearing: a bare suffix
+            // check would let `evilpocketpills.com` match `pocketpills.com`.
+            if (host === allowed || host.endsWith('.' + allowed)) return true;
+          }
+        }
+
+        log('warn', '[ppLib] blocked cross-origin redirect: ' + parsed.hostname);
+        return false;
+      } catch (e) {
+        log('verbose', 'isSafeRedirectUrl parse error', e);
         return false;
       }
     },

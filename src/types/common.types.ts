@@ -51,6 +51,12 @@ export interface SecurityJson {
 export interface Security {
   sanitize: (input: unknown) => string;
   isValidUrl: (url: string) => boolean;
+  // Allowlist-gated redirect validator. Same-origin URLs and relative paths
+  // pass automatically; cross-origin URLs must match an entry in
+  // `allowedHosts` (exact host or `.host` suffix). Used by anchor-driven
+  // navigation interception to prevent attacker-injected hrefs from
+  // redirecting users off-site after the analytics flush delay.
+  isSafeRedirectUrl: (url: string, allowedHosts?: string[]) => boolean;
   json: SecurityJson;
   validateData: (data: unknown) => boolean;
 }

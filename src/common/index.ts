@@ -76,7 +76,7 @@ import { safeLogPayload, safeLogError } from '@src/common/log-sanitize';
   // SECURITY MODULE (NULL-SAFE)
   // =====================================================
 
-  ppLib.Security = createSecurity(ppLib.config, ppLib.SafeUtils, ppLib.log);
+  ppLib.Security = createSecurity(ppLib.config, ppLib.SafeUtils, ppLib.log, win);
 
   // =====================================================
   // PII-SAFE LOG PAYLOAD HELPER

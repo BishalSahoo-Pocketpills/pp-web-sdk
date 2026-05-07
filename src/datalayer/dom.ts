@@ -138,6 +138,18 @@ export function createDomBinder(
         const anchor = el as HTMLAnchorElement;
         const href = anchor.href;
         const anchorTarget = anchor.target;
+        // Validate BEFORE scheduling — otherwise we closure-capture a tainted
+        // href and a delayed off-site redirect still fires after the analytics
+        // beacon. Event has already been pushed; just refuse to navigate.
+        if (!ppLib.Security.isSafeRedirectUrl(href, CONFIG.allowedRedirectHosts)) {
+          // Shape-only payload: never log the raw href because it may carry
+          // session tokens or attacker-controlled fragments. Hostname alone
+          // is enough to triage in dashboards.
+          let hostHint = '';
+          try { hostHint = new URL(href, win.location.href).hostname; } catch (_e) { /* ignore */ }
+          ppLib.log('warn', '[ppDataLayer] blocked unsafe redirect', ppLib.safeLogPayload({ host: hostHint }));
+          return;
+        }
         win.setTimeout(function() {
           try {
             if (anchorTarget === '_blank') {

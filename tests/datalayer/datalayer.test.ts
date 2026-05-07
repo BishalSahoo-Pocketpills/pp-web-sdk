@@ -1099,6 +1099,11 @@ describe('DOM Binding — Anchor hitCallback', () => {
   beforeEach(() => {
     loadWithCommon('datalayer');
     createMockDataLayer();
+    // Existing assertions use `https://example.com/*` hrefs against the
+    // jsdom default origin (`http://localhost:3000`) — those are cross-
+    // origin and now require explicit allowlisting after the redirect-
+    // validation gate landed.
+    window.ppLib.datalayer.configure({ allowedRedirectHosts: ['example.com', 'pocketpills.com'] });
     window.ppLib.datalayer.init();
   });
 
@@ -1215,6 +1220,130 @@ describe('DOM Binding — Anchor hitCallback', () => {
     btn.dispatchEvent(clickEvent);
 
     expect(clickEvent.defaultPrevented).toBe(false);
+  });
+});
+
+// =========================================================================
+// 11b. DOM BINDING — REDIRECT VALIDATION (Track 3 / C4)
+// =========================================================================
+describe('DOM Binding — Redirect Validation', () => {
+  beforeEach(() => {
+    loadWithCommon('datalayer');
+    createMockDataLayer();
+    // Default config (`allowedRedirectHosts: ['pocketpills.com']`) is what
+    // production uses; cross-origin attacker hosts must be rejected.
+    window.ppLib.datalayer.init();
+  });
+
+  it('fires event but does NOT navigate for cross-origin attacker href', async () => {
+    const anchor = document.createElement('a');
+    anchor.href = 'https://attacker.com/phish';
+    anchor.setAttribute('data-dl-event', 'login_view');
+    anchor.setAttribute('data-dl-method', 'link');
+    document.body.appendChild(anchor);
+
+    const hrefSpy = vi.fn();
+    Object.defineProperty(window.location, 'href', {
+      get: () => 'http://localhost:3000/',
+      set: hrefSpy,
+      configurable: true
+    });
+
+    anchor.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }));
+
+    // Event was pushed
+    const dlEvent = window.dataLayer[window.dataLayer.length - 1];
+    expect(dlEvent.event).toBe('login_view');
+
+    // No navigation, even after the delay window
+    await new Promise(r => setTimeout(r, 250));
+    expect(hrefSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not navigate for javascript: href', async () => {
+    const anchor = document.createElement('a');
+    // jsdom rejects assigning `javascript:` directly via `.href`; set the
+    // attribute so `.href` resolves to the literal scheme string.
+    anchor.setAttribute('href', 'javascript:alert(1)');
+    anchor.setAttribute('data-dl-event', 'login_view');
+    document.body.appendChild(anchor);
+
+    const hrefSpy = vi.fn();
+    Object.defineProperty(window.location, 'href', {
+      get: () => 'http://localhost:3000/',
+      set: hrefSpy,
+      configurable: true
+    });
+
+    anchor.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }));
+    await new Promise(r => setTimeout(r, 250));
+
+    expect(hrefSpy).not.toHaveBeenCalled();
+  });
+
+  it('navigates when host is on a custom allowlist', async () => {
+    window.ppLib.datalayer.configure({ allowedRedirectHosts: ['partner.com'] });
+
+    const anchor = document.createElement('a');
+    anchor.href = 'https://partner.com/page';
+    anchor.setAttribute('data-dl-event', 'signup_start');
+    document.body.appendChild(anchor);
+
+    const hrefSpy = vi.fn();
+    Object.defineProperty(window.location, 'href', {
+      get: () => 'http://localhost:3000/',
+      set: hrefSpy,
+      configurable: true
+    });
+
+    anchor.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }));
+    await new Promise(r => setTimeout(r, 250));
+
+    expect(hrefSpy).toHaveBeenCalledWith('https://partner.com/page');
+  });
+
+  it('blocks suffix-evasion attack against allowlisted host', async () => {
+    // `evilpocketpills.com` must NOT match `pocketpills.com` — this is the
+    // dot-prefix correctness check.
+    const anchor = document.createElement('a');
+    anchor.href = 'https://evilpocketpills.com/login';
+    anchor.setAttribute('data-dl-event', 'login_view');
+    document.body.appendChild(anchor);
+
+    const hrefSpy = vi.fn();
+    Object.defineProperty(window.location, 'href', {
+      get: () => 'http://localhost:3000/',
+      set: hrefSpy,
+      configurable: true
+    });
+
+    anchor.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }));
+
+    // Event still fires
+    expect(window.dataLayer[window.dataLayer.length - 1].event).toBe('login_view');
+
+    await new Promise(r => setTimeout(r, 250));
+    expect(hrefSpy).not.toHaveBeenCalled();
+  });
+
+  it('allows same-origin (relative path) anchor navigation', async () => {
+    const anchor = document.createElement('a');
+    anchor.setAttribute('href', '/dashboard');
+    anchor.setAttribute('data-dl-event', 'signup_start');
+    document.body.appendChild(anchor);
+
+    const hrefSpy = vi.fn();
+    Object.defineProperty(window.location, 'href', {
+      get: () => 'http://localhost:3000/',
+      set: hrefSpy,
+      configurable: true
+    });
+
+    anchor.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }));
+    await new Promise(r => setTimeout(r, 250));
+
+    // jsdom resolves the relative href against the page origin
+    expect(hrefSpy).toHaveBeenCalledWith('http://localhost:3000/dashboard');
   });
 });
 

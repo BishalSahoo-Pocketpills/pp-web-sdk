@@ -55,6 +55,7 @@ export function createMockPpLib(overrides = {}) {
     Security: {
       sanitize: vi.fn(v => (v ? String(v) : '')),
       isValidUrl: vi.fn(() => true),
+      isSafeRedirectUrl: vi.fn(() => true),
       json: {
         parse: vi.fn((str, fb) => { try { return JSON.parse(str); } catch (e) { return fb || null; } }),
         stringify: vi.fn(obj => { try { return JSON.stringify(obj); } catch (e) { return null; } })
