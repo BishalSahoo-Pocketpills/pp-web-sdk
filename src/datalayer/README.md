@@ -121,7 +121,17 @@ ppLib.datalayer.configure({
     transactionId: 'data-dl-transaction-id' // Purchase transaction ID
   },
   debounceMs: 300,                       // Debounce window for duplicate clicks (ms)
-  navigationDelay: 100                   // Delay before anchor navigation (ms)
+  navigationDelay: 100,                  // Delay before anchor navigation (ms)
+
+  // Cross-origin redirect allowlist for `<a data-dl-event>` clicks.
+  // Same-origin and relative hrefs are always allowed. Cross-origin hrefs
+  // must match an entry exactly OR as a subdomain (`.host` suffix). Entries
+  // are case-insensitive; trailing-dot FQDN hosts (`example.com.`) match
+  // their non-FQDN form.
+  //
+  // Default `['pocketpills.com']` covers all `*.pocketpills.com` subdomains
+  // (`try.`, `www.`, `app.`, etc.). Add partner hosts as needed.
+  allowedRedirectHosts: ['pocketpills.com']
 });
 ```
 
@@ -412,9 +422,19 @@ When a `data-dl-event` element is an `<a>` tag with an `href`:
 
 1. `e.preventDefault()` intercepts the click
 2. The event is pushed to dataLayer
-3. `setTimeout` navigates to the href after `navigationDelay` (default: 100ms)
+3. **Origin validation** — the href is run through
+   `ppLib.Security.isSafeRedirectUrl(href, allowedRedirectHosts)`. Same-
+   origin and relative hrefs always pass. Cross-origin hrefs must match
+   an entry in `CONFIG.allowedRedirectHosts` (default
+   `['pocketpills.com']`, with the dot-prefix subdomain rule). Blocked
+   redirects emit a `warn` log with the rejected hostname and skip
+   navigation; the dataLayer event still fires.
+4. `setTimeout` navigates to the href after `navigationDelay` (default: 100ms)
 
-This ensures the dataLayer push is captured before the browser navigates away.
+This ensures the dataLayer push is captured before the browser navigates
+away, AND that an attacker-injected anchor cannot redirect users off-site
+after firing a tracked event. The validation runs before the timeout is
+scheduled so a tainted href is never closure-captured.
 
 ### Debounce with Map Pruning
 

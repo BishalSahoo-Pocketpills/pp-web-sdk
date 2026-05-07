@@ -35,7 +35,8 @@ Add the scripts and configure. Price injection is automatic.
   ppLib.voucherify.configure({
     api: {
       applicationId: 'YOUR_APPLICATION_ID',
-      clientSecretKey: 'YOUR_CLIENT_KEY',
+      // Voucherify "Client-side API token" — safe in browser bundles.
+      clientPublicKey: 'YOUR_PUBLIC_CLIENT_TOKEN',
       baseUrl: 'https://as1.api.voucherify.io'
     }
   });
@@ -51,7 +52,24 @@ Add the scripts and configure. Price injection is automatic.
 </div>
 ```
 
-The `applicationId` and `clientSecretKey` are **publishable client-side keys** from Voucherify (Project Settings > Application Keys). They are safe to include in HTML — they can only read qualifications and validate vouchers, never redeem or modify campaigns.
+> **Migrating from `clientSecretKey` in browser-direct mode?** The SDK
+> hard-blocks initialization in this configuration to prevent the
+> server-side secret from leaking into browser bundles. Three migration
+> paths:
+> 1. **Recommended:** switch to the new `clientPublicKey` field above —
+>    Voucherify's client-side token is explicitly intended for browser
+>    use. Generate one in Project Settings → Application Keys.
+> 2. Stand up a server-side proxy and configure
+>    `cache.enabled: true` with `cache.baseUrl` pointing at it. The
+>    proxy holds the secret; the browser talks only to your proxy.
+>    See [Backend Proxy Mode](#backend-proxy-mode).
+> 3. Run the edge worker and set `edge.mode: 'edge'`. The edge layer
+>    consumes the secret server-side, same outcome as path 2.
+>
+> Customers that continue to set `clientSecretKey` without a proxy or
+> edge consumer will see an `[ppVoucherify] BLOCKED init` error log
+> and the module will not initialize. This is enforced both in
+> `init()` and at every `apiRequest()` call (defense-in-depth).
 
 ---
 

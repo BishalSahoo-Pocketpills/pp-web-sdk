@@ -15,17 +15,24 @@ window.ppLib                     (common.min.js — MUST load first)
   ├── .version                   → SDK version
   ├── .config                    → Global configuration
   ├── .log(level, msg, data?)    → Debug/verbose logger
+  ├── .safeLogPayload(value)     → PII-safe payload redaction for log emit
+  ├── .safeLogError(err)         → PII-safe exception extraction for log emit
   ├── .SafeUtils                 → Null-safe get/set/forEach/exists
-  ├── .Security                  → Input sanitization & XSS prevention
+  ├── .Security                  → Sanitization, XSS prevention, redirect safety
   ├── .Storage                   → sessionStorage/localStorage abstraction
   ├── .getCookie(name)           → Cookie reader
   ├── .deleteCookie(name)        → Cookie remover
   ├── .getQueryParam(url, param) → URL parameter extractor
   ├── .extend(target, source)    → Deep object merge (prototype-safe)
+  ├── .attribution               → Marketing attribution service
+  ├── .session                   → Session ID management
+  ├── .eventPropertiesBuilder    → Canonical per-event context (UTM/device/etc.)
+  ├── .registerEnricher(fn)      → Composable dataLayer.push enricher chain
   ├── .login                     → Auth state & body class management
   ├── .ecommerce                 → GA4 ecommerce events
   ├── .eventSource               → Click/tap event tracking
   ├── .mixpanel                  → Mixpanel SDK wrapper & sessions
+  ├── .mixpanel.track(name,p?)   → SDK facade — auto-merges canonical context
   ├── .braze                     → Braze engagement platform
   ├── .voucherify                → Voucherify pricing & discounts
   └── .datalayer                 → GTM dataLayer events (DOM + programmatic)

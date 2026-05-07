@@ -90,6 +90,52 @@ ppLib.log('verbose', 'Detailed trace info');
 
 Logging is silent when `ppLib.config.debug` is `false`. Verbose messages additionally require `ppLib.config.verbose`.
 
+#### `ppLib.safeLogPayload(value)` — PII-safe payload redaction
+
+Wrap untrusted user-attribute / event-property bags before they reach
+`ppLib.log` so PII (email, phone, name, address, tokens, etc.) never
+lands in DevTools / Sentry / log aggregators. Returns a shape-preserving
+copy: allowlisted keys (`country`, `language`, `currency`, etc.) pass
+through verbatim; denylisted keys (`email`, `phone`, `firstName`,
+`token`, etc. — see `src/common/log-sanitize.ts` for the camelCase
+source list) are replaced with `'<redacted>'`; everything else gets a
+shape hint (`'<string len=22>'`, `'<array len=3>'`).
+
+```javascript
+ppLib.log('info', '[ppBraze] setUserAttributes',
+  ppLib.safeLogPayload({ email: 'x@y.com', country: 'CA', firstName: 'Bob' }));
+// → logs: { email: '<redacted>', country: 'CA', firstName: '<redacted>' }
+```
+
+#### `ppLib.safeLogError(err)` — PII-safe exception logging
+
+The companion helper for caught exceptions. Drops `error.message` (free-
+form PII risk: fetch URLs with email query params, validation errors
+that echo input) and `error.stack` (URL-leak risk) from logs by default.
+Surfaces `errorClass`, a `messageShape` hint, and the typed-error
+context fields (`endpoint`, `status`, `attempt`, `cause`) instead.
+Custom context keys flow through `safeLogPayload` so any future
+PII-bearing field gets the same allowlist/denylist treatment.
+
+```javascript
+try {
+  await voucherifyClient.fetch();
+} catch (e) {
+  ppLib.log('error', '[ppVoucherify] fetch failed', ppLib.safeLogError(e));
+  // → logs: { errorClass: 'VoucherifyApiError',
+  //          messageShape: '<string len=21>',
+  //          endpoint: '/qualifications', status: 502 }
+}
+```
+
+Local debug builds can opt in to verbatim `messageRaw` and `stack` via
+`ppLib.config.debugErrors = true`. Default off; never enable in
+production. The flag is read dynamically at every call so it can be
+flipped from a console session for ad-hoc debugging without a redeploy.
+
+The contract is the log SHAPE — log scrapers and dashboards must not
+parse output to recover content.
+
 ### SafeUtils
 
 Null-safe utilities for working with objects and arrays. Never throws exceptions.
@@ -126,6 +172,19 @@ ppLib.Security.sanitize('<script>alert("xss")</script>');
 // URL validation — http/https only, length-checked
 ppLib.Security.isValidUrl('https://example.com'); // true
 ppLib.Security.isValidUrl('javascript:alert(1)'); // false
+
+// Cross-origin redirect safety — used by datalayer/dom.ts to gate
+// `window.location.href = href` after a `<a data-dl-event>` click.
+// Same-origin and relative paths always pass; cross-origin must match
+// an entry exactly OR as a subdomain (`.host` suffix). Entries are
+// case-insensitive; trailing-dot FQDN hosts (`example.com.`) match
+// non-FQDN form. Too-broad entries (`'com'`, `'co.uk'`, single-label)
+// are skipped with a warn log to fail loud rather than silently grant
+// trust to most of the internet.
+ppLib.Security.isSafeRedirectUrl('/app');                                          // true (same-origin)
+ppLib.Security.isSafeRedirectUrl('https://www.pocketpills.com', ['pocketpills.com']); // true
+ppLib.Security.isSafeRedirectUrl('https://attacker.com', ['pocketpills.com']);     // false
+ppLib.Security.isSafeRedirectUrl('javascript:alert(1)', ['pocketpills.com']);      // false
 
 // Safe JSON parse with size validation
 ppLib.Security.json.parse('{"key":"value"}', {}); // { key: 'value' }
