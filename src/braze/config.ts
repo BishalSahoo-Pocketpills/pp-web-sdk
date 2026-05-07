@@ -5,6 +5,12 @@ export function createBrazeConfig(): BrazeConfig {
     sdk: {
       apiKey: '',
       baseUrl: '',
+      // Default Braze Web SDK CDN URL. Pinned to the 5.6 minor range —
+      // Braze publishes new majors against new paths (e.g. `/web-sdk/5.7/`),
+      // so this won't auto-upgrade across breaking changes. Override at
+      // configure() time for SRI-pinned deployments (replace `5.6` with
+      // a fully-qualified version like `5.6.0` and pair with
+      // `BrazeSdkConfig.integrity`). Runbook: docs/security/sri-rotation.md.
       cdnUrl: 'https://js.appboycdn.com/web-sdk/5.6/braze.core.min.js',
       enableLogging: false,
       sessionTimeoutInSeconds: 1800
