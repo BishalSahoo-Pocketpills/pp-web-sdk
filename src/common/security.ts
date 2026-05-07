@@ -1,11 +1,66 @@
 import type { PPLibConfig, SafeUtils, Security, SecurityJson } from '@src/types/common.types';
 
+// Hostnames are case-insensitive per RFC 3986. URL spec parsers lowercase
+// on parse, but allowlist ENTRIES come from caller config and may be in any
+// case; we normalize both sides before compare so `['POCKETPILLS.COM']`
+// configures correctly. Also strips a single trailing dot — FQDN form
+// (`pocketpills.com.`) would otherwise miss a non-FQDN allowlist entry.
+function normalizeHostname(host: string): string {
+  let h = host.toLowerCase();
+  if (h.length > 0 && h.charAt(h.length - 1) === '.') {
+    h = h.substring(0, h.length - 1);
+  }
+  return h;
+}
+
+// Allowlist entries that are too-broad (`'com'`, `'co.uk'`, single-label)
+// would silently grant trust to most of the internet via the dot-prefix
+// suffix check. These reject early. The list is not exhaustive — bare TLDs
+// follow many forms — but it catches the common misconfiguration patterns.
+const KNOWN_TOO_BROAD_ENTRIES: Record<string, true> = {
+  com: true, net: true, org: true, io: true, co: true, dev: true, app: true,
+  ca: true, uk: true, us: true, au: true, de: true, fr: true,
+  'co.uk': true, 'co.in': true, 'com.au': true, 'co.jp': true
+};
+
+function isAllowlistEntrySafe(entry: string): boolean {
+  if (!entry || entry.indexOf('.') === -1) return false;
+  if (KNOWN_TOO_BROAD_ENTRIES[entry]) return false;
+  return true;
+}
+
+// Load-bearing security primitive: matches a host against an allowlist
+// entry as either an exact match OR as a subdomain via the `.` + entry
+// suffix. The dot prefix is REQUIRED — a bare suffix check would let
+// `evilpocketpills.com` match `pocketpills.com`.
+function hostMatches(host: string, allowed: string): boolean {
+  return host === allowed || host.endsWith('.' + allowed);
+}
+
 export function createSecurity(
   config: PPLibConfig,
   safeUtils: SafeUtils,
   log: (level: string, message: string, data?: unknown) => void,
   win: Window & typeof globalThis
 ): Security {
+  // Single source of truth for "is this URL well-formed and within our
+  // safety budget?" Used by both `isValidUrl` (no base) and
+  // `isSafeRedirectUrl` (resolves against the current origin so relative
+  // paths normalize naturally). Returns the parsed URL on success, null
+  // on any failure — never throws.
+  function parseAndValidateUrl(url: string, base?: string): URL | null {
+    try {
+      if (!url || typeof url !== 'string') return null;
+      if (url.length > config.security.maxUrlLength) return null;
+      const parsed = new URL(url, base);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+      if (parsed.href.length > config.security.maxUrlLength) return null;
+      return parsed;
+    } catch (e) {
+      log('verbose', 'parseAndValidateUrl error', e);
+      return null;
+    }
+  }
   // Precompiled regex constants — avoids recompilation on every call
   const SPECIAL_CHARS_RE = /[<>'"]/g;
   const JAVASCRIPT_URI_RE = /javascript:/gi;
@@ -48,45 +103,43 @@ export function createSecurity(
     },
 
     isValidUrl(url: string): boolean {
-      try {
-        if (!url || typeof url !== 'string') return false;
-        if (url.length > config.security.maxUrlLength) return false;
-
-        const parsed = new URL(url);
-        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-      } catch (e) {
-        log('verbose', 'isValidUrl parse error', e);
-        return false;
-      }
+      const result = parseAndValidateUrl(url);
+      return result !== null;
     },
 
     isSafeRedirectUrl(url: string, allowedHosts?: string[]): boolean {
       try {
-        // Reuse isValidUrl's hardening — rejects empty/oversize/non-http(s)/
-        // unparseable, which covers javascript:, data:, file:, ftp:, etc.
-        // We hand it the absolute form so a bare relative path like `/app`
-        // still passes via the same-origin branch below.
-        if (!url || typeof url !== 'string') return false;
-
-        // Resolve against current origin so relative paths normalize naturally.
-        const base = win.location.href;
-        const parsed = new URL(url, base);
-
-        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-          return false;
-        }
-        if (parsed.href.length > config.security.maxUrlLength) return false;
+        // Resolve against current origin so relative paths normalize to
+        // same-origin (always safe) and a bare `/app` need not be a special
+        // case. `parseAndValidateUrl` enforces the same hardening as
+        // `isValidUrl` (string + http(s) + length cap), shared so the two
+        // public methods can't drift.
+        const parsed = parseAndValidateUrl(url, win.location.href);
+        if (!parsed) return false;
 
         if (parsed.origin === win.location.origin) return true;
 
         if (allowedHosts && allowedHosts.length) {
-          const host = parsed.hostname;
+          // Hostname is normalized once: lowercased (URL spec already
+          // lowercases on parse but we belt-and-suspenders for safety) and
+          // trailing-dot-stripped (FQDN form `host.` would otherwise miss).
+          const host = normalizeHostname(parsed.hostname);
           for (let i = 0; i < allowedHosts.length; i++) {
-            const allowed = allowedHosts[i];
-            if (!allowed || typeof allowed !== 'string') continue;
+            const raw = allowedHosts[i];
+            if (!raw || typeof raw !== 'string') continue;
+            const allowed = normalizeHostname(raw);
+            // Reject too-broad entries that would silently allow most of
+            // the internet (e.g. `'com'`, `'co.uk'`). Any entry without a
+            // dot OR matching a known eTLD should never be trusted as a
+            // unilateral allowlist; emit a warn and skip the entry rather
+            // than silently honour it.
+            if (!isAllowlistEntrySafe(allowed)) {
+              log('warn', '[ppLib] ignoring unsafe allowlist entry: ' + allowed);
+              continue;
+            }
             // The `'.' + allowed` prefix is load-bearing: a bare suffix
             // check would let `evilpocketpills.com` match `pocketpills.com`.
-            if (host === allowed || host.endsWith('.' + allowed)) return true;
+            if (hostMatches(host, allowed)) return true;
           }
         }
 

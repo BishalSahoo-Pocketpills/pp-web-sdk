@@ -1007,6 +1007,62 @@ describe('Security.isSafeRedirectUrl()', () => {
     const longPath = '/' + 'a'.repeat(2100);
     expect(ppLib.Security.isSafeRedirectUrl(longPath)).toBe(false);
   });
+
+  // -------------------------------------------------------------------------
+  // Review-fix coverage gaps (Track 3 review panel — Critical/High/Medium fixes)
+  // -------------------------------------------------------------------------
+
+  it('matches allowlist entries case-insensitively (security panel C-1)', () => {
+    // Hostname is lowercased on parse per RFC 3986; allowlist entries from
+    // caller config may be in any case. Both sides must normalize before
+    // compare, otherwise `['POCKETPILLS.COM']` silently denies all traffic.
+    expect(ppLib.Security.isSafeRedirectUrl('https://www.pocketpills.com/x', ['POCKETPILLS.COM'])).toBe(true);
+    expect(ppLib.Security.isSafeRedirectUrl('https://www.pocketpills.com/x', ['Pocketpills.com'])).toBe(true);
+  });
+
+  it('matches an allowlisted entry against a trailing-dot FQDN host (security panel M-3)', () => {
+    // Some clients submit fully-qualified hostnames with the trailing root
+    // dot (`pocketpills.com.`). Hostname normalization strips a single
+    // trailing dot so the allowlist still matches.
+    expect(ppLib.Security.isSafeRedirectUrl('https://pocketpills.com./app', ['pocketpills.com'])).toBe(true);
+    expect(ppLib.Security.isSafeRedirectUrl('https://www.pocketpills.com./app', ['pocketpills.com'])).toBe(true);
+  });
+
+  it('rejects too-broad allowlist entries that would trust most of the internet (security panel H-2)', () => {
+    // A misconfigured allowlist of `['com']` or `['co.uk']` would make every
+    // public site match via the dot-suffix check. The helper must skip
+    // these entries (with a warn log) instead of silently honouring them.
+    expect(ppLib.Security.isSafeRedirectUrl('https://attacker.com', ['com'])).toBe(false);
+    expect(ppLib.Security.isSafeRedirectUrl('https://attacker.co.uk', ['co.uk'])).toBe(false);
+    expect(ppLib.Security.isSafeRedirectUrl('https://attacker.com', ['org'])).toBe(false);
+    // A safe entry alongside an unsafe one is still honoured.
+    expect(ppLib.Security.isSafeRedirectUrl('https://www.pocketpills.com', ['com', 'pocketpills.com'])).toBe(true);
+  });
+
+  it('rejects allowlist entries with no dot (single-label) as too-broad', () => {
+    // `'localhost'` / `'intranet'` / etc. are single-label and would match
+    // a single-label hostname. The helper rejects them as misconfiguration.
+    expect(ppLib.Security.isSafeRedirectUrl('https://attacker', ['attacker'])).toBe(false);
+  });
+
+  it('blocks protocol-relative URLs that resolve cross-origin (security panel L-4)', () => {
+    // `//attacker.com/path` resolves to `https://attacker.com/path` against
+    // the page origin and must be rejected by the cross-origin check.
+    expect(ppLib.Security.isSafeRedirectUrl('//attacker.com/path')).toBe(false);
+  });
+
+  it('blocks javascript:// double-slash variant', () => {
+    // The double-slash form parses with `protocol === 'javascript:'`, which
+    // the http(s)-only filter rejects.
+    expect(ppLib.Security.isSafeRedirectUrl('javascript://attacker.com/?%0Aalert(1)')).toBe(false);
+  });
+
+  it('skips falsy / non-string allowlist entries without throwing', () => {
+    // Defensive: `[null, undefined, '', 0, 'pocketpills.com']` should still
+    // honour the one valid entry and skip the rest.
+    expect(ppLib.Security.isSafeRedirectUrl('https://www.pocketpills.com', [null as any, undefined as any, '', 0 as any, 'pocketpills.com'])).toBe(true);
+    expect(ppLib.Security.isSafeRedirectUrl('https://attacker.com', [null as any, undefined as any, ''])).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
