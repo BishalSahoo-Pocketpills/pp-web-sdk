@@ -94,6 +94,17 @@ export function createSdkLoader(
       return;
     }
 
+    // SRI gate runs BEFORE createStub() so a fail-closed refusal doesn't
+    // leave a partially-installed stub that callers might queue against.
+    if (CONFIG.sdk.integrity) {
+      // hash configured — happy path
+    } else if (CONFIG.sdk.requireIntegrity) {
+      ppLib.log('error', '[ppBraze] requireIntegrity=true but no integrity hash configured — refusing to load');
+      return;
+    } else {
+      ppLib.log('warn', '[ppBraze] Loading SDK without SRI integrity — set CONFIG.sdk.integrity for hardening');
+    }
+
     createStub();
 
     const script = doc.createElement('script');
@@ -101,6 +112,12 @@ export function createSdkLoader(
     script.async = true;
     script.src = CONFIG.sdk.cdnUrl;
     if (CONFIG.sdk.nonce) script.setAttribute('nonce', CONFIG.sdk.nonce);
+    if (CONFIG.sdk.integrity) {
+      script.integrity = CONFIG.sdk.integrity;
+      // crossOrigin must be set for SRI to be enforced on cross-origin scripts.
+      // 'anonymous' is correct unless the CDN explicitly opts into credentials.
+      script.crossOrigin = CONFIG.sdk.crossOrigin || 'anonymous';
+    }
 
     script.onload = function() {
       try {

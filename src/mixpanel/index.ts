@@ -79,7 +79,7 @@ import type { MixpanelGlobal } from '@src/types/window';
   // =====================================================
 
   // Mixpanel JS SDK loader stub v1.2 (synced from cdn.mxpnl.com/libs/mixpanel-2-latest.min.js)
-  // Last verified: 2026-03-17
+  // Last verified: 2026-05-07
   //
   // Restructured from the upstream `var`-based snippet to use `let`/`const`.
   // The two block-scope hazards in the original — (1) `d` declared inside a
@@ -88,6 +88,13 @@ import type { MixpanelGlobal } from '@src/types/window';
   // function `a()` — are resolved by hoisting those declarations to the
   // enclosing scope. Behavior is identical: same stub queue, same method
   // shadowing, same async script injection.
+  //
+  // Local additions (not from upstream):
+  //   - CONFIG.cdnUrl override on the `b.src =` line so callers can pin
+  //     a specific Mixpanel SDK version for SRI.
+  //   - SRI / crossOrigin / requireIntegrity gate after `b.src =` (mirrors
+  //     the Braze loader). Default is warn-only — see BrazeSdkConfig docs
+  //     for the Phase-1 → Phase-3 rollout rationale.
   function loadMixpanelSDK(): void {
     /*! v8 ignore start */
     if ((win as any).mixpanel && (win as any).mixpanel.__SV) return;
@@ -171,10 +178,20 @@ import type { MixpanelGlobal } from '@src/types/window';
       b = c.createElement('script');
       b.type = 'text/javascript';
       b.async = !0;
-      b.src = 'https://cdn.mxpnl.com/libs/mixpanel-2-latest.min.js';
+      b.src = CONFIG.cdnUrl || 'https://cdn.mxpnl.com/libs/mixpanel-2-latest.min.js';
       /*! v8 ignore start — vendored Mixpanel SDK snippet, IIFE source map can't attribute nonce branch */
       if (CONFIG.nonce) b.setAttribute('nonce', CONFIG.nonce);
       /*! v8 ignore stop */
+      if (CONFIG.integrity) {
+        b.integrity = CONFIG.integrity;
+        // crossOrigin is required for SRI enforcement on cross-origin scripts.
+        b.crossOrigin = CONFIG.crossOrigin || 'anonymous';
+      } else if (CONFIG.requireIntegrity) {
+        ppLib.log('error', '[ppMixpanel] requireIntegrity=true but no integrity hash configured — refusing to load');
+        return;
+      } else {
+        ppLib.log('warn', '[ppMixpanel] Loading SDK without SRI integrity — set CONFIG.integrity (with a pinned cdnUrl) for hardening');
+      }
       d = c.getElementsByTagName('script')[0];
       d.parentNode.insertBefore(b, d);
     }

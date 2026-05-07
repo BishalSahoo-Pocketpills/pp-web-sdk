@@ -176,6 +176,11 @@ import { createDebounceTracker } from '@src/common/debounce';
         a.appendChild(d.createTextNode(b));
         h.appendChild(a);
 
+        // No SRI on this script: VWO returns a per-request payload (the URL
+        // carries account_id, page URL, and a random cache-buster), so the
+        // bytes change every load and no static integrity hash is possible.
+        // Hardening here would require Webflow-level CSP + VWO publishing
+        // a stable subresource manifest, neither of which exists today.
         this.load(CONFIG.smartCodeUrl + '?a=' + account_id +
           '&u=' + encodeURIComponent(d.URL) +
           '&f=' + (+is_spa) +

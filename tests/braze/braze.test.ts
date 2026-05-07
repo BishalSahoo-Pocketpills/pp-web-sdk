@@ -307,6 +307,90 @@ describe('init()', () => {
 });
 
 // =========================================================================
+// 3b. INIT — SUBRESOURCE INTEGRITY (SRI)
+// =========================================================================
+describe('init() — SRI hardening', () => {
+  it('emits integrity + crossOrigin attributes when integrity is configured', () => {
+    loadWithCommon('braze');
+    window.ppLib.braze!.configure({
+      sdk: {
+        apiKey: 'key',
+        baseUrl: 'sdk.braze.com',
+        integrity: 'sha384-abc123def456'
+      } as any
+    });
+    window.ppLib.braze!.init();
+
+    // Loader uses `insertBefore(script, first)` so the most-recently injected
+    // script is at index 0 of the document order — older accumulated scripts
+    // from prior tests sit after it.
+    const scripts = document.querySelectorAll('script[src*="appboycdn"]');
+    const script = scripts[0] as HTMLScriptElement;
+    expect(script.integrity).toBe('sha384-abc123def456');
+    expect(script.crossOrigin).toBe('anonymous');
+  });
+
+  it('honors a custom crossOrigin override', () => {
+    loadWithCommon('braze');
+    window.ppLib.braze!.configure({
+      sdk: {
+        apiKey: 'key',
+        baseUrl: 'sdk.braze.com',
+        integrity: 'sha384-xyz',
+        crossOrigin: 'use-credentials'
+      } as any
+    });
+    window.ppLib.braze!.init();
+
+    const scripts = document.querySelectorAll('script[src*="appboycdn"]');
+    const script = scripts[0] as HTMLScriptElement;
+    expect(script.crossOrigin).toBe('use-credentials');
+  });
+
+  it('refuses to inject script when requireIntegrity=true and no integrity is set', () => {
+    loadWithCommon('braze');
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+
+    // Snapshot count of existing braze script tags so we can prove no NEW
+    // injection happened (tests share document.head across cases).
+    const beforeCount = document.querySelectorAll('script[src*="appboycdn"]').length;
+
+    window.ppLib.braze!.configure({
+      sdk: {
+        apiKey: 'key',
+        baseUrl: 'sdk.braze.com',
+        requireIntegrity: true
+      } as any
+    });
+    window.ppLib.braze!.init();
+
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('requireIntegrity=true'));
+    const afterCount = document.querySelectorAll('script[src*="appboycdn"]').length;
+    expect(afterCount).toBe(beforeCount);
+    // Stub also must NOT be installed — fail-closed
+    expect(window.braze).toBeUndefined();
+  });
+
+  it('warns and proceeds without integrity attribute by default', () => {
+    loadWithCommon('braze');
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+
+    window.ppLib.braze!.configure({
+      sdk: { apiKey: 'key', baseUrl: 'sdk.braze.com' } as any
+    });
+    window.ppLib.braze!.init();
+
+    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('without SRI integrity'));
+    const scripts = document.querySelectorAll('script[src*="appboycdn"]');
+    const script = scripts[0] as HTMLScriptElement;
+    // jsdom returns null when the IDL attribute hasn't been set; '' is the
+    // setter-applied default. Either is fine — we just need the SRI to be absent.
+    expect(script.getAttribute('integrity')).toBeNull();
+    expect(script.getAttribute('crossorigin')).toBeNull();
+  });
+});
+
+// =========================================================================
 // 4. AUTO-IDENTIFY
 // =========================================================================
 describe('Auto-identify', () => {
