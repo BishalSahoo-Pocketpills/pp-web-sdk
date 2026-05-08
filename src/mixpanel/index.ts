@@ -106,6 +106,21 @@ import type { MixpanelGlobal } from '@src/types/window';
 
     if (!a.__SV) {
     /*! v8 ignore stop */
+      // SRI gate runs BEFORE stub installation so a fail-closed refusal
+      // doesn't leave window.mixpanel as a stub queue that callers silently
+      // fill forever (mirrors the Braze loader; see sdk-loader.ts).
+      if (CONFIG.integrity) {
+        if (!/^(sha256|sha384|sha512)-[A-Za-z0-9+/=]+$/.test(CONFIG.integrity)) {
+          ppLib.log('error', '[ppMixpanel] integrity hash format invalid — expected sha256|sha384|sha512-<base64>; refusing to load');
+          return;
+        }
+      } else if (CONFIG.requireIntegrity) {
+        ppLib.log('error', '[ppMixpanel] requireIntegrity=true but no integrity hash configured — refusing to load');
+        return;
+      } else {
+        ppLib.log('warn', '[ppMixpanel] Loading SDK without SRI integrity — set CONFIG.integrity (with a pinned cdnUrl) for hardening');
+      }
+
       let b: any = win;
       // `d` starts as the hash-state extractor function (assigned inside the
       // try below), then is reassigned to the first <script> element after
@@ -186,12 +201,12 @@ import type { MixpanelGlobal } from '@src/types/window';
         b.integrity = CONFIG.integrity;
         // crossOrigin is required for SRI enforcement on cross-origin scripts.
         b.crossOrigin = CONFIG.crossOrigin || 'anonymous';
-      } else if (CONFIG.requireIntegrity) {
-        ppLib.log('error', '[ppMixpanel] requireIntegrity=true but no integrity hash configured — refusing to load');
-        return;
-      } else {
-        ppLib.log('warn', '[ppMixpanel] Loading SDK without SRI integrity — set CONFIG.integrity (with a pinned cdnUrl) for hardening');
       }
+      // Surface SRI mismatches and network failures — without an onerror handler
+      // a stale integrity hash silently breaks Mixpanel for every page load.
+      b.onerror = function() {
+        ppLib.log('error', '[ppMixpanel] Failed to load SDK from ' + b.src + ' (SRI mismatch, network error, or blocker?)');
+      };
       d = c.getElementsByTagName('script')[0];
       d.parentNode.insertBefore(b, d);
     }
@@ -376,6 +391,11 @@ import type { MixpanelGlobal } from '@src/types/window';
     }
 
     loadMixpanelSDK();
+    // SRI fail-closed (or invalid integrity format) returns from loadMixpanelSDK
+    // before installing the window.mixpanel stub. Bail out here so we don't call
+    // mp().init() against an undefined global — the error log was already emitted
+    // by the SRI gate.
+    if (!win.mixpanel) return;
     mixpanel = win.mixpanel;
 
     // Read the distinct_id from any existing Mixpanel cookie BEFORE init.

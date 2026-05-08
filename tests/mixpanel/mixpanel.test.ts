@@ -550,6 +550,42 @@ describe('loadMixpanelSDK()', () => {
     expect(insertBeforeSpy).not.toHaveBeenCalled();
   });
 
+  it('does NOT install the window.mixpanel stub when fail-closed (prevents silent event loss)', () => {
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'tok', requireIntegrity: true });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+    // If the stub were installed, callers would silently queue events into
+    // window.mixpanel._i forever — the SEC#1 finding from the review panel.
+    expect(window.mixpanel).toBeUndefined();
+  });
+
+  it('refuses to inject script when integrity hash format is invalid', () => {
+    loadWithCommon('mixpanel');
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    window.ppLib.mixpanel.configure({ token: 'tok', integrity: 'not-a-valid-hash' });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('integrity hash format invalid'));
+    expect(insertBeforeSpy).not.toHaveBeenCalled();
+    expect(window.mixpanel).toBeUndefined();
+  });
+
+  it('attaches onerror handler to surface SRI mismatches and network failures', () => {
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'tok' });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    const scriptArg = insertBeforeSpy.mock.calls[0][0];
+    expect(typeof scriptArg.onerror).toBe('function');
+
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    scriptArg.onerror();
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('SRI mismatch'));
+  });
+
   it('warns and proceeds without integrity attribute by default', () => {
     loadWithCommon('mixpanel');
     const logSpy = vi.spyOn(window.ppLib, 'log');
