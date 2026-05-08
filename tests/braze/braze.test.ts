@@ -388,6 +388,26 @@ describe('init() — SRI hardening', () => {
     expect(script.getAttribute('integrity')).toBeNull();
     expect(script.getAttribute('crossorigin')).toBeNull();
   });
+
+  it('refuses to inject script when integrity hash format is invalid', () => {
+    loadWithCommon('braze');
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    const beforeCount = document.querySelectorAll('script[src*="appboycdn"]').length;
+
+    window.ppLib.braze!.configure({
+      sdk: {
+        apiKey: 'key',
+        baseUrl: 'sdk.braze.com',
+        integrity: 'totally-bogus-value'
+      } as any
+    });
+    window.ppLib.braze!.init();
+
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('integrity hash format invalid'));
+    const afterCount = document.querySelectorAll('script[src*="appboycdn"]').length;
+    expect(afterCount).toBe(beforeCount);
+    expect(window.braze).toBeUndefined();
+  });
 });
 
 // =========================================================================

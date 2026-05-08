@@ -97,7 +97,10 @@ export function createSdkLoader(
     // SRI gate runs BEFORE createStub() so a fail-closed refusal doesn't
     // leave a partially-installed stub that callers might queue against.
     if (CONFIG.sdk.integrity) {
-      // hash configured — happy path
+      if (!/^(sha256|sha384|sha512)-[A-Za-z0-9+/=]+$/.test(CONFIG.sdk.integrity)) {
+        ppLib.log('error', '[ppBraze] integrity hash format invalid — expected sha256|sha384|sha512-<base64>; refusing to load');
+        return;
+      }
     } else if (CONFIG.sdk.requireIntegrity) {
       ppLib.log('error', '[ppBraze] requireIntegrity=true but no integrity hash configured — refusing to load');
       return;
@@ -140,7 +143,7 @@ export function createSdkLoader(
     };
 
     script.onerror = function() {
-      ppLib.log('error', '[ppBraze] Failed to load SDK from ' + CONFIG.sdk.cdnUrl + ' (ad blocker?)');
+      ppLib.log('error', '[ppBraze] Failed to load SDK from ' + CONFIG.sdk.cdnUrl + ' (SRI mismatch, network error, ad blocker, or CORS misconfiguration?)');
     };
 
     const first = doc.getElementsByTagName('script')[0];
