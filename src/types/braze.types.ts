@@ -5,6 +5,31 @@ export interface BrazeSdkConfig {
   enableLogging: boolean;
   sessionTimeoutInSeconds: number;
   nonce?: string;
+  /**
+   * Subresource Integrity hash for the Braze CDN script (e.g. 'sha384-…').
+   * When set, the loader emits `<script integrity="…" crossorigin="…">`
+   * and the browser will refuse to execute the script if the bytes don't
+   * match the hash. Generate via:
+   *   curl https://js.appboycdn.com/web-sdk/5.6/braze.core.min.js | openssl dgst -sha384 -binary | openssl base64 -A
+   * and prefix the result with `sha384-`. Pinning to a specific SDK
+   * version (replace `5.6` in cdnUrl with `5.6.0`) is required since
+   * `5.6` is a moving range.
+   */
+  integrity?: string;
+  /**
+   * Defaults to 'anonymous' when `integrity` is set. Use 'use-credentials'
+   * only if the CDN serves Braze with `Access-Control-Allow-Credentials`
+   * (it doesn't, so anonymous is correct for ~all deployments).
+   */
+  crossOrigin?: 'anonymous' | 'use-credentials';
+  /**
+   * Phase-3 hardening switch. When `true`, the loader refuses to inject
+   * the script if no `integrity` hash is configured — fail-closed posture.
+   * Defaults to `false` so a hash typo or rotation lapse can't silently
+   * kill marketing analytics in prod. Flip to `true` once the rollout
+   * has settled and the hash is verified live.
+   */
+  requireIntegrity?: boolean;
 }
 
 export interface BrazeConsentConfig {
