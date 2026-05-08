@@ -12,6 +12,33 @@ been published behind a version tag. Breaking changes are flagged
 
 ### Security
 
+- **Subresource Integrity (SRI) for Braze and Mixpanel SDK loads.**
+  The Braze and Mixpanel CDN script tags now accept three new optional
+  config fields — `integrity`, `crossOrigin`, and `requireIntegrity` —
+  plus a `cdnUrl` override on the Mixpanel loader (Braze already had
+  one). When `integrity` is set, the loader applies it and forces
+  `crossOrigin = 'anonymous'` (overridable). When `requireIntegrity:
+  true` is set without an `integrity` hash, the loader refuses to
+  inject the script AND does not install the stub, so callers don't
+  silently queue events into an orphan queue. Hash format is validated
+  against `sha(256|384|512)-<base64>` and typos are rejected with an
+  actionable error. The default path (no integrity configured) is warn-
+  only — existing deployments are unaffected. The Mixpanel script tag
+  now also has an `onerror` handler so SRI mismatches surface in logs
+  instead of silently breaking analytics.
+  - **Migration path (recommended Phase-1 → Phase-3 rollout):**
+    - Phase 1 (no action): the SDK ships with warn-only logs. Existing
+      deploys continue working unchanged.
+    - Phase 2: pin a specific SDK version (`cdnUrl`) and configure
+      `integrity` with the matching `sha384-` hash. Logs go quiet.
+    - Phase 3: flip `requireIntegrity: true` to make stale hashes
+      fail-closed instead of warn-only.
+
+- **Hardcoded third-party URLs documented.** Braze's `5.6/` minor-pin
+  CDN, Voucherify's `as1.` Singapore region, and VWO's historical
+  `dev.` prefix subdomain now have inline comments explaining why they
+  are intentional and how to override.
+
 - **BREAKING — voucherify: `clientSecretKey` is now refused in
   browser-direct mode.** The Voucherify module previously sent the
   server-side secret as the `X-Client-Token` header from the browser when
