@@ -28,12 +28,9 @@ export function setup() {
     mkdirSync(cacheDir, { recursive: true });
   }
 
-  for (const moduleName of MODULES) {
-    const tsPath = path.resolve(srcDir, moduleName, 'index.ts');
-    if (!existsSync(tsPath)) continue;
-
+  function buildOne(entryPath: string, outName: string): void {
     const result = esbuild.buildSync({
-      entryPoints: [tsPath],
+      entryPoints: [entryPath],
       bundle: true,
       format: 'iife',
       write: false,
@@ -43,7 +40,23 @@ export function setup() {
       legalComments: 'inline',
       define: { '__PP_SDK_VERSION__': JSON.stringify(PKG_VERSION) },
     });
+    writeFileSync(path.resolve(cacheDir, outName + '.js'), result.outputFiles[0].text);
+  }
 
-    writeFileSync(path.resolve(cacheDir, moduleName + '.js'), result.outputFiles[0].text);
+  for (const moduleName of MODULES) {
+    const tsPath = path.resolve(srcDir, moduleName, 'index.ts');
+    if (!existsSync(tsPath)) continue;
+    buildOne(tsPath, moduleName);
+  }
+
+  // Standalone top-level scripts (no module directory, embedded directly as
+  // <script> tags rather than wired into ppLib). Listed explicitly so the
+  // build stays explicit about its surface.
+  const STANDALONE: Array<{ src: string; out: string }> = [
+    { src: 'febpt-variant.ts', out: 'febpt-variant' }
+  ];
+  for (const entry of STANDALONE) {
+    const tsPath = path.resolve(srcDir, entry.src);
+    if (existsSync(tsPath)) buildOne(tsPath, entry.out);
   }
 }
