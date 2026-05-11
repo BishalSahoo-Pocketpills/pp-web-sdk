@@ -317,6 +317,62 @@ describe('Voucherify native coverage', () => {
     vi.useRealTimers();
   });
 
+  it('aborts requests exceeding requestTimeoutMs and retries', async () => {
+    await freshLoad();
+    setupDOM();
+    vi.useFakeTimers();
+    const signals: AbortSignal[] = [];
+    window.fetch = vi.fn((_url: string, opts?: RequestInit) => {
+      if (opts && opts.signal) signals.push(opts.signal);
+      return new Promise((_resolve, reject) => {
+        if (opts && opts.signal) {
+          opts.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+        }
+      });
+    }) as unknown as typeof window.fetch;
+    window.ppLib.voucherify.configure({
+      cache: { enabled: true, baseUrl: '/api/voucherify', ttl: 60000 } as any,
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any,
+      retry: { maxRetries: 1, baseDelay: 50, requestTimeoutMs: 200 }
+    });
+    window.ppLib.voucherify.init();
+
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    const promise = window.ppLib.voucherify.fetchPricing();
+    // First attempt times out at 200ms, retry waits 50ms, second times out at 200ms
+    await vi.advanceTimersByTimeAsync(500);
+    await promise;
+
+    expect(signals.length).toBeGreaterThanOrEqual(2);
+    expect(signals.every(s => s.aborted)).toBe(true);
+    expect(logSpy).toHaveBeenCalledWith('error', expect.stringContaining('fetchPricing error'), expect.anything());
+    vi.useRealTimers();
+  });
+
+  it('skips AbortController when requestTimeoutMs is 0 (legacy behavior)', async () => {
+    await freshLoad();
+    setupDOM();
+    let receivedSignal: AbortSignal | undefined;
+    window.fetch = vi.fn((_url: string, opts?: RequestInit) => {
+      if (opts) receivedSignal = opts.signal as AbortSignal | undefined;
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve({ qualifications: [], total: 0, has_more: false })
+      });
+    }) as unknown as typeof window.fetch;
+    window.ppLib.voucherify.configure({
+      cache: { enabled: true, baseUrl: '/api/voucherify', ttl: 60000 } as any,
+      pricing: { autoFetch: false } as any,
+      consent: { required: false } as any,
+      retry: { maxRetries: 0, baseDelay: 100, requestTimeoutMs: 0 }
+    });
+    window.ppLib.voucherify.init();
+
+    await window.ppLib.voucherify.fetchPricing();
+    expect(receivedSignal).toBeUndefined();
+  });
+
   it('retries on network error and eventually throws', async () => {
     await freshLoad();
     setupDOM();

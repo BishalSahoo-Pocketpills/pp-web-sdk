@@ -22,6 +22,13 @@ import { createDebounceTracker } from '@src/common/debounce';
 
   const CONFIG: VWOConfig = createVWOConfig();
 
+  // Maximum number of poll attempts to read VWO variation assignment from
+  // `_vwo_exp.<id>.combination_chosen`. At EXPERIMENT_POLL_INTERVAL_MS *
+  // EXPERIMENT_POLL_MAX_ATTEMPTS = 15s — beyond this VWO has either
+  // never run or has been blocked.
+  const EXPERIMENT_POLL_MAX_ATTEMPTS = 30;
+  const EXPERIMENT_POLL_INTERVAL_MS = 500;
+
   // =====================================================
   // SESSIONSTORAGE HELPERS
   // =====================================================
@@ -514,11 +521,11 @@ import { createDebounceTracker } from '@src/common/debounce';
       let pollCount = 0;
       experimentPollInterval = win.setInterval(function() {
         pollCount++;
-        if (tryTrackExperiments() || pollCount >= 30) {
+        if (tryTrackExperiments() || pollCount >= EXPERIMENT_POLL_MAX_ATTEMPTS) {
           win.clearInterval(experimentPollInterval!);
           experimentPollInterval = null;
         }
-      }, 500);
+      }, EXPERIMENT_POLL_INTERVAL_MS);
     }
 
     // Bind DOM for auto-tracking goals

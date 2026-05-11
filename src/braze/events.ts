@@ -1,5 +1,6 @@
 import type { PPLib } from '@src/types/common.types';
 import type { BrazeConfig } from '@src/types/braze.types';
+import { createDebounceTracker } from '@src/common/debounce';
 
 export function createEventHandler(
   win: Window & typeof globalThis,
@@ -7,28 +8,11 @@ export function createEventHandler(
   ppLib: PPLib,
   CONFIG: BrazeConfig
 ) {
-  const lastEventMap: Record<string, number> = {};
-  let debounceWriteCount = 0;
+  const debounce = createDebounceTracker(CONFIG.event);
   let bound = false;
 
   function isDuplicate(key: string): boolean {
-    const now = Date.now();
-    /*! v8 ignore start */
-    // Prune stale entries every 100 writes to prevent unbounded growth
-    if (++debounceWriteCount >= 100) {
-      debounceWriteCount = 0;
-      for (const k in lastEventMap) {
-        if ((now - lastEventMap[k]) >= CONFIG.event.debounceMs) {
-          delete lastEventMap[k];
-        }
-      }
-    }
-    if (lastEventMap[key] && (now - lastEventMap[key]) < CONFIG.event.debounceMs) {
-    /*! v8 ignore stop */
-      return true;
-    }
-    lastEventMap[key] = now;
-    return false;
+    return debounce.isDuplicate(key);
   }
 
   function getElementKey(el: Element): string {
