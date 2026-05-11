@@ -58,6 +58,10 @@ export interface VoucherifyConsentConfig {
 export interface VoucherifyRetryConfig {
   maxRetries: number;
   baseDelay: number;
+  // Per-request timeout for the fetch call. An AbortController fires
+  // after this many ms; retries still apply on timeout. 0 disables the
+  // timeout entirely (legacy behavior).
+  requestTimeoutMs: number;
 }
 
 export interface SegmentRule {

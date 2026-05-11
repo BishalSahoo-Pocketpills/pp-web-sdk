@@ -1,5 +1,6 @@
 import type { PPLib } from '@src/types/common.types';
 import type { BrazeConfig } from '@src/types/braze.types';
+import { createDebounceTracker } from '@src/common/debounce';
 
 export function createPurchaseHandler(
   win: Window & typeof globalThis,
@@ -12,29 +13,12 @@ export function createPurchaseHandler(
   const CURRENCY_ATTR = 'data-braze-currency';
   const QUANTITY_ATTR = 'data-braze-quantity';
 
-  const lastPurchaseMap: Record<string, number> = {};
-  let debounceWriteCount = 0;
+  const debounce = createDebounceTracker(CONFIG.event);
   let bound = false;
   let bridged = false;
 
   function isDuplicate(key: string): boolean {
-    const now = Date.now();
-    /*! v8 ignore start */
-    // Prune stale entries every 100 writes to prevent unbounded growth
-    if (++debounceWriteCount >= 100) {
-      debounceWriteCount = 0;
-      for (const k in lastPurchaseMap) {
-        if ((now - lastPurchaseMap[k]) >= CONFIG.event.debounceMs) {
-          delete lastPurchaseMap[k];
-        }
-      }
-    }
-    if (lastPurchaseMap[key] && (now - lastPurchaseMap[key]) < CONFIG.event.debounceMs) {
-    /*! v8 ignore stop */
-      return true;
-    }
-    lastPurchaseMap[key] = now;
-    return false;
+    return debounce.isDuplicate(key);
   }
 
   function handlePurchaseClick(e: Event): void {

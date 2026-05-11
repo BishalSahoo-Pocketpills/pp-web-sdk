@@ -278,6 +278,11 @@ import type { MixpanelGlobal } from '@src/types/window';
 
   const CAMPAIGN_KEYWORDS = 'utm_source utm_medium utm_campaign utm_content utm_term'.split(' ');
 
+  // VWO experiment-props bridging — total cap = 30 attempts * 500ms = 15s
+  // (matches the VWO module's EXPERIMENT_POLL_* constants).
+  const VWO_BRIDGE_POLL_MAX_ATTEMPTS = 30;
+  const VWO_BRIDGE_POLL_INTERVAL_MS = 500;
+
   // Fallback convention (Mixpanel-style):
   //   utm_source → '$direct'   (matches Mixpanel's stock attribution model)
   //   everything else → 'none'
@@ -625,11 +630,11 @@ import type { MixpanelGlobal } from '@src/types/window';
           let vwoPollCount = 0;
           vwoPollInterval = win.setInterval(function() {
             vwoPollCount++;
-            if (registerVWOProps() || vwoPollCount >= 30) {
+            if (registerVWOProps() || vwoPollCount >= VWO_BRIDGE_POLL_MAX_ATTEMPTS) {
               win.clearInterval(vwoPollInterval!);
               vwoPollInterval = null;
             }
-          }, 500);
+          }, VWO_BRIDGE_POLL_INTERVAL_MS);
         }
 
         ppLib.log('info', '[ppMixpanel] Initialized successfully');

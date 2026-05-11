@@ -1,5 +1,6 @@
 import type { PPLib } from '@src/types/common.types';
 import type { BrazeConfig } from '@src/types/braze.types';
+import { createDebounceTracker } from '@src/common/debounce';
 
 export function createFormHandler(
   win: Window & typeof globalThis,
@@ -11,28 +12,11 @@ export function createFormHandler(
     identify: (userId: string) => void;
   }
 ) {
-  const lastSubmitMap: Record<string, number> = {};
-  let debounceWriteCount = 0;
+  const debounce = createDebounceTracker(CONFIG.form);
   let bound = false;
 
   function isDuplicate(formName: string): boolean {
-    const now = Date.now();
-    /*! v8 ignore start */
-    // Prune stale entries every 100 writes to prevent unbounded growth
-    if (++debounceWriteCount >= 100) {
-      debounceWriteCount = 0;
-      for (const k in lastSubmitMap) {
-        if ((now - lastSubmitMap[k]) >= CONFIG.form.debounceMs) {
-          delete lastSubmitMap[k];
-        }
-      }
-    }
-    if (lastSubmitMap[formName] && (now - lastSubmitMap[formName]) < CONFIG.form.debounceMs) {
-    /*! v8 ignore stop */
-      return true;
-    }
-    lastSubmitMap[formName] = now;
-    return false;
+    return debounce.isDuplicate(formName);
   }
 
   function extractFields(form: HTMLFormElement): Record<string, string> {
