@@ -9,3 +9,4 @@ test.html
 .env
 test-results/
 playwright-report/
+test-attribution.html
