@@ -1,4 +1,4 @@
-import type { DeepPartial } from '@src/types/utility.types';
+import type { DeepPartial, SdkSecurityOptions } from '@src/types/utility.types';
 
 export interface MixpanelCookieNames {
   userId: string;
@@ -6,7 +6,7 @@ export interface MixpanelCookieNames {
   experiments: string;
 }
 
-export interface MixpanelConfig {
+export interface MixpanelConfig extends SdkSecurityOptions {
   enabled: boolean;
   token: string;
   projectName: string;
@@ -15,32 +15,11 @@ export interface MixpanelConfig {
   sessionTimeout: number;
   cookieNames: MixpanelCookieNames;
   nonce?: string;
-  /**
-   * Override the Mixpanel SDK CDN URL. Defaults to
-   * `https://cdn.mxpnl.com/libs/mixpanel-2-latest.min.js`. Use this to pin
-   * to a specific version (e.g. `mixpanel-2-2.65.0.min.js`) so an
-   * `integrity` hash can be set; the `-latest` URL drifts and would break
-   * SRI on every Mixpanel release.
-   */
+  // SRI is only effective when paired with a pinned cdnUrl — the default
+  // `-latest` URL changes whenever Mixpanel ships, which would
+  // invalidate the hash and break the loader. Pin to a specific version
+  // (e.g. `mixpanel-2-2.65.0.min.js`) before flipping requireIntegrity.
   cdnUrl?: string;
-  /**
-   * Subresource Integrity hash for the Mixpanel CDN script
-   * (e.g. 'sha384-…'). Only effective when paired with a pinned `cdnUrl`
-   * — the default `-latest` URL changes whenever Mixpanel ships, which
-   * would invalidate the hash and break the loader.
-   */
-  integrity?: string;
-  /**
-   * Defaults to 'anonymous' when `integrity` is set.
-   */
-  crossOrigin?: 'anonymous' | 'use-credentials';
-  /**
-   * Fail-closed switch — refuse to inject the script if no `integrity`
-   * is configured. Defaults to `false` (warn-only) so deployments don't
-   * silently break analytics on a hash typo. See BrazeSdkConfig for the
-   * full Phase-1 → Phase-3 rationale.
-   */
-  requireIntegrity?: boolean;
   /**
    * When true (default), `ppLib.mixpanel.track()` merges the SDK's canonical
    * event properties (UTM touch attribution, device/session/login state,
