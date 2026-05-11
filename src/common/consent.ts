@@ -22,6 +22,7 @@
  */
 
 import type { PPLib } from '@src/types/common.types';
+import type { DeepPartial } from '@src/types/utility.types';
 
 export type ConsentMode = 'opt-in' | 'opt-out';
 export type ConsentStatus = 'granted' | 'denied' | 'unknown';
@@ -36,7 +37,7 @@ export interface ConsentService {
   status(): ConsentStatus;
   grant(): void;
   revoke(): void;
-  configure(opts: Partial<ConsentConfig>): void;
+  configure(opts: DeepPartial<ConsentConfig>): void;
 }
 
 interface PpAnalyticsLike {
@@ -104,7 +105,7 @@ export function createConsentService(
     status,
     grant: () => persist('granted'),
     revoke: () => persist('denied'),
-    configure: (opts: Partial<ConsentConfig>) => {
+    configure: (opts: DeepPartial<ConsentConfig>) => {
       if (opts.mode === 'opt-in' || opts.mode === 'opt-out') config.mode = opts.mode;
       if (typeof opts.storageKey === 'string' && opts.storageKey) config.storageKey = opts.storageKey;
     }

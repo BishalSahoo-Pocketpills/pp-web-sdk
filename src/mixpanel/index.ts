@@ -7,6 +7,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { MixpanelConfig } from '@src/types/mixpanel.types';
+import type { DeepPartial } from '@src/types/utility.types';
 import type { MixpanelGlobal } from '@src/types/window';
 
 (function(win: Window & typeof globalThis, doc: Document) {
@@ -641,7 +642,7 @@ import type { MixpanelGlobal } from '@src/types/window';
   // =====================================================
 
   ppLib.mixpanel = {
-    configure: function(options?: Partial<MixpanelConfig>) {
+    configure: function(options?: DeepPartial<MixpanelConfig>) {
       /*! v8 ignore start */
       if (options) {
       /*! v8 ignore stop */

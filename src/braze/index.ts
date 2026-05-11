@@ -7,6 +7,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { BrazeConfig } from '@src/types/braze.types';
+import type { DeepPartial } from '@src/types/utility.types';
 import { createBrazeConfig } from '@src/braze/config';
 import { createSdkLoader } from '@src/braze/sdk-loader';
 import { createUserManager } from '@src/braze/user';
@@ -152,7 +153,7 @@ import { createPurchaseHandler } from '@src/braze/purchases';
   }
 
   ppLib.braze = {
-    configure: function(options?: Partial<BrazeConfig>) {
+    configure: function(options?: DeepPartial<BrazeConfig>) {
       /*! v8 ignore start */
       if (options) {
       /*! v8 ignore stop */

@@ -1,3 +1,5 @@
+import type { DeepPartial } from '@src/types/utility.types';
+
 export interface EcommerceDefaults {
   brand: string;
   category: string;
@@ -52,9 +54,9 @@ export interface EcommerceData {
 }
 
 export interface EcommerceAPI {
-  configure: (options?: Partial<EcommerceConfig>) => EcommerceConfig;
+  configure: (options?: DeepPartial<EcommerceConfig>) => EcommerceConfig;
   trackViewItem: () => void;
-  trackItem: (itemData: Partial<EcommerceItem> & { price: string | number }) => void;
+  trackItem: (itemData: DeepPartial<EcommerceItem> & { price: string | number }) => void;
   getItems: () => EcommerceItem[];
   getConfig: () => EcommerceConfig;
 }

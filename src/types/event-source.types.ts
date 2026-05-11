@@ -1,3 +1,5 @@
+import type { DeepPartial } from '@src/types/utility.types';
+
 export interface EventSourcePlatforms {
   mixpanel: { enabled: boolean };
   gtm: { enabled: boolean };
@@ -37,7 +39,7 @@ export interface EventSourceData {
 }
 
 export interface EventSourceAPI {
-  configure: (options?: Partial<EventSourceConfig>) => EventSourceConfig;
+  configure: (options?: DeepPartial<EventSourceConfig>) => EventSourceConfig;
   init: () => void;
   trackElement: (element: Element) => void;
   trackCustom: (eventSource: string, properties?: Record<string, unknown>) => void;

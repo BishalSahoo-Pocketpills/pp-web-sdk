@@ -7,6 +7,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, CustomPlatform } from '@src/types/analytics.types';
+import type { DeepPartial } from '@src/types/utility.types';
 
 // Internal Mixpanel-platform queue payload — discriminator decides whether
 // the upstream call goes to mixpanel.register or mixpanel.track.
@@ -1082,7 +1083,7 @@ type MixpanelQueueData = {
   const API = {
     version: CONFIG.version,
 
-    config: function(options?: Partial<AnalyticsConfig>) {
+    config: function(options?: DeepPartial<AnalyticsConfig>) {
       try {
         /*! v8 ignore start */
         if (options) {

@@ -14,6 +14,7 @@
  * recomputed on each build() call.
  */
 import type { PPLib } from '@src/types/common.types';
+import type { DeepPartial } from '@src/types/utility.types';
 
 export interface EventPropertiesBuilderCookieNames {
   userId: string;
@@ -23,7 +24,7 @@ export interface EventPropertiesBuilderCookieNames {
 }
 
 export interface EventPropertiesBuilderOpts {
-  cookieNames?: Partial<EventPropertiesBuilderCookieNames>;
+  cookieNames?: DeepPartial<EventPropertiesBuilderCookieNames>;
   defaultPlatform?: string;
 }
 
