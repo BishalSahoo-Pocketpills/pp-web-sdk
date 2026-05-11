@@ -99,6 +99,10 @@ export interface PPLib {
   extend: <T extends object, U>(target: T, source: U) => T & U;
   ready: (callback: (ppLib: PPLib) => void) => void;
   attribution: import('../common/attribution').AttributionService;
+  // Unified consent gate. Dispatch sites (mixpanel.track facade, ecommerce
+  // pushes, event-source dispatches) call `consent.isGranted()` before
+  // sending. Default mode is opt-out — flip to 'opt-in' for GDPR regions.
+  consent: import('../common/consent').ConsentService;
   login?: import('./login.types').LoginAPI;
   ecommerce?: import('./ecommerce.types').EcommerceAPI;
   eventSource?: import('./event-source.types').EventSourceAPI;

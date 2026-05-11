@@ -63,6 +63,11 @@ export function createEventHandler(
 
   function handleInteraction(e: Event): void {
     try {
+      // Consent gate — drop silently before any work (sanitization,
+      // dedup, prop extraction). Braze's session-level consent fires at
+      // SDK init; this handles mid-session revoke.
+      if (ppLib.consent && !ppLib.consent.isGranted()) return;
+
       const target = e.target as Element;
       const el = target.closest('[' + CONFIG.event.eventAttribute + ']');
 

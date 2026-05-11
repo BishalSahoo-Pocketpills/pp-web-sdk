@@ -59,6 +59,10 @@ export function createFormHandler(
 
   function handleSubmit(e: Event): void {
     try {
+      // Consent gate — drop silently before identifying or sending. Form
+      // identify-by-email is the highest-risk PII leak path; gate first.
+      if (ppLib.consent && !ppLib.consent.isGranted()) return;
+
       const target = e.target as Element;
       const form = target.closest('[' + CONFIG.form.formAttribute + ']') as HTMLFormElement;
 

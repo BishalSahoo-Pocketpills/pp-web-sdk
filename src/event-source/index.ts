@@ -261,6 +261,11 @@ import type { EventSourceConfig, EventSourceData } from '@src/types/event-source
     // marketingAttribution is auto-injected by the global dataLayer.push and
     // mixpanel.track patches in the attribution service — no per-module enrichment needed.
 
+    // Consent gate — single check covers all three platforms (Mixpanel
+    // facade also self-gates, but stopping here avoids redundant GTM /
+    // VWO sends on a denied session).
+    if (ppLib.consent && !ppLib.consent.isGranted()) return;
+
     sendToMixpanel(data);
     sendToGTM(data);
     sendToVWO(data);
