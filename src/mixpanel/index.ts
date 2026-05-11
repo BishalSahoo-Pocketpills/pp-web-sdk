@@ -44,6 +44,9 @@ import type { MixpanelGlobal } from '@src/types/window';
   function trackFacade(eventName: string, properties?: Record<string, unknown>): boolean {
     try {
       if (!CONFIG.enabled) return false;
+      // Consent gate — drop silently on denial. No log noise (would fire
+      // on every event during a denied session) and no stub-queue growth.
+      if (ppLib.consent && !ppLib.consent.isGranted()) return false;
       const mp = win.mixpanel;
       if (!mp || typeof mp.track !== 'function') return false;
       if (typeof eventName !== 'string' || !eventName) {

@@ -39,6 +39,7 @@ export function createPurchaseHandler(
 
   function handlePurchaseClick(e: Event): void {
     try {
+      if (ppLib.consent && !ppLib.consent.isGranted()) return;
       const target = e.target as Element;
       const el = target.closest('[' + PURCHASE_ATTR + ']');
 
@@ -99,6 +100,7 @@ export function createPurchaseHandler(
     properties?: Record<string, unknown>
   ): void {
     try {
+      if (ppLib.consent && !ppLib.consent.isGranted()) return;
       const sanitizedId = ppLib.Security.sanitize(productId);
       /*! v8 ignore start */
       if (!sanitizedId) {
