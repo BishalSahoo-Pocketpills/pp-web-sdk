@@ -12,6 +12,24 @@ been published behind a version tag. Breaking changes are flagged
 
 ### Security
 
+- **Unified consent gate above per-SDK opt-outs (`ppLib.consent`).**
+  Adds a single dispatch-time consent check above the existing per-SDK
+  opt-out toggles (Mixpanel's `optOutByDefault`, Braze's session gate).
+  All event-dispatch paths now drop silently when consent is denied —
+  no log noise during a denied session, no stub-queue accumulation.
+  - API: `ppLib.consent.isGranted()` / `status()` / `grant()` /
+    `revoke()` / `configure({ mode, storageKey })`.
+  - Resolution order: (1) `win.ppAnalytics.consent.status()` if
+    installed (single source of truth); (2) localStorage `pp_consent`
+    value (`'denied'` / `'granted'` / legacy `'approved'`); (3) fallback
+    by mode — `'opt-out'` (default) grants, `'opt-in'` (GDPR) denies.
+  - Gated dispatch sites: `mixpanel.track` facade, `ecommerce`
+    dispatch (GTM + Mixpanel), `event-source` dispatch (GTM + Mixpanel
+    + VWO), `braze.events.handleInteraction`, `braze.forms.handleSubmit`,
+    `braze.purchases.handlePurchaseClick`, `braze.purchases.trackPurchase`,
+    and `braze.trackEvent`. Voucherify is pricing infrastructure, not
+    analytics — left ungated.
+
 - **Subresource Integrity (SRI) for Braze and Mixpanel SDK loads.**
   The Braze and Mixpanel CDN script tags now accept three new optional
   config fields — `integrity`, `crossOrigin`, and `requireIntegrity` —
@@ -138,6 +156,44 @@ been published behind a version tag. Breaking changes are flagged
   the module.
 
 ### Changed
+
+- **`configure()` signatures use `DeepPartial<T>`.** All module
+  `configure()` methods (analytics, braze, datalayer, ecommerce, event-
+  source, login, mixpanel, vwo, voucherify, common/attribution, common/
+  event-properties-builder, common/consent) now accept `DeepPartial<T>`
+  instead of `Partial<T>`. Callers can override a single nested field
+  without restating the full sub-config — matches what the runtime
+  `createExtend` already does. Backward-compatible: anything assignable
+  to `Partial<T>` is assignable to `DeepPartial<T>`. The new type is in
+  `src/types/utility.types.ts`.
+
+- **Shared `SdkSecurityOptions` interface.** Braze and Mixpanel SDK
+  configs now extend a single shared interface (in `utility.types.ts`)
+  for `integrity` / `crossOrigin` / `requireIntegrity`. Removes ~30
+  lines of duplicated JSDoc; future loaders adopting SRI extend the
+  same interface for coherence.
+
+- **Voucherify fetch timeout.** `VoucherifyRetryConfig.requestTimeoutMs`
+  (default `8000`) wraps each fetch attempt in an `AbortController` so
+  a slow Voucherify response can't stall checkout. Retries still apply
+  on timeout; set to `0` to opt out of the controller (legacy behavior).
+
+- **Debounce dedup.** Three parallel inline debounce implementations in
+  `braze/events.ts`, `braze/forms.ts`, `braze/purchases.ts` replaced
+  with the shared `createDebounceTracker` from `common/debounce.ts`.
+
+- **febpt-variant.ts hardened.** Hardcoded Webflow CMS selectors are
+  now in a `DEFAULT_CONFIG` overridable via `window.__ppFebptVariant`
+  before script load. The 15s observer timeout now `console.warn`s the
+  unmatched selectors so CMS class renames surface instead of failing
+  silently. Style tag has an id and is de-duplicated on repeated
+  invocation.
+
+- **Cross-module integration tests.** New `tests/integration/`
+  directory with three files exercising real IIFE bundles in shared
+  jsdom — ecommerce → mixpanel + dataLayer, braze SRI fail-closed +
+  consent, voucherify timeout + baseline fallback. Locks in the
+  cross-module behaviors that unit-test mocks can hide.
 
 - **Codebase-wide TypeScript modernization.** Migrated all `var` → `let`/
   `const` (635 replacements across 28 files; only the vendored Mixpanel
