@@ -1,3 +1,5 @@
+import type { DeepPartial } from '@src/types/utility.types';
+
 export interface VoucherifyApiConfig {
   applicationId: string;
   /**
@@ -290,11 +292,11 @@ export interface DOMProduct {
 }
 
 export interface VoucherifyAPI {
-  configure: (options?: Partial<VoucherifyConfig>) => VoucherifyConfig;
+  configure: (options?: DeepPartial<VoucherifyConfig>) => VoucherifyConfig;
   init: () => void;
   fetchPricing: (productIds?: string[]) => Promise<PricingResult[]>;
   fetchOffers: (options?: FetchOffersOptions) => Promise<OffersResult>;
-  validateVoucher: (code: string, context?: Partial<ValidationContext>) => Promise<ValidationResult>;
+  validateVoucher: (code: string, context?: DeepPartial<ValidationContext>) => Promise<ValidationResult>;
   checkQualifications: (context?: QualificationContext) => Promise<QualificationResult>;
   clearCache: () => void;
   isReady: () => boolean;

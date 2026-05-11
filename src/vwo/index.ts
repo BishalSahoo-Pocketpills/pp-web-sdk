@@ -7,6 +7,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { VWOConfig, VWOExperiment } from '@src/types/vwo.types';
+import type { DeepPartial } from '@src/types/utility.types';
 import { createVWOConfig } from '@src/vwo/config';
 import { createDebounceTracker } from '@src/common/debounce';
 
@@ -540,7 +541,7 @@ import { createDebounceTracker } from '@src/common/debounce';
   // =====================================================
 
   ppLib.vwo = {
-    configure: function(options?: Partial<VWOConfig>) {
+    configure: function(options?: DeepPartial<VWOConfig>) {
       if (options) {
         ppLib.extend(CONFIG, options);
       }

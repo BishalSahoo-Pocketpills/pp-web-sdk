@@ -1,3 +1,5 @@
+import type { DeepPartial } from '@src/types/utility.types';
+
 export interface BrazeSdkConfig {
   apiKey: string;
   baseUrl: string;
@@ -78,7 +80,7 @@ export interface BrazeConfig {
 }
 
 export interface BrazeAPI {
-  configure: (options?: Partial<BrazeConfig>) => BrazeConfig;
+  configure: (options?: DeepPartial<BrazeConfig>) => BrazeConfig;
   init: () => void;
   identify: (userId: string) => void;
   setUserAttributes: (attrs: Record<string, unknown>) => void;

@@ -1,13 +1,14 @@
 import type { PPLib } from '@src/types/common.types';
 import type { DataLayerConfig, DataLayerUser } from '@src/types/datalayer.types';
+import type { DeepPartial } from '@src/types/utility.types';
 
 export function createUserBuilder(
   ppLib: PPLib,
   CONFIG: DataLayerConfig
 ) {
-  let overrides: Partial<DataLayerUser> = {};
+  let overrides: DeepPartial<DataLayerUser> = {};
 
-  function setUser(user: Partial<DataLayerUser>): void {
+  function setUser(user: DeepPartial<DataLayerUser>): void {
     overrides = user;
   }
 
