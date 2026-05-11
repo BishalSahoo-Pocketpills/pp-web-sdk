@@ -29,12 +29,10 @@ async function build() {
     fs.mkdirSync(distDir, { recursive: true });
   }
 
-  for (const moduleName of MODULES) {
-    const entryPoint = path.join(srcDir, moduleName, 'index.ts');
-
+  async function buildEntry(entryPoint, outName) {
     await esbuild.build({
       entryPoints: [entryPoint],
-      outfile: path.join(distDir, moduleName + '.min.js'),
+      outfile: path.join(distDir, outName + '.min.js'),
       bundle: true,
       format: 'iife',
       minify: !isDev,
@@ -43,8 +41,18 @@ async function build() {
       charset: 'utf8',
       define: { '__PP_SDK_VERSION__': JSON.stringify(PKG_VERSION) },
     });
+    console.log('Built: dist/' + outName + '.min.js');
+  }
 
-    console.log('Built: dist/' + moduleName + '.min.js');
+  for (const moduleName of MODULES) {
+    await buildEntry(path.join(srcDir, moduleName, 'index.ts'), moduleName);
+  }
+
+  // Standalone top-level scripts (embed via <script> tag, no ppLib dep).
+  const STANDALONE = [{ src: 'febpt-variant.ts', out: 'febpt-variant' }];
+  for (const entry of STANDALONE) {
+    const tsPath = path.join(srcDir, entry.src);
+    if (fs.existsSync(tsPath)) await buildEntry(tsPath, entry.out);
   }
 
   for (const file of cssFiles) {
