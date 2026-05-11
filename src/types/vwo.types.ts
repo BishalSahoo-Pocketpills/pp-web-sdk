@@ -1,3 +1,5 @@
+import type { DeepPartial } from '@src/types/utility.types';
+
 export interface VWOAttributes {
   goal: string;
   revenue: string;
@@ -27,7 +29,7 @@ export interface VWOExperiment {
 }
 
 export interface VWOAPI {
-  configure: (options?: Partial<VWOConfig>) => VWOConfig;
+  configure: (options?: DeepPartial<VWOConfig>) => VWOConfig;
   init: () => void;
   getVariation: (campaignId: string) => string | null;
   getActiveExperiments: () => VWOExperiment[];

@@ -1,3 +1,5 @@
+import type { DeepPartial } from '@src/types/utility.types';
+
 export interface MixpanelCookieNames {
   userId: string;
   ipAddress: string;
@@ -59,7 +61,7 @@ export interface SessionManager {
 }
 
 export interface MixpanelAPI {
-  configure: (options?: Partial<MixpanelConfig>) => MixpanelConfig;
+  configure: (options?: DeepPartial<MixpanelConfig>) => MixpanelConfig;
   init: () => void;
   /**
    * Internal SDK facade for sending events to Mixpanel. Other SDK modules

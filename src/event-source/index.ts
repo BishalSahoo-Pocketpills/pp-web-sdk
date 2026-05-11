@@ -7,6 +7,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { EventSourceConfig, EventSourceData } from '@src/types/event-source.types';
+import type { DeepPartial } from '@src/types/utility.types';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -340,7 +341,7 @@ import type { EventSourceConfig, EventSourceData } from '@src/types/event-source
 
   ppLib.eventSource = {
     /*! v8 ignore start */
-    configure: function(options?: Partial<EventSourceConfig>) {
+    configure: function(options?: DeepPartial<EventSourceConfig>) {
       if (options) {
         ppLib.extend(CONFIG, options);
       }

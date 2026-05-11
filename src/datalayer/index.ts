@@ -7,6 +7,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { DataLayerConfig, DataLayerItemInput, DataLayerUser, UserDataInput, UserDataHashedInput } from '@src/types/datalayer.types';
+import type { DeepPartial } from '@src/types/utility.types';
 import { createDataLayerConfig } from '@src/datalayer/config';
 import { createPageBuilder } from '@src/datalayer/page';
 import { createUserBuilder } from '@src/datalayer/user';
@@ -162,14 +163,14 @@ import { createEventPropertiesEnricher } from '@src/datalayer/enrichers/event-pr
   // =====================================================
 
   ppLib.datalayer = {
-    configure: function(options?: Partial<DataLayerConfig>) {
+    configure: function(options?: DeepPartial<DataLayerConfig>) {
       ppLib.extend(CONFIG, options || {});
       return CONFIG;
     },
 
     // ---- User context ----
 
-    setUser: function(user: Partial<DataLayerUser>) {
+    setUser: function(user: DeepPartial<DataLayerUser>) {
       userBuilder.setUser(user);
     },
 

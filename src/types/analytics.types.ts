@@ -1,3 +1,5 @@
+import type { DeepPartial } from '@src/types/utility.types';
+
 export interface ConsentFrameworkOneTrust {
   enabled: boolean;
   cookieName: string;
@@ -131,7 +133,7 @@ export interface AttributionData {
 
 export interface AnalyticsAPI {
   version: string;
-  config: (options?: Partial<AnalyticsConfig>) => AnalyticsConfig;
+  config: (options?: DeepPartial<AnalyticsConfig>) => AnalyticsConfig;
   consent: {
     grant: () => void;
     revoke: () => void;

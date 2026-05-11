@@ -7,6 +7,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { LoginConfig } from '@src/types/login.types';
+import type { DeepPartial } from '@src/types/utility.types';
 import { createLoginConfig } from '@src/login/config';
 import { createLogoutUser } from '@src/login/logout';
 import { createInitAuthState } from '@src/login/auth-state';
@@ -102,7 +103,7 @@ import { createInitAuthState } from '@src/login/auth-state';
   // =====================================================
 
   ppLib.login = {
-    configure: function(options?: Partial<LoginConfig>) {
+    configure: function(options?: DeepPartial<LoginConfig>) {
       /*! v8 ignore start */
       if (options) {
       /*! v8 ignore stop */

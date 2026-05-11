@@ -7,6 +7,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { EcommerceConfig, EcommerceItem, EcommerceData } from '@src/types/ecommerce.types';
+import type { DeepPartial } from '@src/types/utility.types';
 import { createDebounceTracker } from '@src/common/debounce';
 import { createEventGuard } from '@src/common/event-guard';
 
@@ -384,7 +385,7 @@ import { createEventGuard } from '@src/common/event-guard';
   // =====================================================
 
   ppLib.ecommerce = {
-    configure: function(options?: Partial<EcommerceConfig>) {
+    configure: function(options?: DeepPartial<EcommerceConfig>) {
       /*! v8 ignore start */
       if (options) {
       /*! v8 ignore stop */
@@ -395,7 +396,7 @@ import { createEventGuard } from '@src/common/event-guard';
 
     trackViewItem: trackViewItem,
 
-    trackItem: function(itemData: Partial<EcommerceItem> & { price: string | number }): void {
+    trackItem: function(itemData: DeepPartial<EcommerceItem> & { price: string | number }): void {
       /*! v8 ignore start */
       if (!itemData || !itemData.item_id || !itemData.item_name || !itemData.price) {
         ppLib.log('error', '[ppEcommerce] trackItem requires item_id, item_name, and price');

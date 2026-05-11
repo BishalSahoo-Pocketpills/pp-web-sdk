@@ -8,6 +8,7 @@
  * Used by: Analytics, DataLayer, EventSource, Mixpanel
  */
 import type { PPLib } from '@src/types/common.types';
+import type { DeepPartial } from '@src/types/utility.types';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -85,7 +86,7 @@ export function createAttributionService(
   // Configuration
   // ---------------------------------------------------------------------------
 
-  function configure(options: Partial<AttributionServiceConfig>): void {
+  function configure(options: DeepPartial<AttributionServiceConfig>): void {
     if (options.includeFirstTouch !== undefined) config.includeFirstTouch = options.includeFirstTouch;
     if (options.includeLastTouch !== undefined) config.includeLastTouch = options.includeLastTouch;
     if (options.enrichEvents !== undefined) config.enrichEvents = options.enrichEvents;

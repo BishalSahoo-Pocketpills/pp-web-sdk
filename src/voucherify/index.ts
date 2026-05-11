@@ -7,6 +7,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { VoucherifyConfig, ValidationContext, QualificationContext, PricingResult, ValidationResult, QualificationResult, OrderItem, DOMProduct, OffersResult, OffersBundle, OfferEntry, OfferCategory, FetchOffersOptions, VoucherifyRedeemable, VoucherifyApiResponse, EdgePricingResponse, CustomerMetadata } from '@src/types/voucherify.types';
+import type { DeepPartial } from '@src/types/utility.types';
 import { VoucherifyConfigError, VoucherifyApiError, VoucherifyPricingError } from '@src/voucherify/errors';
 
 (function(win: Window & typeof globalThis, doc: Document) {
@@ -1222,7 +1223,7 @@ import { VoucherifyConfigError, VoucherifyApiError, VoucherifyPricingError } fro
   // =====================================================
 
   ppLib.voucherify = {
-    configure: function(options?: Partial<VoucherifyConfig>) {
+    configure: function(options?: DeepPartial<VoucherifyConfig>) {
       if (options) {
         ppLib.extend(CONFIG, options);
       }
@@ -1239,7 +1240,7 @@ import { VoucherifyConfigError, VoucherifyApiError, VoucherifyPricingError } fro
       return fetchOffers(options);
     },
 
-    validateVoucher: function(code: string, context?: Partial<ValidationContext>): Promise<ValidationResult> {
+    validateVoucher: function(code: string, context?: DeepPartial<ValidationContext>): Promise<ValidationResult> {
       try {
         const sanitizedCode = ppLib.Security.sanitize(code);
         if (!sanitizedCode) {

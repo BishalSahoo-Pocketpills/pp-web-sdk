@@ -1,3 +1,5 @@
+import type { DeepPartial } from '@src/types/utility.types';
+
 // =====================================================
 // CONFIGURATION
 // =====================================================
@@ -136,10 +138,10 @@ export interface UserDataHashedInput {
 // =====================================================
 
 export interface DataLayerAPI {
-  configure: (options?: Partial<DataLayerConfig>) => DataLayerConfig;
+  configure: (options?: DeepPartial<DataLayerConfig>) => DataLayerConfig;
 
   // User context
-  setUser: (user: Partial<DataLayerUser>) => void;
+  setUser: (user: DeepPartial<DataLayerUser>) => void;
   setUserData: (data: UserDataInput) => Promise<void>;
   setUserDataHashed: (data: UserDataHashedInput) => void;
 

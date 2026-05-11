@@ -1,3 +1,5 @@
+import type { DeepPartial } from '@src/types/utility.types';
+
 export interface LoginCookieNames {
   userId: string;
   patientId: string;
@@ -24,7 +26,7 @@ export interface LoginConfig {
 }
 
 export interface LoginAPI {
-  configure: (options?: Partial<LoginConfig>) => LoginConfig;
+  configure: (options?: DeepPartial<LoginConfig>) => LoginConfig;
   init: () => void;
   isLoggedIn: () => boolean;
   logout: (hard?: boolean) => void;
