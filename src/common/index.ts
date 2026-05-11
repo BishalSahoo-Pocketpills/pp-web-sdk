@@ -14,6 +14,7 @@ import { createSecurity } from '@src/common/security';
 import { createStorage } from '@src/common/storage';
 import { createExtend } from '@src/common/utils';
 import { createAttributionService } from '@src/common/attribution';
+import { createConsentService } from '@src/common/consent';
 import { createSessionService } from '@src/common/session';
 import { createDataLayerEnricher } from '@src/common/datalayer-enricher';
 import { createEventPropertiesBuilder } from '@src/common/event-properties-builder';
@@ -118,6 +119,15 @@ import { safeLogPayload, safeLogError } from '@src/common/log-sanitize';
   // =====================================================
 
   ppLib.attribution = createAttributionService(win, ppLib);
+
+  // =====================================================
+  // CONSENT GATE
+  // Unified gate above per-SDK opt-out toggles. Dispatch sites check
+  // `ppLib.consent.isGranted()` before sending an event — denied drops
+  // the event silently (no log noise, no stub-queue growth).
+  // =====================================================
+
+  ppLib.consent = createConsentService(win, ppLib);
 
   // =====================================================
   // SESSION MANAGEMENT

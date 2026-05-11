@@ -264,12 +264,16 @@ import { createEventGuard } from '@src/common/event-guard';
   }
   /*! v8 ignore stop */
 
-  /*! v8 ignore start */
   function dispatchEvent(eventName: string, ecommerceData: EcommerceData): void {
+    // Consent gate — single check covers GTM + Mixpanel paths. Mixpanel
+    // facade also self-gates, but stopping here avoids the redundant
+    // GTM push (no point shipping ecommerce data to GTM if Mixpanel is denied).
+    if (ppLib.consent && !ppLib.consent.isGranted()) return;
+    /*! v8 ignore start */
     sendToGTM(eventName, ecommerceData);
     sendToMixpanel(eventName, ecommerceData);
+    /*! v8 ignore stop */
   }
-  /*! v8 ignore stop */
 
   // =====================================================
   // VIEW_ITEM — fires on page load

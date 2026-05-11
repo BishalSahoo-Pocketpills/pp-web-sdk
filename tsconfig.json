@@ -16,7 +16,8 @@
     "lib": ["ES2018", "DOM", "DOM.Iterable"],
     "baseUrl": ".",
     "paths": {
-      "@src/*": ["src/*"]
+      "@src/*": ["src/*"],
+      "@tests/*": ["tests/*"]
     }
   },
   "include": ["src/**/*.ts"],

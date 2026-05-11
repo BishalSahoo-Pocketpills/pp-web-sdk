@@ -116,6 +116,7 @@ import { createPurchaseHandler } from '@src/braze/purchases';
 
   function trackEvent(eventName: string, properties?: Record<string, unknown>): void {
     try {
+      if (ppLib.consent && !ppLib.consent.isGranted()) return;
       const sanitized = ppLib.Security.sanitize(eventName);
       /*! v8 ignore start */
       if (!sanitized) return;
