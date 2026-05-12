@@ -73,13 +73,28 @@ describe('Integration: ecommerce → mixpanel + dataLayer', () => {
     expect(mp.track).toHaveBeenCalledTimes(1);
     const [eventName, props] = mp.track.mock.calls[0];
     expect(eventName).toBe('add_to_cart');
+
     // Canonical event-properties context merged in by the facade —
-    // dataLayer enrichers and mixpanel see the same shape.
-    expect(props).toMatchObject({
-      currency: expect.any(String)
-    });
-    // Items array carried through
-    expect((props as { items: unknown[] }).items).toHaveLength(1);
+    // these fields come from ppLib.eventPropertiesBuilder.buildFlat() and
+    // must reach Mixpanel via the facade's enrichTrack path. If the facade
+    // stops calling the builder, OR the builder drops a field, this fails.
+    //
+    // Note: UTM touch keys (`utm_source [first touch]`, etc.) and
+    // `marketing_attribution` are intentionally NOT in buildFlat output —
+    // they're registered as Mixpanel super-properties separately.
+    // Asserting them here would create a false negative.
+    const propsObj = props as Record<string, unknown>;
+    expect(typeof propsObj.device_id).toBe('string');
+    expect((propsObj.device_id as string).length).toBeGreaterThan(0);
+    expect(typeof propsObj.pp_distinct_id).toBe('string');
+    expect(typeof propsObj.browser).toBe('string');
+    expect(typeof propsObj.device_type).toBe('string');
+    expect(typeof propsObj.current_url).toBe('string');
+    expect(propsObj.is_logged_in).toBeDefined();
+
+    // Caller's ecommerce data still flows through.
+    expect(propsObj.currency).toEqual(expect.any(String));
+    expect((propsObj.items as unknown[])).toHaveLength(1);
   });
 
   it('drops both Mixpanel and dataLayer events when consent is revoked', () => {
