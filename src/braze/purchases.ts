@@ -1,6 +1,7 @@
 import type { PPLib } from '@src/types/common.types';
 import type { BrazeConfig } from '@src/types/braze.types';
 import { createDebounceTracker } from '@src/common/debounce';
+import { addInteractionListener } from '@src/common/dom-events';
 
 export function createPurchaseHandler(
   win: Window & typeof globalThis,
@@ -173,8 +174,7 @@ export function createPurchaseHandler(
     if (bound) return;
     bound = true;
 
-    doc.addEventListener('click', handlePurchaseClick, { capture: false, passive: true } as EventListenerOptions);
-    doc.addEventListener('touchend', handlePurchaseClick, { capture: false, passive: true } as EventListenerOptions);
+    addInteractionListener(doc, handlePurchaseClick);
 
     bridgeEcommerce();
 

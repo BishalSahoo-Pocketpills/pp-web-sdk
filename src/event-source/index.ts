@@ -8,6 +8,7 @@
 import type { PPLib } from '@src/types/common.types';
 import type { EventSourceConfig, EventSourceData } from '@src/types/event-source.types';
 import type { DeepPartial } from '@src/types/utility.types';
+import { addInteractionListener } from '@src/common/dom-events';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -315,8 +316,7 @@ import type { DeepPartial } from '@src/types/utility.types';
       doc.removeEventListener('click', handleInteraction);
       doc.removeEventListener('touchend', handleInteraction);
       // Use event delegation on document — handles dynamic elements automatically
-      doc.addEventListener('click', handleInteraction, { capture: false, passive: true } as EventListenerOptions);
-      doc.addEventListener('touchend', handleInteraction, { capture: false, passive: true } as EventListenerOptions);
+      addInteractionListener(doc, handleInteraction);
 
       ppLib.log('info', '[ppEventSource] Initialized — listening for [' + CONFIG.attribute + '] interactions');
     } catch (e) {

@@ -2,6 +2,7 @@ import type { PPLib } from '@src/types/common.types';
 import type { DataLayerConfig, DataLayerItemInput, DataLayerItem } from '@src/types/datalayer.types';
 import { createDebounceTracker } from '@src/common/debounce';
 import { createEventGuard } from '@src/common/event-guard';
+import { addInteractionListener } from '@src/common/dom-events';
 
 const ECOMMERCE_EVENTS: Record<string, boolean> = {
   view_item: true,
@@ -174,8 +175,9 @@ export function createDomBinder(
     try {
       if (bound) return;
       bound = true;
-      doc.addEventListener('click', handleInteraction, { capture: false, passive: false } as EventListenerOptions);
-      doc.addEventListener('touchend', handleInteraction, { capture: false, passive: false } as EventListenerOptions);
+      // passive: false because the redirect-validation handler calls
+      // preventDefault() on cross-origin or invalid hrefs.
+      addInteractionListener(doc, handleInteraction, { passive: false });
       ppLib.log('info', '[ppDataLayer] DOM binding initialized');
     } catch (e) {
       ppLib.log('error', '[ppDataLayer] init error', ppLib.safeLogError(e));
