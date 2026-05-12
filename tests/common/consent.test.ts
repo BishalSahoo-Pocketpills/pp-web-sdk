@@ -52,6 +52,31 @@ describe('ppLib.consent', () => {
       window.ppLib.consent.grant();
       expect(window.ppLib.consent.isGranted()).toBe(true);
     });
+
+    it('opt-in mode + pre-stored "granted" → granted (stored value beats mode default)', () => {
+      window.localStorage.setItem('pp_consent', 'granted');
+      loadModule('common');
+      window.ppLib.consent.configure({ mode: 'opt-in' });
+      // Opt-in defaults to denial, but a persisted grant from a prior
+      // session must be honored without re-prompting.
+      expect(window.ppLib.consent.isGranted()).toBe(true);
+      expect(window.ppLib.consent.status()).toBe('granted');
+    });
+
+    it('opt-in mode + pre-stored "denied" → denied', () => {
+      window.localStorage.setItem('pp_consent', 'denied');
+      loadModule('common');
+      window.ppLib.consent.configure({ mode: 'opt-in' });
+      expect(window.ppLib.consent.isGranted()).toBe(false);
+      expect(window.ppLib.consent.status()).toBe('denied');
+    });
+
+    it('opt-out mode + pre-stored "denied" → denied (stored value beats mode default)', () => {
+      window.localStorage.setItem('pp_consent', 'denied');
+      loadModule('common');
+      // opt-out default would normally grant; explicit user denial wins.
+      expect(window.ppLib.consent.isGranted()).toBe(false);
+    });
   });
 
   describe('delegation to ppAnalytics.consent', () => {

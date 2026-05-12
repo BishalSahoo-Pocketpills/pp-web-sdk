@@ -61,11 +61,23 @@ async function freshLoad() {
 }
 
 describe('Voucherify native coverage', () => {
+  // 17 sites in this file mutate window.location via Object.defineProperty.
+  // Without restoration between tests, a thrown test leaves stale state
+  // visible to the next test in the same fork.
+  let originalLocationDescriptor: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    originalLocationDescriptor = Object.getOwnPropertyDescriptor(window, 'location');
+  });
+
   afterEach(() => {
     document.body.innerHTML = '';
     document.cookie.split(';').forEach(c => {
       document.cookie = c.trim().split('=')[0] + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
     });
+    if (originalLocationDescriptor) {
+      Object.defineProperty(window, 'location', originalLocationDescriptor);
+    }
   });
 
   // =====================================================
