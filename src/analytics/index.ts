@@ -8,6 +8,7 @@
 import type { PPLib } from '@src/types/common.types';
 import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, CustomPlatform } from '@src/types/analytics.types';
 import type { DeepPartial } from '@src/types/utility.types';
+import { pollUntil } from '@src/common/retry';
 
 // Internal Mixpanel-platform queue payload — discriminator decides whether
 // the upstream call goes to mixpanel.register or mixpanel.track.
@@ -637,7 +638,7 @@ type MixpanelQueueData = {
     Mixpanel: {
       ready: false,
       _checking: false,
-      _intervalId: null as ReturnType<typeof setInterval> | null,
+      _pollHandle: null as { cancel: () => void } | null,
       queue: [] as MixpanelQueueData[],
 
       send: function(data: MixpanelQueueData): void {
@@ -692,42 +693,37 @@ type MixpanelQueueData = {
         try {
           this._checking = true;
           const self = this;
-          let attempts = 0;
           const maxRetries = SafeUtils.get(CONFIG, 'platforms.mixpanel.maxRetries', 50);
           const retryInterval = SafeUtils.get(CONFIG, 'platforms.mixpanel.retryInterval', 100);
 
-          self._intervalId = setInterval(function() {
-            attempts++;
-
-            /*! v8 ignore start */
-            if (attempts >= maxRetries) {
-            /*! v8 ignore stop */
-              clearInterval(self._intervalId!);
-              self._intervalId = null;
+          self._pollHandle = pollUntil({
+            check: function() {
+              /*! v8 ignore start */
+              if (win.mixpanel && typeof win.mixpanel.register === 'function') {
+              /*! v8 ignore stop */
+                self._checking = false;
+                self.ready = true;
+                while (self.queue.length > 0) {
+                  const data = self.queue.shift();
+                  /*! v8 ignore start */
+                  if (data) {
+                  /*! v8 ignore stop */
+                    self.send(data);
+                  }
+                }
+                return true;
+              }
+              return false;
+            },
+            intervalMs: retryInterval,
+            maxAttempts: maxRetries,
+            onMaxAttempts: function() {
               self._checking = false;
               self.queue.length = 0;
               Utils.log('verbose', 'Mixpanel not available, clearing queued events');
-              return;
-            }
-
-            /*! v8 ignore start */
-            if (win.mixpanel && typeof win.mixpanel.register === 'function') {
-              clearInterval(self._intervalId!);
-              self._intervalId = null;
-              self._checking = false;
-              self.ready = true;
-            /*! v8 ignore stop */
-
-              while (self.queue.length > 0) {
-                const data = self.queue.shift();
-                /*! v8 ignore start */
-                if (data) {
-                /*! v8 ignore stop */
-                  self.send(data);
-                }
-              }
-            }
-          }, retryInterval);
+            },
+            win
+          });
         } catch (e) {
           this._checking = false;
           Utils.log('error', 'Mixpanel check ready error', e);
@@ -736,9 +732,9 @@ type MixpanelQueueData = {
 
       /*! v8 ignore start */
       destroy: function(): void {
-        if (this._intervalId) {
-          clearInterval(this._intervalId);
-          this._intervalId = null;
+        if (this._pollHandle) {
+          this._pollHandle.cancel();
+          this._pollHandle = null;
         }
         this._checking = false;
         this.ready = false;

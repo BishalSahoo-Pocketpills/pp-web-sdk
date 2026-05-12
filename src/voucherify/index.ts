@@ -9,6 +9,7 @@ import type { PPLib } from '@src/types/common.types';
 import type { VoucherifyConfig, ValidationContext, QualificationContext, PricingResult, ValidationResult, QualificationResult, OrderItem, DOMProduct, OffersResult, OffersBundle, OfferEntry, OfferCategory, FetchOffersOptions, VoucherifyRedeemable, VoucherifyApiResponse, EdgePricingResponse, CustomerMetadata } from '@src/types/voucherify.types';
 import type { DeepPartial } from '@src/types/utility.types';
 import { VoucherifyConfigError, VoucherifyApiError, VoucherifyPricingError } from '@src/voucherify/errors';
+import { withRetryAsync } from '@src/common/retry';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -117,45 +118,41 @@ import { VoucherifyConfigError, VoucherifyApiError, VoucherifyPricingError } fro
     return true;
   }
 
-  async function fetchWithRetry(url: string, options: RequestInit): Promise<Response> {
-    const maxRetries = CONFIG.retry.maxRetries;
-    const baseDelay = CONFIG.retry.baseDelay;
+  async function fetchOnce(url: string, options: RequestInit): Promise<Response> {
     const timeoutMs = CONFIG.retry.requestTimeoutMs;
-    let lastError: Error | undefined;
-
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      // Per-attempt AbortController so each retry gets its own deadline.
-      // Without this a slow server can stall checkout indefinitely — the
-      // browser default fetch timeout depends on the user agent and is
-      // typically too long (Chrome: ~5 minutes, Safari: forever).
-      const controller = timeoutMs > 0 ? new win.AbortController() : null;
-      const timer = controller
-        ? win.setTimeout(function() { controller.abort(); }, timeoutMs)
-        : null;
-      try {
-        const reqOptions: RequestInit = controller
-          ? { ...options, signal: controller.signal }
-          : options;
-        const response = await win.fetch(url, reqOptions);
-        // Do not retry on 4xx client errors
-        if (response.ok || (response.status >= 400 && response.status < 500)) {
-          return response;
-        }
-        // 5xx — retry
-        lastError = new Error('HTTP ' + response.status);
-      } catch (e) {
-        // Network error or abort — retry
-        lastError = e instanceof Error ? e : new Error(String(e));
-      } finally {
-        if (timer !== null) win.clearTimeout(timer);
+    // Per-attempt AbortController so each retry gets its own deadline.
+    // Without this a slow server can stall checkout indefinitely — the
+    // browser default fetch timeout depends on the user agent and is
+    // typically too long (Chrome: ~5 minutes, Safari: forever).
+    const controller = timeoutMs > 0 ? new win.AbortController() : null;
+    const timer = controller
+      ? win.setTimeout(function() { controller.abort(); }, timeoutMs)
+      : null;
+    try {
+      const reqOptions: RequestInit = controller
+        ? { ...options, signal: controller.signal }
+        : options;
+      const response = await win.fetch(url, reqOptions);
+      // 2xx and 4xx return as-is — callers inspect `response.status`.
+      // Only 5xx throws so the retry HOF kicks in.
+      if (response.ok || (response.status >= 400 && response.status < 500)) {
+        return response;
       }
-      if (attempt < maxRetries) {
-        await new Promise(function(resolve) {
-          win.setTimeout(resolve, baseDelay * Math.pow(2, attempt));
-        });
-      }
+      throw new Error('HTTP ' + response.status);
+    } finally {
+      if (timer !== null) win.clearTimeout(timer);
     }
-    throw lastError;
+  }
+
+  function fetchWithRetry(url: string, options: RequestInit): Promise<Response> {
+    return withRetryAsync({
+      fn: () => fetchOnce(url, options),
+      // CONFIG.retry.maxRetries is the historical "extra attempts after
+      // the first" — total attempts = maxRetries + 1.
+      attempts: CONFIG.retry.maxRetries + 1,
+      baseDelay: CONFIG.retry.baseDelay,
+      win
+    });
   }
 
   async function apiRequest(endpoint: string, body: QualificationContext | ValidationContext | Record<string, unknown>): Promise<VoucherifyApiResponse> {

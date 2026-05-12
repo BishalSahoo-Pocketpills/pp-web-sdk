@@ -10,6 +10,7 @@ import type { VWOConfig, VWOExperiment } from '@src/types/vwo.types';
 import type { DeepPartial } from '@src/types/utility.types';
 import { createVWOConfig } from '@src/vwo/config';
 import { createDebounceTracker } from '@src/common/debounce';
+import { pollUntil } from '@src/common/retry';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -489,17 +490,17 @@ import { createDebounceTracker } from '@src/common/debounce';
     // 3. Polling: VWO loaded and drained queue before us, but hasn't
     //    set combination_chosen yet — poll until it appears
     let experimentsTracked = false;
-    let experimentPollInterval: number | null = null;
+    let experimentPoll: { cancel: () => void } | null = null;
 
     function tryTrackExperiments(): boolean {
       if (experimentsTracked) return true;
       if (readExperiments().length > 0) {
         trackExperiments();
         experimentsTracked = true;
-        // Clean up polling if it was the queue callback that succeeded
-        if (experimentPollInterval !== null) {
-          win.clearInterval(experimentPollInterval);
-          experimentPollInterval = null;
+        // Cancel any in-flight poll if the queue callback succeeded first.
+        if (experimentPoll) {
+          experimentPoll.cancel();
+          experimentPoll = null;
         }
         return true;
       }
@@ -518,14 +519,12 @@ import { createDebounceTracker } from '@src/common/debounce';
     // Strategy 3: Poll for combination_chosen (covers the gap where
     // VWO already drained the queue but hasn't assigned variations yet)
     if (!experimentsTracked) {
-      let pollCount = 0;
-      experimentPollInterval = win.setInterval(function() {
-        pollCount++;
-        if (tryTrackExperiments() || pollCount >= EXPERIMENT_POLL_MAX_ATTEMPTS) {
-          win.clearInterval(experimentPollInterval!);
-          experimentPollInterval = null;
-        }
-      }, EXPERIMENT_POLL_INTERVAL_MS);
+      experimentPoll = pollUntil({
+        check: tryTrackExperiments,
+        intervalMs: EXPERIMENT_POLL_INTERVAL_MS,
+        maxAttempts: EXPERIMENT_POLL_MAX_ATTEMPTS,
+        win
+      });
     }
 
     // Bind DOM for auto-tracking goals
