@@ -27,7 +27,13 @@ function setSearch(search: string): void {
 }
 
 describe('febpt-variant', () => {
+  // Capture window.location once so we can restore between tests. Without
+  // this, a thrown test leaves location pinned to a mocked value and the
+  // next test reads stale state.
+  let originalLocationDescriptor: PropertyDescriptor | undefined;
+
   beforeEach(() => {
+    originalLocationDescriptor = Object.getOwnPropertyDescriptor(window, 'location');
     document.head.innerHTML = '';
     document.body.innerHTML = '';
     delete (window as unknown as { __ppFebptVariant?: VariantGlobal }).__ppFebptVariant;
@@ -36,6 +42,9 @@ describe('febpt-variant', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    if (originalLocationDescriptor) {
+      Object.defineProperty(window, 'location', originalLocationDescriptor);
+    }
   });
 
   describe('trigger query', () => {
