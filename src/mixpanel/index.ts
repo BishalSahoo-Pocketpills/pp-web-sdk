@@ -9,6 +9,7 @@ import type { PPLib } from '@src/types/common.types';
 import type { MixpanelConfig } from '@src/types/mixpanel.types';
 import type { DeepPartial } from '@src/types/utility.types';
 import type { MixpanelGlobal } from '@src/types/window';
+import { pollUntil } from '@src/common/retry';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -576,7 +577,7 @@ import type { MixpanelGlobal } from '@src/types/window';
         // appear on every subsequent event (page view, add to cart, purchase).
         // Read from ppLib (set by VWO module) or sessionStorage (persisted).
         let vwoRegistered = false;
-        let vwoPollInterval: number | null = null;
+        let vwoPoll: { cancel: () => void } | null = null;
 
         function readVWOProps(): Record<string, string> | null {
           const props = ppLib._vwoExperimentProps;
@@ -602,10 +603,9 @@ import type { MixpanelGlobal } from '@src/types/window';
               }
               vwoRegistered = true;
               ppLib.log('info', '[ppMixpanel] VWO experiment properties registered');
-              // Clean up polling if queue callback succeeded first
-              if (vwoPollInterval !== null) {
-                win.clearInterval(vwoPollInterval);
-                vwoPollInterval = null;
+              if (vwoPoll) {
+                vwoPoll.cancel();
+                vwoPoll = null;
               }
               return true;
             }
@@ -627,14 +627,12 @@ import type { MixpanelGlobal } from '@src/types/window';
           });
 
           // Strategy 2: Poll for ppLib._vwoExperimentProps
-          let vwoPollCount = 0;
-          vwoPollInterval = win.setInterval(function() {
-            vwoPollCount++;
-            if (registerVWOProps() || vwoPollCount >= VWO_BRIDGE_POLL_MAX_ATTEMPTS) {
-              win.clearInterval(vwoPollInterval!);
-              vwoPollInterval = null;
-            }
-          }, VWO_BRIDGE_POLL_INTERVAL_MS);
+          vwoPoll = pollUntil({
+            check: registerVWOProps,
+            intervalMs: VWO_BRIDGE_POLL_INTERVAL_MS,
+            maxAttempts: VWO_BRIDGE_POLL_MAX_ATTEMPTS,
+            win
+          });
         }
 
         ppLib.log('info', '[ppMixpanel] Initialized successfully');

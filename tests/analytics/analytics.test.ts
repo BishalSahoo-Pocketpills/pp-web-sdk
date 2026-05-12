@@ -1387,6 +1387,10 @@ describe('Platforms.Mixpanel', () => {
       const platforms = window.ppAnalyticsDebug.platforms;
       platforms.Mixpanel.ready = true;
       platforms.Mixpanel.queue = [];
+      // Module init drains the auto-pageview synchronously now that pollUntil
+      // does an immediate check on mount — reset the mock so the assertion
+      // below isolates the send() rejection path.
+      mp.track.mockClear();
 
       platforms.Mixpanel.send({
         type: 'track',
@@ -3150,12 +3154,12 @@ describe('Mixpanel.destroy()', () => {
     platforms.Mixpanel.checkReady();
 
     expect(platforms.Mixpanel._checking).toBe(true);
-    expect(platforms.Mixpanel._intervalId).not.toBeNull();
+    expect(platforms.Mixpanel._pollHandle).not.toBeNull();
 
     // Destroy should clear everything
     platforms.Mixpanel.destroy();
 
-    expect(platforms.Mixpanel._intervalId).toBeNull();
+    expect(platforms.Mixpanel._pollHandle).toBeNull();
     expect(platforms.Mixpanel._checking).toBe(false);
     expect(platforms.Mixpanel.ready).toBe(false);
     expect(platforms.Mixpanel.queue.length).toBe(0);
@@ -3173,7 +3177,7 @@ describe('Mixpanel.destroy()', () => {
 
     // Now call destroy again when _intervalId is already null
     expect(() => platforms.Mixpanel.destroy()).not.toThrow();
-    expect(platforms.Mixpanel._intervalId).toBeNull();
+    expect(platforms.Mixpanel._pollHandle).toBeNull();
     expect(platforms.Mixpanel.ready).toBe(false);
   });
 });
