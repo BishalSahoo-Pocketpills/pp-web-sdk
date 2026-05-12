@@ -15,6 +15,12 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { DeepPartial } from '@src/types/utility.types';
+import {
+  UTM_FIRST_TOUCH,
+  UTM_LAST_TOUCH,
+  MARKETING_ATTRIBUTION_KEY,
+  MIXPANEL_SUPER_PROPERTY_KEYS_SET,
+} from '@src/common/super-property-keys';
 
 export interface EventPropertiesBuilderCookieNames {
   userId: string;
@@ -112,15 +118,9 @@ function emptyUtm(): RawUtmTouch {
 
 // Properties already registered as Mixpanel super-properties elsewhere in the
 // SDK. Skipping them in buildFlat() avoids redundant per-event payload bloat.
-const MIXPANEL_SUPER_PROP_KEYS: Record<string, true> = {
-  'marketing_attribution': true,
-  'utm_source [first touch]': true,
-  'utm_medium [first touch]': true,
-  'utm_campaign [first touch]': true,
-  'utm_source [last touch]': true,
-  'utm_medium [last touch]': true,
-  'utm_campaign [last touch]': true
-};
+// Sourced from the canonical key catalog so the filter list can't drift out
+// of sync with the Mixpanel module's super-property registration.
+const MIXPANEL_SUPER_PROP_KEYS = MIXPANEL_SUPER_PROPERTY_KEYS_SET;
 
 function defaultCookieNames(): EventPropertiesBuilderCookieNames {
   return {
@@ -385,14 +385,14 @@ export function createEventPropertiesBuilder(
       utm_campaign: utmOrFallback(currentUtm, 'utm_campaign'),
 
       // First touch UTM — locked once on the first visit that had utm_* params.
-      'utm_source [first touch]': utmOrFallback(firstUtm, 'utm_source'),
-      'utm_medium [first touch]': utmOrFallback(firstUtm, 'utm_medium'),
-      'utm_campaign [first touch]': utmOrFallback(firstUtm, 'utm_campaign'),
+      [UTM_FIRST_TOUCH.source]: utmOrFallback(firstUtm, 'utm_source'),
+      [UTM_FIRST_TOUCH.medium]: utmOrFallback(firstUtm, 'utm_medium'),
+      [UTM_FIRST_TOUCH.campaign]: utmOrFallback(firstUtm, 'utm_campaign'),
 
       // Last touch UTM — overwritten on every visit with utm_* params.
-      'utm_source [last touch]': utmOrFallback(lastUtm, 'utm_source'),
-      'utm_medium [last touch]': utmOrFallback(lastUtm, 'utm_medium'),
-      'utm_campaign [last touch]': utmOrFallback(lastUtm, 'utm_campaign'),
+      [UTM_LAST_TOUCH.source]: utmOrFallback(lastUtm, 'utm_source'),
+      [UTM_LAST_TOUCH.medium]: utmOrFallback(lastUtm, 'utm_medium'),
+      [UTM_LAST_TOUCH.campaign]: utmOrFallback(lastUtm, 'utm_campaign'),
 
       // User context
       country: stable.country,
@@ -404,7 +404,7 @@ export function createEventPropertiesBuilder(
       initial_referrer: firstTouchAttr ? firstTouchAttr.referrer : '',
 
       // Marketing attribution — the normalized view (handles source=, gclid, …).
-      marketing_attribution: ppLib.attribution ? ppLib.attribution.get() : null
+      [MARKETING_ATTRIBUTION_KEY]: ppLib.attribution ? ppLib.attribution.get() : null,
     };
 
     const page: BuiltPage = {
