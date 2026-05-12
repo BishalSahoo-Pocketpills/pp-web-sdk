@@ -10,6 +10,14 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
 import type { DeepPartial } from '@src/types/utility.types';
 import { VoucherifyConfigError, VoucherifyApiError, VoucherifyPricingError } from '@src/voucherify/errors';
 import { withRetryAsync } from '@src/common/retry';
+import { createPriceFormatter, buildDiscountLabel as buildDiscountLabelHelper, type PriceFormatter } from '@src/voucherify/formatters';
+import { createVoucherifyApiClient } from '@src/voucherify/api-client';
+import {
+  scanProductsFromDOM,
+  removeCloakAttribute as removeCloakAttributeHelper,
+  addLoadingClass as addLoadingClassHelper,
+  removeLoadingClass as removeLoadingClassHelper,
+} from '@src/voucherify/dom';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -93,151 +101,17 @@ import { withRetryAsync } from '@src/common/retry';
   };
 
   // =====================================================
-  // API CLIENT
+  // API CLIENT (extracted to ./api-client.ts)
   // =====================================================
 
-  const memCache: Map<string, { data: unknown; timestamp: number }> = new Map();
-
-  function getCacheKey(endpoint: string, body: unknown): string {
-    try {
-      return endpoint + ':' + JSON.stringify(body);
-    /*! v8 ignore start — JSON.stringify circular-ref throw is not reachable in normal usage */
-    } catch (e) {
-      return endpoint + ':' + String(Date.now());
-    }
-    /*! v8 ignore stop */
-  }
-
-  function isCacheValid(key: string): boolean {
-    const entry = memCache.get(key);
-    if (!entry) return false;
-    if ((Date.now() - entry.timestamp) >= CONFIG.cache.ttl) {
-      memCache.delete(key);
-      return false;
-    }
-    return true;
-  }
-
-  async function fetchOnce(url: string, options: RequestInit): Promise<Response> {
-    const timeoutMs = CONFIG.retry.requestTimeoutMs;
-    // Per-attempt AbortController so each retry gets its own deadline.
-    // Without this a slow server can stall checkout indefinitely — the
-    // browser default fetch timeout depends on the user agent and is
-    // typically too long (Chrome: ~5 minutes, Safari: forever).
-    const controller = timeoutMs > 0 ? new win.AbortController() : null;
-    const timer = controller
-      ? win.setTimeout(function() { controller.abort(); }, timeoutMs)
-      : null;
-    try {
-      const reqOptions: RequestInit = controller
-        ? { ...options, signal: controller.signal }
-        : options;
-      const response = await win.fetch(url, reqOptions);
-      // 2xx and 4xx return as-is — callers inspect `response.status`.
-      // Only 5xx throws so the retry HOF kicks in.
-      if (response.ok || (response.status >= 400 && response.status < 500)) {
-        return response;
-      }
-      throw new Error('HTTP ' + response.status);
-    } finally {
-      if (timer !== null) win.clearTimeout(timer);
-    }
-  }
-
-  function fetchWithRetry(url: string, options: RequestInit): Promise<Response> {
-    return withRetryAsync({
-      fn: () => fetchOnce(url, options),
-      // CONFIG.retry.maxRetries is the historical "extra attempts after
-      // the first" — total attempts = maxRetries + 1.
-      attempts: CONFIG.retry.maxRetries + 1,
-      baseDelay: CONFIG.retry.baseDelay,
-      win
-    });
-  }
-
-  async function apiRequest(endpoint: string, body: QualificationContext | ValidationContext | Record<string, unknown>): Promise<VoucherifyApiResponse> {
-    const cacheKey = getCacheKey(endpoint, body);
-
-    if (isCacheValid(cacheKey)) {
-      ppLib.log('info', '[ppVoucherify] Cache hit for ' + endpoint);
-      return memCache.get(cacheKey)!.data as VoucherifyApiResponse;
-    }
-
-    let apiResponse: Response;
-
-    if (CONFIG.cache.enabled) {
-      if (!CONFIG.cache.baseUrl) {
-        throw new VoucherifyConfigError('cache.baseUrl is not configured', { endpoint });
-      }
-      apiResponse = await fetchWithRetry(CONFIG.cache.baseUrl + endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-    } else {
-      if (!CONFIG.api.applicationId) {
-        throw new VoucherifyConfigError('Voucherify API applicationId missing', { endpoint });
-      }
-      // Browser-direct mode requires a public client token. The init() guard
-      // already refused to start the module if clientSecretKey is set without
-      // a proxy/edge consumer, but we re-check here so direct invocations of
-      // the public API after a misconfigured runtime override still fail safe.
-      const browserToken = CONFIG.api.clientPublicKey;
-      if (!browserToken) {
-        if (CONFIG.api.clientSecretKey) {
-          throw new VoucherifyConfigError(
-            'clientSecretKey must not be sent from the browser; configure clientPublicKey, or use cache.enabled=true with a proxy, or edge.mode="edge".',
-            { endpoint }
-          );
-        }
-        throw new VoucherifyConfigError('Voucherify clientPublicKey missing', { endpoint });
-      }
-      /*! v8 ignore start — jsdom location.origin is always http://localhost */
-      const origin = CONFIG.api.origin || win.location.origin;
-      /*! v8 ignore stop */
-      apiResponse = await fetchWithRetry(CONFIG.api.baseUrl + '/client/v1' + endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Client-Application-Id': CONFIG.api.applicationId,
-          'X-Client-Token': browserToken,
-          'origin': origin
-        },
-        body: JSON.stringify(body)
-      });
-    }
-
-    if (!apiResponse.ok) {
-      throw new VoucherifyApiError('Voucherify API non-OK', { endpoint, status: apiResponse.status });
-    }
-
-    const data = await apiResponse.json();
-
-    memCache.set(cacheKey, { data: data, timestamp: Date.now() });
-
-    // Evict stale entries when cache exceeds 50 entries to prevent unbounded growth
-    if (memCache.size > 50) {
-      const pruneTime = Date.now();
-      memCache.forEach(function(entry, key) {
-        if ((pruneTime - entry.timestamp) >= CONFIG.cache.ttl) {
-          memCache.delete(key);
-        }
-      });
-    }
-
-    return data;
-  }
-
-  function apiQualifications(context: QualificationContext | Record<string, unknown>): Promise<VoucherifyApiResponse> {
-    return apiRequest('/qualifications', context);
-  }
-
-  function apiValidations(context: ValidationContext | Record<string, unknown>): Promise<VoucherifyApiResponse> {
-    return apiRequest('/validations', context);
-  }
+  const apiClient = createVoucherifyApiClient(win, ppLib, CONFIG);
+  const apiQualifications = apiClient.apiQualifications;
+  const apiValidations = apiClient.apiValidations;
+  const apiRequest = apiClient.apiRequest;
+  const fetchWithRetry = apiClient.fetchWithRetry;
 
   function clearCache(): void {
-    memCache.clear();
+    apiClient.clearCache();
   }
 
   // =====================================================
@@ -312,61 +186,23 @@ import { withRetryAsync } from '@src/common/retry';
   }
 
   function getProductsFromDOM(): DOMProduct[] {
-    const attr = CONFIG.pricing.productAttribute;
-    const priceAttr = CONFIG.pricing.priceAttribute;
-    const elements = doc.querySelectorAll('[' + attr + ']');
-    const products: DOMProduct[] = [];
-
-    for (let i = 0; i < elements.length; i++) {
-      const el = elements[i];
-      const id = ppLib.Security.sanitize(el.getAttribute(attr) || '');
-      const price = parseFloat(el.getAttribute(priceAttr) || '0');
-      if (id) {
-        products.push({ id: id, basePrice: price, element: el });
-      } else {
-        ppLib.log('warn', '[ppVoucherify] Element with [' + attr + '] has empty product ID — skipped');
-      }
-    }
-
-    return products;
+    return scanProductsFromDOM(doc, ppLib, CONFIG);
   }
 
   // =====================================================
   // PRICING ENGINE
   // =====================================================
 
-  let priceFormatter: Intl.NumberFormat | null = null;
-
-  function getFormatter(): Intl.NumberFormat {
-    if (!priceFormatter) {
-      priceFormatter = new Intl.NumberFormat(CONFIG.pricing.locale, {
-        style: 'currency',
-        currency: CONFIG.pricing.currency
-      });
-    }
-    return priceFormatter;
-  }
+  // Formatter is rebuilt on configure() when locale/currency change.
+  // Stored as a let-binding so reconfigure can swap it.
+  let formatter: PriceFormatter = createPriceFormatter(CONFIG.pricing);
 
   function formatPrice(amount: number): string {
-    try {
-      return getFormatter().format(amount);
-    /*! v8 ignore start — Intl.NumberFormat.format() never throws in jsdom */
-    } catch (e) {
-      return CONFIG.pricing.currencySymbol + amount.toFixed(2);
-    }
-    /*! v8 ignore stop */
+    return formatter.format(amount);
   }
 
   function buildDiscountLabel(discountType: string, discountAmount: number, basePrice: number): string {
-    if (discountType === 'PERCENT') {
-      const percent = Math.round((discountAmount / basePrice) * 100);
-      return percent + '% OFF';
-    }
-    if (discountType === 'AMOUNT' || discountType === 'FIXED') {
-      return formatPrice(discountAmount) + ' OFF';
-    }
-    ppLib.log('warn', '[ppVoucherify] Unknown discount type: ' + discountType);
-    return '';
+    return buildDiscountLabelHelper(discountType, discountAmount, basePrice, formatter, ppLib.log);
   }
 
   function mapQualificationsToResults(
@@ -610,19 +446,15 @@ import { withRetryAsync } from '@src/common/retry';
   }
 
   function removeCloakAttribute(): void {
-    doc.documentElement.removeAttribute('data-pp-segment-pending');
+    removeCloakAttributeHelper(doc);
   }
 
   function addLoadingClass(products: DOMProduct[]): void {
-    for (let i = 0; i < products.length; i++) {
-      products[i].element.classList.add('pp-voucherify-loading');
-    }
+    addLoadingClassHelper(products);
   }
 
   function removeLoadingClass(products: DOMProduct[]): void {
-    for (let i = 0; i < products.length; i++) {
-      products[i].element.classList.remove('pp-voucherify-loading');
-    }
+    removeLoadingClassHelper(products);
   }
 
   async function fetchPricingEdge(products: DOMProduct[], ids: string[]): Promise<PricingResult[]> {
@@ -1238,6 +1070,9 @@ import { withRetryAsync } from '@src/common/retry';
     configure: function(options?: DeepPartial<VoucherifyConfig>) {
       if (options) {
         ppLib.extend(CONFIG, options);
+        // Rebuild formatter on locale/currency change so subsequent
+        // formatPrice() calls reflect the new config.
+        formatter = createPriceFormatter(CONFIG.pricing);
       }
       return CONFIG;
     },
