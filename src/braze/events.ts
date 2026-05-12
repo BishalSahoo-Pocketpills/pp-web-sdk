@@ -1,6 +1,7 @@
 import type { PPLib } from '@src/types/common.types';
 import type { BrazeConfig } from '@src/types/braze.types';
 import { createDebounceTracker } from '@src/common/debounce';
+import { addInteractionListener } from '@src/common/dom-events';
 
 export function createEventHandler(
   win: Window & typeof globalThis,
@@ -108,8 +109,7 @@ export function createEventHandler(
     if (bound) return;
     bound = true;
 
-    doc.addEventListener('click', handleInteraction, { capture: false, passive: true } as EventListenerOptions);
-    doc.addEventListener('touchend', handleInteraction, { capture: false, passive: true } as EventListenerOptions);
+    addInteractionListener(doc, handleInteraction);
     ppLib.log('info', '[ppBraze] Event handler bound');
   }
 

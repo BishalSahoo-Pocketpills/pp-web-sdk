@@ -10,6 +10,7 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '@src/types/e
 import type { DeepPartial } from '@src/types/utility.types';
 import { createDebounceTracker } from '@src/common/debounce';
 import { createEventGuard } from '@src/common/event-guard';
+import { addInteractionListener } from '@src/common/dom-events';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -350,8 +351,7 @@ import { createEventGuard } from '@src/common/event-guard';
   function init(): void {
     try {
       // Event delegation for add_to_cart clicks
-      doc.addEventListener('click', handleInteraction, { capture: false, passive: true } as EventListenerOptions);
-      doc.addEventListener('touchend', handleInteraction, { capture: false, passive: true } as EventListenerOptions);
+      addInteractionListener(doc, handleInteraction);
 
       // Defer view_item to window load so all analytics deps (Mixpanel, GTM)
       // are fully initialized.
