@@ -195,6 +195,22 @@ been published behind a version tag. Breaking changes are flagged
   consent, voucherify timeout + baseline fallback. Locks in the
   cross-module behaviors that unit-test mocks can hide.
 
+- **Shared retry primitives** in `src/common/retry.ts`:
+  - `pollUntil({ check, intervalMs, maxAttempts, onMaxAttempts?, win? })`
+    — cancellable setInterval-based polling. Replaces four duplicated
+    poll loops in `analytics`, `attribution`, `mixpanel` VWO bridge, and
+    `vwo` experiment-tracking.
+  - `withRetryAsync({ fn, attempts, baseDelay, shouldRetry?, win? })`
+    — promise-based exponential backoff retry. Now powers the
+    `voucherify` fetch retry; the AbortController timeout stays in
+    `fetchOnce` so each retry attempt gets its own deadline.
+
+- **`addInteractionListener` helper** in `src/common/dom-events.ts`
+  consolidates the `click + touchend` pair previously duplicated across
+  braze, ecommerce, event-source, and datalayer modules. Single call
+  with a `passive` flag (default `true`); returns a `remove()` handle
+  for caller-controlled teardown.
+
 - **Codebase-wide TypeScript modernization.** Migrated all `var` → `let`/
   `const` (635 replacements across 28 files; only the vendored Mixpanel
   SDK loader stub retains `var` for vendor-contract reasons). Replaced
