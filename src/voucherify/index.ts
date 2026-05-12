@@ -18,6 +18,7 @@ import {
   addLoadingClass as addLoadingClassHelper,
   removeLoadingClass as removeLoadingClassHelper,
 } from '@src/voucherify/dom';
+import { createSegmentResolver } from '@src/voucherify/segment-resolver';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -337,113 +338,12 @@ import {
   // EDGE MODE
   // =====================================================
 
-  // Ad platform click ID → ad_source segment mapping.
-  // These are standardized URL parameters set by ad platforms — not configurable.
-  const CLICK_ID_MAP: Array<{ param: string; segment: string; source: string }> = [
-    { param: 'gclid',    segment: 'ad_source:google',    source: 'google' },
-    { param: 'fbclid',   segment: 'ad_source:facebook',  source: 'facebook' },
-    { param: 'ttclid',   segment: 'ad_source:tiktok',    source: 'tiktok' },
-    { param: 'msclkid',  segment: 'ad_source:bing',      source: 'bing' },
-    { param: 'li_fat_id', segment: 'ad_source:linkedin', source: 'linkedin' },
-    { param: 'epik',     segment: 'ad_source:pinterest',  source: 'pinterest' },
-  ];
-
-  function detectAdSourceFromClickId(params: URLSearchParams): string | null {
-    // Check for platform click IDs (gclid, fbclid, ttclid, etc.)
-    for (let i = 0; i < CLICK_ID_MAP.length; i++) {
-      if (params.has(CLICK_ID_MAP[i].param)) {
-        // Special case: fbclid is shared by Facebook and Instagram.
-        // Use utm_source to disambiguate when available.
-        if (CLICK_ID_MAP[i].param === 'fbclid') {
-          const utmSrc = (params.get('utm_source') || '').toLowerCase().trim();
-          if (utmSrc === 'instagram') return 'ad_source:instagram';
-        }
-        return CLICK_ID_MAP[i].segment;
-      }
-    }
-
-    // Check utm_source as fallback — maps to ad_source:{value} if it matches a known platform
-    const utmSource = params.get('utm_source');
-    if (utmSource) {
-      const normalized = utmSource.toLowerCase().trim();
-      for (let j = 0; j < CLICK_ID_MAP.length; j++) {
-        if (CLICK_ID_MAP[j].source === normalized) {
-          return CLICK_ID_MAP[j].segment;
-        }
-      }
-      // Unknown utm_source — still create a segment for it
-      if (normalized) {
-        return 'ad_source:' + ppLib.Security.sanitize(normalized);
-      }
-    }
-
-    return null;
-  }
-
-  function persistSegmentCookie(segment: string): void {
-    const maxAge = CONFIG.segments.cookieMaxAgeMinutes * 60;
-    doc.cookie = CONFIG.segments.cookieName + '=' + encodeURIComponent(segment) +
-      ';path=/;max-age=' + maxAge + ';SameSite=Lax';
-  }
-
-  function resolveSegmentFromRules(): string | null {
-    const search = win.location.search;
-    const params = new URLSearchParams(search);
-
-    // Priority 1: Explicit segment param (e.g., ?vseg=ad_source:google)
-    const explicitSeg = params.get('vseg');
-    if (explicitSeg) {
-      const sanitized = ppLib.Security.sanitize(explicitSeg);
-      if (sanitized) {
-        persistSegmentCookie(sanitized);
-        return sanitized;
-      }
-    }
-
-    // Priority 2: Configurable rules (param + value → segment)
-    const rules = CONFIG.segments.rules;
-    if (rules && rules.length > 0) {
-      for (let i = 0; i < rules.length; i++) {
-        const rule = rules[i];
-        const paramValue = params.get(rule.param);
-        if (paramValue === rule.value) {
-          persistSegmentCookie(rule.segment);
-          return rule.segment;
-        }
-      }
-    }
-
-    // Priority 3: Ad platform click IDs (gclid, fbclid, ttclid, etc.)
-    const adSegment = detectAdSourceFromClickId(params);
-    if (adSegment) {
-      persistSegmentCookie(adSegment);
-      return adSegment;
-    }
-
-    // Priority 4: Persisted cookie from a prior visit
-    // getCookie already decodes — sanitize for defense-in-depth (cookie can be tampered)
-    const cookieVal = ppLib.getCookie(CONFIG.segments.cookieName);
-    if (cookieVal) return ppLib.Security.sanitize(cookieVal);
-
-    return null;
-  }
-
-  function determineSegment(): string {
-    if (CONFIG.segments.prioritizeOverMember) {
-      const ruleSegment = resolveSegmentFromRules();
-      if (ruleSegment) return ruleSegment;
-      const sourceId = ppLib.getCookie(CONFIG.context.customerSourceIdCookie);
-      if (sourceId) return 'member';
-      return 'anonymous';
-    }
-
-    // Default: member takes priority over rule-resolved segment
-    const sourceId = ppLib.getCookie(CONFIG.context.customerSourceIdCookie);
-    if (sourceId) return 'member';
-    const ruleSegment = resolveSegmentFromRules();
-    if (ruleSegment) return ruleSegment;
-    return 'anonymous';
-  }
+  // =====================================================
+  // SEGMENT RESOLUTION (extracted to ./segment-resolver.ts)
+  // =====================================================
+  const segmentResolver = createSegmentResolver(win, doc, ppLib, CONFIG);
+  const determineSegment = segmentResolver.determineSegment;
+  const resolveSegmentFromRules = segmentResolver.resolveSegmentFromRules;
 
   function removeCloakAttribute(): void {
     removeCloakAttributeHelper(doc);
