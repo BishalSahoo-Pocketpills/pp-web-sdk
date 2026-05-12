@@ -9,6 +9,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { DeepPartial } from '@src/types/utility.types';
+import { pollUntil } from '@src/common/retry';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -437,15 +438,8 @@ export function createAttributionService(
         return true;
       };
 
-      // Mixpanel may not be loaded yet — retry with polling
-      if (!registerMixpanel()) {
-        let attempts = 0;
-        const interval = win.setInterval(function() {
-          if (registerMixpanel() || ++attempts >= 20) {
-            win.clearInterval(interval);
-          }
-        }, 500);
-      }
+      // Mixpanel may not be loaded yet — poll until it is or give up.
+      pollUntil({ check: registerMixpanel, intervalMs: 500, maxAttempts: 20, win });
     } catch (e) {
       ppLib.log('warn', '[ppAttribution] Failed to register Mixpanel super property', e);
     }
