@@ -240,20 +240,53 @@ export function createEventPropertiesBuilder(
   // `marketingAttribution.source` correctly reports "febpt".
   // ---------------------------------------------------------------------------
 
+  // URL-keyed memoization for parsed search params. Every build() call hits
+  // this; without a cache, mp.track() pays for `new URLSearchParams(...)`
+  // plus 5× getQueryParam tokenization per event. URL is stable within a
+  // request unless the user navigates client-side, so we key on the raw
+  // URL string.
+  let cachedUrl: string | null = null;
+  let cachedSearchParams: URLSearchParams | null = null;
+  let cachedUtm: RawUtmTouch | null = null;
+
+  function getSearchParams(url: string): URLSearchParams {
+    if (cachedUrl !== url || cachedSearchParams === null) {
+      cachedUrl = url;
+      cachedSearchParams = new URLSearchParams(extractSearchString(url));
+      cachedUtm = null; // search changed → UTM cache invalidated
+    }
+    return cachedSearchParams;
+  }
+
+  function extractSearchString(url: string): string {
+    const qIdx = url.indexOf('?');
+    if (qIdx === -1) return '';
+    // Strip the leading '?' and any hash fragment that follows.
+    const afterQ = url.slice(qIdx + 1);
+    const hashIdx = afterQ.indexOf('#');
+    return hashIdx === -1 ? afterQ : afterQ.slice(0, hashIdx);
+  }
+
   function readUtmFromUrl(): RawUtmTouch {
-    const result = emptyUtm();
     try {
       // Prefer document.URL — matches the rest of the SDK's URL access and
       // honors the test pattern of stubbing document.URL via defineProperty.
       const url = (win.document && win.document.URL) || win.location.href || '';
+      if (cachedUtm !== null && cachedUrl === url) {
+        return cachedUtm;
+      }
+      const params = getSearchParams(url);
+      const result = emptyUtm();
       for (let i = 0; i < UTM_KEYS.length; i++) {
         const k = UTM_KEYS[i];
-        result[k] = ppLib.getQueryParam(url, k) || '';
+        result[k] = params.get(k) || '';
       }
+      cachedUtm = result;
+      return result;
     } catch (e) {
       /* keep empty result on any failure */
+      return emptyUtm();
     }
-    return result;
   }
 
   function readStoredUtm(storageKey: string): RawUtmTouch {
@@ -413,7 +446,9 @@ export function createEventPropertiesBuilder(
       referrer: win.document.referrer || ''
     };
 
-    const params = new URLSearchParams(win.location.search || '');
+    // Reuse the memoized URLSearchParams from getSearchParams — keyed on
+    // the raw URL so navigation invalidates correctly.
+    const params = getSearchParams((win.document && win.document.URL) || win.location.href || '');
     const attribution: BuiltAttribution = {
       fbclid: params.get('fbclid') || null,
       fbc: ppLib.getCookie('_fbc') || null,
