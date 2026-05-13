@@ -9,6 +9,7 @@ import type { PPLib } from '@src/types/common.types';
 import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, CustomPlatform } from '@src/types/analytics.types';
 import type { DeepPartial } from '@src/types/utility.types';
 import { pollUntil } from '@src/common/retry';
+import { bootstrapModule } from '@src/common/bootstrap';
 
 // Internal Mixpanel-platform queue payload — discriminator decides whether
 // the upstream call goes to mixpanel.register or mixpanel.track.
@@ -1168,14 +1169,6 @@ type MixpanelQueueData = {
 
   } // end initModule
 
-  // Safe load: wait for ppLib if not yet available
-  /*! v8 ignore start */
-  if (win.ppLib && win.ppLib._isReady) {
-    initModule(win.ppLib);
-  } else {
-    win.ppLibReady = win.ppLibReady || [];
-    win.ppLibReady.push(initModule);
-  }
-  /*! v8 ignore stop */
+  bootstrapModule(win, initModule);
 
 })(window, document);

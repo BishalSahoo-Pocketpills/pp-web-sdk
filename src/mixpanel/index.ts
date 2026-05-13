@@ -10,6 +10,7 @@ import type { MixpanelConfig } from '@src/types/mixpanel.types';
 import type { DeepPartial } from '@src/types/utility.types';
 import type { MixpanelGlobal } from '@src/types/window';
 import { pollUntil } from '@src/common/retry';
+import { bootstrapModule } from '@src/common/bootstrap';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -671,14 +672,6 @@ import { pollUntil } from '@src/common/retry';
 
   } // end initModule
 
-  // Safe load: wait for ppLib if not yet available
-  /*! v8 ignore start */
-  if (win.ppLib && win.ppLib._isReady) {
-    initModule(win.ppLib);
-  } else {
-    win.ppLibReady = win.ppLibReady || [];
-    win.ppLibReady.push(initModule);
-  }
-  /*! v8 ignore stop */
+  bootstrapModule(win, initModule);
 
 })(window, document);
