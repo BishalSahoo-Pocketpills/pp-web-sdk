@@ -404,8 +404,13 @@ export function createEventPropertiesBuilder(
     };
 
     const eventProperties: BuiltEventProperties = {
-      current_url: win.location.href,
-      url: win.location.pathname || '/',
+      // Per the event-attribute contract:
+      //   url         = exact URL of the page being visited (full href)
+      //   current_url = generic URL after removing params (pathname)
+      // The nested page.url (BuiltPage) stays as pathname — matches the
+      // contract sample shape.
+      url: win.location.href,
+      current_url: win.location.pathname || '/',
       device_id: stable.device_id,
       pp_user_id: userId,
       pp_patient_id: patientId,
