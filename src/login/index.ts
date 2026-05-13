@@ -11,6 +11,7 @@ import type { DeepPartial } from '@src/types/utility.types';
 import { createLoginConfig } from '@src/login/config';
 import { createLogoutUser } from '@src/login/logout';
 import { createInitAuthState } from '@src/login/auth-state';
+import { bootstrapModule } from '@src/common/bootstrap';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -136,14 +137,6 @@ import { createInitAuthState } from '@src/login/auth-state';
 
   } // end initModule
 
-  // Safe load: wait for ppLib if not yet available
-  /*! v8 ignore start */
-  if (win.ppLib && win.ppLib._isReady) {
-    initModule(win.ppLib);
-  } else {
-    win.ppLibReady = win.ppLibReady || [];
-    win.ppLibReady.push(initModule);
-  }
-  /*! v8 ignore stop */
+  bootstrapModule(win, initModule);
 
 })(window, document);

@@ -11,6 +11,7 @@ import type { DeepPartial } from '@src/types/utility.types';
 import { createVWOConfig } from '@src/vwo/config';
 import { createDebounceTracker } from '@src/common/debounce';
 import { pollUntil } from '@src/common/retry';
+import { bootstrapModule } from '@src/common/bootstrap';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -621,12 +622,6 @@ import { pollUntil } from '@src/common/retry';
 
   } // end initModule
 
-  // Safe load: wait for ppLib if not yet available
-  if (win.ppLib && win.ppLib._isReady) {
-    initModule(win.ppLib);
-  } else {
-    win.ppLibReady = win.ppLibReady || [];
-    win.ppLibReady.push(initModule);
-  }
+  bootstrapModule(win, initModule);
 
 })(window, document);

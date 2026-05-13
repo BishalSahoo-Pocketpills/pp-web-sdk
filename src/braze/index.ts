@@ -14,6 +14,8 @@ import { createUserManager } from '@src/braze/user';
 import { createFormHandler } from '@src/braze/forms';
 import { createEventHandler } from '@src/braze/events';
 import { createPurchaseHandler } from '@src/braze/purchases';
+import { bootstrapModule } from '@src/common/bootstrap';
+import { checkModuleConsent } from '@src/common/consent-gate';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -41,28 +43,7 @@ import { createPurchaseHandler } from '@src/braze/purchases';
   // =====================================================
 
   function hasConsent(): boolean {
-    /*! v8 ignore start */
-    if (!CONFIG.consent.required) return true;
-    /*! v8 ignore stop */
-
-    /*! v8 ignore start */
-    if (CONFIG.consent.mode === 'analytics') {
-    /*! v8 ignore stop */
-      try {
-        /*! v8 ignore start */
-        if (win.ppAnalytics && typeof win.ppAnalytics.consent === 'object' &&
-            typeof win.ppAnalytics.consent.status === 'function') {
-        /*! v8 ignore stop */
-          return win.ppAnalytics.consent.status();
-        }
-      } catch (e) {
-        ppLib.log('error', '[ppBraze] consent check error', ppLib.safeLogError(e));
-      }
-      return false;
-    }
-
-    // custom mode
-    return CONFIG.consent.checkFunction();
+    return checkModuleConsent(CONFIG.consent, { win, ppLib, logPrefix: '[ppBraze]' });
   }
 
   // =====================================================
@@ -205,14 +186,6 @@ import { createPurchaseHandler } from '@src/braze/purchases';
 
   } // end initModule
 
-  // Safe load: wait for ppLib if not yet available
-  /*! v8 ignore start */
-  if (win.ppLib && win.ppLib._isReady) {
-    initModule(win.ppLib);
-  } else {
-    win.ppLibReady = win.ppLibReady || [];
-    win.ppLibReady.push(initModule);
-  }
-  /*! v8 ignore stop */
+  bootstrapModule(win, initModule);
 
 })(window, document);

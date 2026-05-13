@@ -16,6 +16,7 @@ import { createItemBuilder } from '@src/datalayer/items';
 import { createEventPusher } from '@src/datalayer/events';
 import { createDomBinder } from '@src/datalayer/dom';
 import { createEventPropertiesEnricher } from '@src/datalayer/enrichers/event-properties';
+import { bootstrapModule } from '@src/common/bootstrap';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -243,12 +244,6 @@ import { createEventPropertiesEnricher } from '@src/datalayer/enrichers/event-pr
 
   } // end initModule
 
-  // Safe load: wait for ppLib if not yet available.
-  if (win.ppLib && win.ppLib._isReady) {
-    initModule(win.ppLib);
-  } else {
-    win.ppLibReady = win.ppLibReady || [];
-    win.ppLibReady.push(initModule);
-  }
+  bootstrapModule(win, initModule);
 
 })(window, document);
