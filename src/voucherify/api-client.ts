@@ -31,7 +31,10 @@ import type {
 import { VoucherifyConfigError, VoucherifyApiError } from '@src/voucherify/errors';
 import { withRetryAsync } from '@src/common/retry';
 
-const CACHE_EVICTION_THRESHOLD = 50;
+/** Soft threshold — TTL-based prune fires when the cache grows past this. */
+const CACHE_TTL_PRUNE_THRESHOLD = 50;
+/** Hard cap — never let the cache exceed this many entries. LRU evicts. */
+const CACHE_HARD_CAP = 250;
 
 export interface VoucherifyApiClient {
   apiQualifications: (
@@ -188,16 +191,29 @@ export function createVoucherifyApiClient(
 
     memCache.set(cacheKey, { data: data, timestamp: Date.now() });
 
-    // Evict stale entries when cache exceeds threshold to prevent unbounded
-    // growth. Sprint 2 hard-caps this with LRU semantics; for now, TTL-based
-    // sweep on every write past threshold matches the original behavior.
-    if (memCache.size > CACHE_EVICTION_THRESHOLD) {
+    // Two-stage eviction:
+    //   1. Soft prune: when the cache passes CACHE_TTL_PRUNE_THRESHOLD,
+    //      drop everything past its TTL. Cheap, bounded scan.
+    //   2. Hard cap: if the cache is still above CACHE_HARD_CAP (e.g. lots
+    //      of fresh non-expired entries during a heavy fetch burst), evict
+    //      the oldest entries in insertion order. Map preserves insertion
+    //      order, so iterating yields LRU on the write axis.
+    if (memCache.size > CACHE_TTL_PRUNE_THRESHOLD) {
       const pruneTime = Date.now();
       memCache.forEach(function (entry, key) {
         if (pruneTime - entry.timestamp >= CONFIG.cache.ttl) {
           memCache.delete(key);
         }
       });
+    }
+    if (memCache.size > CACHE_HARD_CAP) {
+      const overflow = memCache.size - CACHE_HARD_CAP;
+      const keysIter = memCache.keys();
+      for (let i = 0; i < overflow; i++) {
+        const k = keysIter.next();
+        if (k.done) break;
+        memCache.delete(k.value);
+      }
     }
 
     return data;

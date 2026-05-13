@@ -235,7 +235,10 @@ import { addInteractionListener } from '@src/common/dom-events';
       win.dataLayer.push({ ecommerce: null });
       win.dataLayer.push(payload);
 
-      ppLib.log('info', '[ppEcommerce] GTM → ' + eventName, ecommerceData);
+      // Wrap through safeLogPayload — item names / categories / coupons are
+      // merchant-controlled strings that could carry PII (e.g. a coupon
+      // code named after a customer). Same posture as Braze events.
+      ppLib.log('info', '[ppEcommerce] GTM → ' + eventName, ppLib.safeLogPayload(ecommerceData));
     } catch (e) {
       ppLib.log('error', '[ppEcommerce] GTM send error', ppLib.safeLogError(e));
     }
@@ -259,7 +262,7 @@ import { addInteractionListener } from '@src/common/dom-events';
       } else {
         win.mixpanel.track(eventName, ecommerceData);
       }
-      ppLib.log('info', '[ppEcommerce] Mixpanel → ' + eventName, ecommerceData);
+      ppLib.log('info', '[ppEcommerce] Mixpanel → ' + eventName, ppLib.safeLogPayload(ecommerceData));
     } catch (e) {
       ppLib.log('error', '[ppEcommerce] Mixpanel send error', ppLib.safeLogError(e));
     }
