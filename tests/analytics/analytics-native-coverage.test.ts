@@ -903,7 +903,7 @@ describe('Analytics native coverage', () => {
     expect(pvGtm.page_url).toBeDefined();
     expect(pvGtm.page_title).toBeDefined();
 
-    expect(mockMp.track).toHaveBeenCalledWith('Page View', expect.objectContaining({
+    expect(mockMp.track).toHaveBeenCalledWith('pageview', expect.objectContaining({
       page_url: expect.any(String)
     }));
   });
