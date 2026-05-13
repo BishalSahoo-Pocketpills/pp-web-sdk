@@ -95,7 +95,7 @@ describe('createEventPropertiesEnricher', () => {
     expect(ep['utm_campaign [last touch]']).toBe('spring');
 
     // User context
-    expect(ep.country).toBe('CA');
+    expect(ep.Country).toBe('CA');
     expect(typeof ep.browser).toBe('string');
     expect(typeof ep.device_type).toBe('string');
     expect(typeof ep.referrer).toBe('string');

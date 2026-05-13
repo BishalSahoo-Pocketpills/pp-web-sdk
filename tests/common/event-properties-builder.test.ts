@@ -84,7 +84,7 @@ describe('createEventPropertiesBuilder', () => {
       expect(bundle.eventProperties.pp_session_id).toBe('test-session-id');
       expect(bundle.eventProperties.is_logged_in).toBe(true);
       expect(bundle.eventProperties.platform).toBe('web');
-      expect(bundle.eventProperties.country).toBe('CA');
+      expect(bundle.eventProperties.Country).toBe('CA');
       expect(typeof bundle.eventProperties.device_id).toBe('string');
       expect(typeof bundle.eventProperties.pp_timestamp).toBe('number');
 
@@ -204,7 +204,7 @@ describe('createEventPropertiesBuilder', () => {
 
       const bundle = builder.build();
       expect(bundle.eventProperties.pp_user_id).toBe('7');
-      expect(bundle.eventProperties.country).toBe('US');
+      expect(bundle.eventProperties.Country).toBe('US');
     });
 
     it('overrides default platform', () => {
@@ -219,10 +219,10 @@ describe('createEventPropertiesBuilder', () => {
       const ppLib = makePPLib({ cookies: { country: 'CA', alt_country: 'IN' } });
       const builder = createEventPropertiesBuilder(window, ppLib);
 
-      expect(builder.build().eventProperties.country).toBe('CA');
+      expect(builder.build().eventProperties.Country).toBe('CA');
 
       builder.configure({ cookieNames: { country: 'alt_country' } });
-      expect(builder.build().eventProperties.country).toBe('IN');
+      expect(builder.build().eventProperties.Country).toBe('IN');
     });
   });
 
