@@ -53,7 +53,7 @@ export interface BuiltEventProperties {
   utm_source: string;
   utm_medium: string;
   utm_campaign: string;
-  country: string;
+  Country: string;
   browser: string;
   device_type: string;
   referrer: string;
@@ -428,7 +428,7 @@ export function createEventPropertiesBuilder(
       [UTM_LAST_TOUCH.campaign]: utmOrFallback(lastUtm, 'utm_campaign'),
 
       // User context
-      country: stable.country,
+      Country: stable.country,
       browser: stable.browser,
       device_type: stable.device_type,
       referrer: extractDomain(win.document.referrer),
