@@ -78,7 +78,7 @@ describe('ppLib.mixpanel.track facade', () => {
     // Enriched context fields are merged in.
     expect(mergedProps.pp_user_id).toBe('42');
     expect(mergedProps.pp_patient_id).toBe('99');
-    expect(mergedProps.is_logged_in).toBe(true);
+    expect(mergedProps.logged_in).toBe('true');
     expect(typeof mergedProps.device_id).toBe('string');
     expect(typeof mergedProps.current_url).toBe('string');
     expect(typeof mergedProps.pp_timestamp).toBe('number');

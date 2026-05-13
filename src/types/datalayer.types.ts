@@ -60,7 +60,10 @@ export interface DataLayerConfig {
 export interface DataLayerUser {
   pp_user_id: string;
   pp_patient_id: string;
-  logged_in: boolean;
+  // Stringified boolean ("true" / "false") per the event-attribute
+  // contract — Mixpanel + GTM consumers treat this as a categorical
+  // string, not a boolean.
+  logged_in: string;
 }
 
 export interface DataLayerUserDataAddress {
