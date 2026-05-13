@@ -49,7 +49,10 @@ export interface BuiltEventProperties {
   pp_session_id: string;
   pp_timestamp: number;
   platform: string;
-  is_logged_in: boolean;
+  // Stringified boolean ("true"/"false") per the event-attribute contract —
+  // consumers (Mixpanel, GTM, BigQuery) treat the value as a categorical
+  // string, not a boolean. The internal closure variable stays boolean.
+  logged_in: string;
   utm_source: string;
   utm_medium: string;
   utm_campaign: string;
@@ -409,7 +412,7 @@ export function createEventPropertiesBuilder(
       pp_session_id: ppLib.session ? ppLib.session.getOrCreateSessionId() : '',
       pp_timestamp: Date.now(),
       platform: defaultPlatform,
-      is_logged_in: isLoggedIn,
+      logged_in: isLoggedIn ? 'true' : 'false',
 
       // Current UTM — literal URL params with Mixpanel-style $direct/none
       // fallbacks for consistency with [first touch] / [last touch] keys.

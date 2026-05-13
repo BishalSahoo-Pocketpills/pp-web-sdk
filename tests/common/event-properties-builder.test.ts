@@ -82,7 +82,7 @@ describe('createEventPropertiesBuilder', () => {
       expect(bundle.eventProperties.pp_user_id).toBe('42');
       expect(bundle.eventProperties.pp_patient_id).toBe('99');
       expect(bundle.eventProperties.pp_session_id).toBe('test-session-id');
-      expect(bundle.eventProperties.is_logged_in).toBe(true);
+      expect(bundle.eventProperties.logged_in).toBe('true');
       expect(bundle.eventProperties.platform).toBe('web');
       expect(bundle.eventProperties.Country).toBe('CA');
       expect(typeof bundle.eventProperties.device_id).toBe('string');
@@ -150,7 +150,7 @@ describe('createEventPropertiesBuilder', () => {
       const ppLib = makePPLib({ cookies: { app_is_authenticated: 'true' } });
       const bundle = createEventPropertiesBuilder(window, ppLib).build();
 
-      expect(bundle.eventProperties.is_logged_in).toBe(true);
+      expect(bundle.eventProperties.logged_in).toBe('true');
       // Inherited behavior: pp_distinct_id mirrors userId when logged in,
       // even if userId is empty. Documenting actual behavior — callers that
       // need a non-empty distinct_id must ensure userId is set first.
@@ -161,7 +161,7 @@ describe('createEventPropertiesBuilder', () => {
       const ppLib = makePPLib({ cookies: { userId: '-1', patientId: '99' } });
       const bundle = createEventPropertiesBuilder(window, ppLib).build();
 
-      expect(bundle.eventProperties.is_logged_in).toBe(false);
+      expect(bundle.eventProperties.logged_in).toBe('false');
       expect(bundle.userProperties.pp_distinct_id).toBe(bundle.eventProperties.device_id);
     });
 
@@ -240,7 +240,7 @@ describe('createEventPropertiesBuilder', () => {
 
       // eventProperties present
       expect(flat.pp_user_id).toBe('42');
-      expect(flat.is_logged_in).toBe(true);
+      expect(flat.logged_in).toBe('true');
       expect(typeof flat.device_id).toBe('string');
       expect(typeof flat.current_url).toBe('string');
     });

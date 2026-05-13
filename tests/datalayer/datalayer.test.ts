@@ -194,7 +194,7 @@ describe('User Object', () => {
     const event = window.dataLayer[window.dataLayer.length - 1];
     expect(event.user.pp_user_id).toBe('42');
     expect(event.user.pp_patient_id).toBe('99');
-    expect(event.user.logged_in).toBe(true);
+    expect(event.user.logged_in).toBe('true');
   });
 
   it('derives logged_in = false when userId is empty', () => {
@@ -202,7 +202,7 @@ describe('User Object', () => {
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     expect(event.user.pp_user_id).toBe('');
-    expect(event.user.logged_in).toBe(false);
+    expect(event.user.logged_in).toBe('false');
   });
 
   it('derives logged_in = false when userId is "-1"', () => {
@@ -212,20 +212,20 @@ describe('User Object', () => {
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     expect(event.user.pp_user_id).toBe('-1');
-    expect(event.user.logged_in).toBe(false);
+    expect(event.user.logged_in).toBe('false');
   });
 
   it('setUser overrides cookie values', () => {
     setCookie('userId', '42');
     setCookie('patientId', '99');
 
-    window.ppLib.datalayer.setUser({ pp_user_id: 'override-100', logged_in: false });
+    window.ppLib.datalayer.setUser({ pp_user_id: 'override-100', logged_in: 'false' });
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     expect(event.user.pp_user_id).toBe('override-100');
     expect(event.user.pp_patient_id).toBe('99');
-    expect(event.user.logged_in).toBe(false);
+    expect(event.user.logged_in).toBe('false');
   });
 
   it('setUser with pp_patient_id override', () => {
@@ -252,7 +252,7 @@ describe('logged_in Derivation', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user.logged_in).toBe(false);
+    expect(event.user.logged_in).toBe('false');
   });
 
   it('logged_in = true when only appAuth is true (no userId/patientId)', () => {
@@ -261,7 +261,7 @@ describe('logged_in Derivation', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user.logged_in).toBe(true);
+    expect(event.user.logged_in).toBe('true');
   });
 
   it('logged_in = false when patientId missing and appAuth not true', () => {
@@ -270,7 +270,7 @@ describe('logged_in Derivation', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user.logged_in).toBe(false);
+    expect(event.user.logged_in).toBe('false');
   });
 
   it('logged_in = true when userId and patientId exist regardless of appAuth', () => {
@@ -281,7 +281,7 @@ describe('logged_in Derivation', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user.logged_in).toBe(true);
+    expect(event.user.logged_in).toBe('true');
   });
 });
 
@@ -792,7 +792,7 @@ describe('Core Event Push', () => {
     const event = window.dataLayer[window.dataLayer.length - 1];
     expect(event.event).toBe('login_success');
     expect(event.method).toBe('email');
-    expect(event.user.logged_in).toBe(true);
+    expect(event.user.logged_in).toBe('true');
     expect(event.user.pp_user_id).toBe('123');
     expect(event.user.pp_patient_id).toBe('456');
   });
@@ -802,7 +802,7 @@ describe('Core Event Push', () => {
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     expect(event.event).toBe('login_success');
-    expect(event.user.logged_in).toBe(true);
+    expect(event.user.logged_in).toBe('true');
   });
 
   it('signupView() pushes signup_view event', () => {
@@ -828,7 +828,7 @@ describe('Core Event Push', () => {
     const event = window.dataLayer[window.dataLayer.length - 1];
     expect(event.event).toBe('signup_complete');
     expect(event.method).toBe('email');
-    expect(event.user.logged_in).toBe(true);
+    expect(event.user.logged_in).toBe('true');
     expect(event.user.pp_user_id).toBe('789');
     expect(event.user.pp_patient_id).toBe('012');
   });
@@ -838,7 +838,7 @@ describe('Core Event Push', () => {
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     expect(event.event).toBe('signup_complete');
-    expect(event.user.logged_in).toBe(true);
+    expect(event.user.logged_in).toBe('true');
   });
 
   it('search() pushes search event with all fields', () => {
@@ -1520,7 +1520,7 @@ describe('Integration', () => {
     // User
     expect(event.user.pp_user_id).toBe('100');
     expect(event.user.pp_patient_id).toBe('200');
-    expect(event.user.logged_in).toBe(true);
+    expect(event.user.logged_in).toBe('true');
 
     // User data
     expect(event.userData.sha256_email_address).toBe(await sha256hex('int@test.com'));
@@ -1551,7 +1551,7 @@ describe('Integration', () => {
     expect(event.event).toBe('purchase');
     expect(event.transaction_id).toBe('TXN-INT');
     expect(event.user.pp_user_id).toBe('55');
-    expect(event.user.logged_in).toBe(true);
+    expect(event.user.logged_in).toBe('true');
     expect(event.userData.sha256_email_address).toBe('f'.repeat(64));
     expect(event.ecommerce.items).toHaveLength(2);
     // (50*2 - 0) + (30*1 - 0) = 130
