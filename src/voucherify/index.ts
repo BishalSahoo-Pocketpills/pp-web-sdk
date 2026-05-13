@@ -10,6 +10,8 @@ import type { VoucherifyConfig, ValidationContext, QualificationContext, Pricing
 import type { DeepPartial } from '@src/types/utility.types';
 import { VoucherifyConfigError, VoucherifyApiError, VoucherifyPricingError } from '@src/voucherify/errors';
 import { withRetryAsync } from '@src/common/retry';
+import { bootstrapModule } from '@src/common/bootstrap';
+import { checkModuleConsent } from '@src/common/consent-gate';
 import { createPriceFormatter, buildDiscountLabel as buildDiscountLabelHelper, type PriceFormatter } from '@src/voucherify/formatters';
 import { createVoucherifyApiClient } from '@src/voucherify/api-client';
 import {
@@ -884,22 +886,7 @@ import { createSegmentResolver } from '@src/voucherify/segment-resolver';
   // =====================================================
 
   function hasConsent(): boolean {
-    if (!CONFIG.consent.required) return true;
-
-    if (CONFIG.consent.mode === 'analytics') {
-      try {
-        if (win.ppAnalytics && typeof win.ppAnalytics.consent === 'object' &&
-            typeof win.ppAnalytics.consent.status === 'function') {
-          return win.ppAnalytics.consent.status();
-        }
-      } catch (e) {
-        ppLib.log('error', '[ppVoucherify] consent check error', ppLib.safeLogError(e));
-      }
-      return false;
-    }
-
-    // custom mode
-    return CONFIG.consent.checkFunction();
+    return checkModuleConsent(CONFIG.consent, { win, ppLib, logPrefix: '[ppVoucherify]' });
   }
 
   // =====================================================
@@ -1097,14 +1084,6 @@ import { createSegmentResolver } from '@src/voucherify/segment-resolver';
 
   } // end initModule
 
-  // Safe load: wait for ppLib if not yet available
-  /*! v8 ignore start */
-  if (win.ppLib && win.ppLib._isReady) {
-    initModule(win.ppLib);
-  } else {
-    win.ppLibReady = win.ppLibReady || [];
-    win.ppLibReady.push(initModule);
-  }
-  /*! v8 ignore stop */
+  bootstrapModule(win, initModule);
 
 })(window, document);

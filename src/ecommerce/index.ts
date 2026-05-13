@@ -11,6 +11,7 @@ import type { DeepPartial } from '@src/types/utility.types';
 import { createDebounceTracker } from '@src/common/debounce';
 import { createEventGuard } from '@src/common/event-guard';
 import { addInteractionListener } from '@src/common/dom-events';
+import { bootstrapModule } from '@src/common/bootstrap';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -443,14 +444,6 @@ import { addInteractionListener } from '@src/common/dom-events';
 
   } // end initModule
 
-  // Safe load: wait for ppLib if not yet available
-  /*! v8 ignore start */
-  if (win.ppLib && win.ppLib._isReady) {
-    initModule(win.ppLib);
-  } else {
-    win.ppLibReady = win.ppLibReady || [];
-    win.ppLibReady.push(initModule);
-  }
-  /*! v8 ignore stop */
+  bootstrapModule(win, initModule);
 
 })(window, document);
