@@ -82,6 +82,14 @@ export function createPersistentValue<T>(
       const parsed = opts.deserialize(cookieRaw);
       if (parsed !== null) return parsed;
       // Parse failure → fall through to legacy / generate so we self-heal.
+      // Log the regeneration so debugging is possible (the cookie value
+      // landed in a state the caller's deserializer rejected — often
+      // an out-of-date schema). Shape-only; no raw value logged.
+      ppLib.log(
+        'warn',
+        '[persistent-storage] cookie value failed deserialize; regenerating',
+        { cookieName: opts.cookieName, rawLength: cookieRaw.length },
+      );
     }
 
     // 2. Legacy localStorage — one-time migration. Copy to cookie, delete
@@ -95,6 +103,11 @@ export function createPersistentValue<T>(
         return parsed;
       }
       // Corrupted legacy value — drop it to free the key.
+      ppLib.log(
+        'warn',
+        '[persistent-storage] legacy localStorage value failed deserialize; dropping',
+        { cookieName: opts.cookieName, legacyKey: opts.legacyLocalStorageKey, rawLength: legacyRaw.length },
+      );
       deleteLocalStorage();
     }
 

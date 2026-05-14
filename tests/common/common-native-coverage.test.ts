@@ -1169,6 +1169,27 @@ describe('Common native coverage', () => {
       expect(() => set('x', 'y')).not.toThrow();
       expect(log).toHaveBeenCalledWith('error', 'setCookie error', expect.any(Error));
     });
+
+    it('refuses cookie names containing CR/LF/NUL (header-injection defense)', async () => {
+      await freshLoad();
+      const before = document.cookie;
+      // Attempt to inject a second Set-Cookie via CR/LF in the name.
+      window.ppLib.setCookie('pp_safe\r\nSet-Cookie: injected=evil', 'v');
+      window.ppLib.setCookie('pp_safe\nfoo', 'v');
+      window.ppLib.setCookie('pp_safe\0bar', 'v');
+      // None of those should have landed; document.cookie unchanged.
+      expect(document.cookie).toBe(before);
+      // The "injected" cookie name MUST NOT appear.
+      expect(document.cookie.indexOf('injected')).toBe(-1);
+    });
+
+    it('refuses cookie domain or path containing control characters or semicolons', async () => {
+      await freshLoad();
+      const before = document.cookie;
+      window.ppLib.setCookie('pp_bad_domain', 'v', { domain: 'a.com\r\nSet-Cookie:evil' });
+      window.ppLib.setCookie('pp_bad_path', 'v', { path: '/foo;Domain=evil.com' });
+      expect(document.cookie).toBe(before);
+    });
   });
 
   // ==========================================================================

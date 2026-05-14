@@ -238,4 +238,57 @@ describe('createPersistentValue', () => {
       expect(ppLib.getCookie('pv_d')).toBeNull();
     });
   });
+
+  describe('observability on corrupted values', () => {
+    it('logs a warn when a cookie value fails to deserialize before regenerating', () => {
+      const ppLib = makePPLib();
+      const logSpy = ppLib.log as ReturnType<typeof vi.fn>;
+      document.cookie = 'pv_corrupt={not-valid-json;path=/';
+
+      const generate = vi.fn(() => 'fresh-uuid');
+      const pv = createPersistentValue<string>(window, ppLib, {
+        cookieName: 'pv_corrupt',
+        maxAgeSeconds: 60,
+        serialize: (s) => s,
+        deserialize: (raw) => {
+          try { JSON.parse(raw); return raw; } catch { return null; }
+        },
+        generate
+      });
+
+      expect(pv.read()).toBe('fresh-uuid');
+      expect(generate).toHaveBeenCalledTimes(1);
+      // Warn must include the cookie name + raw length so a debugger can
+      // map the regeneration back to the affected key.
+      const warnCall = logSpy.mock.calls.find(c => c[0] === 'warn');
+      expect(warnCall).toBeDefined();
+      expect(warnCall![1]).toContain('cookie value failed deserialize');
+      expect(warnCall![2]).toMatchObject({ cookieName: 'pv_corrupt' });
+    });
+
+    it('logs a warn when a legacy localStorage value is corrupt and dropped', () => {
+      const ppLib = makePPLib();
+      const logSpy = ppLib.log as ReturnType<typeof vi.fn>;
+      localStorage.setItem('legacy_corrupt', '{not-json');
+
+      const pv = createPersistentValue<{ ok: boolean }>(window, ppLib, {
+        cookieName: 'pv_legacy_corrupt',
+        legacyLocalStorageKey: 'legacy_corrupt',
+        maxAgeSeconds: 60,
+        serialize: JSON.stringify,
+        deserialize: (raw) => {
+          try { return JSON.parse(raw); } catch { return null; }
+        }
+      });
+
+      expect(pv.read()).toBeNull();
+      const warnCall = logSpy.mock.calls.find(c =>
+        c[0] === 'warn' && typeof c[1] === 'string' && c[1].indexOf('legacy localStorage') !== -1
+      );
+      expect(warnCall).toBeDefined();
+      expect(warnCall![2]).toMatchObject({ legacyKey: 'legacy_corrupt' });
+      // And the bad legacy value gets cleared.
+      expect(localStorage.getItem('legacy_corrupt')).toBeNull();
+    });
+  });
 });

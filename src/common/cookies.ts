@@ -51,7 +51,24 @@ export function createSetCookie(
   return function setCookie(name: string, value: string, options?: SetCookieOptions): void {
     try {
       if (!name) return;
+      // Reject CR/LF/NUL in cookie name OR an option string (Domain, Path,
+      // SameSite). Header-injection on `document.cookie` is technically the
+      // browser's problem to prevent, but defending in JS keeps this helper
+      // safe even when callers pass tainted input (e.g. a future API ever
+      // accepts a user-supplied cookie name).
+      if (/[\r\n\0]/.test(name)) {
+        log('error', 'setCookie: cookie name contains forbidden control characters');
+        return;
+      }
       const opts = options || {};
+      if (opts.domain && /[\r\n\0;]/.test(opts.domain)) {
+        log('error', 'setCookie: cookie domain contains forbidden characters');
+        return;
+      }
+      if (opts.path && /[\r\n\0;]/.test(opts.path)) {
+        log('error', 'setCookie: cookie path contains forbidden characters');
+        return;
+      }
       const encoded = encodeURIComponent(value == null ? '' : String(value));
 
       let str = name + '=' + encoded;
