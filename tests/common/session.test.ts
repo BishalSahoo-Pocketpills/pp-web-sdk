@@ -1,4 +1,24 @@
 import { createSessionService } from '../../src/common/session';
+import { createSetCookie, createGetCookie, createDeleteCookie } from '../../src/common/cookies';
+import type { PPLib } from '../../src/types/common.types';
+
+function makeCookiePPLib(): PPLib {
+  const log = vi.fn();
+  return {
+    config: { cookieDomain: undefined } as never,
+    log,
+    getCookie: createGetCookie(document),
+    setCookie: createSetCookie(document, window, log),
+    deleteCookie: createDeleteCookie(document, window, log),
+  } as unknown as PPLib;
+}
+
+function clearAllCookies(): void {
+  document.cookie.split(';').forEach(c => {
+    const name = c.split('=')[0].trim();
+    if (name) document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+  });
+}
 
 describe('createSessionService', () => {
   beforeEach(() => {
@@ -102,5 +122,91 @@ describe('createSessionService', () => {
     expect(id.length).toBeGreaterThan(0);
 
     Object.defineProperty(globalThis, 'crypto', { value: originalCrypto, configurable: true });
+  });
+});
+
+// =============================================================================
+// Cross-subdomain cookie-backed session service
+// =============================================================================
+describe('createSessionService (cookie-backed, win + ppLib)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    clearAllCookies();
+  });
+
+  it('persists session_id in a cookie, not localStorage', () => {
+    const session = createSessionService(window, makeCookiePPLib());
+    const id = session.getOrCreateSessionId();
+
+    expect(id).toBeTruthy();
+    expect(document.cookie).toContain('pp_analytics_session_id=' + encodeURIComponent(id));
+    // localStorage stays empty under the new contract
+    expect(localStorage.getItem('pp_analytics_session_id')).toBeNull();
+    expect(localStorage.getItem('pp_analytics_last_activity')).toBeNull();
+  });
+
+  it('updates the last_activity cookie on every call', () => {
+    vi.useFakeTimers();
+    const session = createSessionService(window, makeCookiePPLib());
+    session.getOrCreateSessionId();
+    const ts1Match = document.cookie.match(/pp_analytics_last_activity=(\d+)/);
+    expect(ts1Match).not.toBeNull();
+    const ts1 = Number((ts1Match as RegExpMatchArray)[1]);
+
+    vi.advanceTimersByTime(5000);
+    session.getOrCreateSessionId();
+    const ts2Match = document.cookie.match(/pp_analytics_last_activity=(\d+)/);
+    const ts2 = Number((ts2Match as RegExpMatchArray)[1]);
+
+    expect(ts2).toBeGreaterThan(ts1);
+    vi.useRealTimers();
+  });
+
+  it('reuses the same session_id within the inactivity window', () => {
+    const session = createSessionService(window, makeCookiePPLib());
+    const id1 = session.getOrCreateSessionId();
+    const id2 = session.getOrCreateSessionId();
+    expect(id2).toBe(id1);
+  });
+
+  it('rotates session_id after 30 minutes of inactivity', () => {
+    vi.useFakeTimers();
+    const session = createSessionService(window, makeCookiePPLib());
+    const id1 = session.getOrCreateSessionId();
+
+    vi.advanceTimersByTime(31 * 60 * 1000);
+    const id2 = session.getOrCreateSessionId();
+    expect(id2).not.toBe(id1);
+
+    vi.useRealTimers();
+  });
+
+  it('migrates legacy localStorage session_id + last_activity into cookies on first read', () => {
+    // Seed legacy values — pretend the user pre-dates the rollout.
+    const legacyId = 'legacy-session-uuid';
+    const legacyActivity = Date.now(); // recent — should NOT trigger rotation
+    localStorage.setItem('pp_analytics_session_id', legacyId);
+    localStorage.setItem('pp_analytics_last_activity', String(legacyActivity));
+
+    const session = createSessionService(window, makeCookiePPLib());
+    const id = session.getOrCreateSessionId();
+
+    expect(id).toBe(legacyId);
+    // Cookies now seeded
+    expect(document.cookie).toContain('pp_analytics_session_id=' + encodeURIComponent(legacyId));
+    expect(document.cookie).toContain('pp_analytics_last_activity=');
+    // Legacy localStorage entries purged
+    expect(localStorage.getItem('pp_analytics_session_id')).toBeNull();
+    expect(localStorage.getItem('pp_analytics_last_activity')).toBeNull();
+  });
+
+  it('clearSession deletes both cookies', () => {
+    const session = createSessionService(window, makeCookiePPLib());
+    session.getOrCreateSessionId();
+    expect(document.cookie).toContain('pp_analytics_session_id=');
+
+    session.clearSession();
+    expect(document.cookie).not.toMatch(/pp_analytics_session_id=[^;]/);
+    expect(document.cookie).not.toMatch(/pp_analytics_last_activity=[^;]/);
   });
 });
