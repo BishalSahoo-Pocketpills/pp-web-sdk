@@ -21,8 +21,13 @@ export interface TouchAttribution {
   campaign: string;
   platform: string;
   clickId: string;
+  /** Full URL of the page that captured this touch (location.href). */
   landingPage: string;
+  /** Full URL of the referring page (document.referrer), or '' for direct. */
   referrer: string;
+  /** Hostname extracted from referrer ('' for direct or unparseable URLs). */
+  referrerDomain: string;
+  /** ISO timestamp. */
   timestamp: string;
 }
 
@@ -176,7 +181,16 @@ export function createAttributionService(
     return '';
   }
 
-  function classifyReferrer(): string {
+  /**
+   * Classifier used ONLY for platform detection (`detectPlatform`). Returns
+   * one of: 'direct', 'internal', 'unknown', or the referrer hostname. The
+   * three-label space is what `detectPlatform` switches on — passing the raw
+   * URL would defeat the organic-search/social heuristics.
+   *
+   * The TouchAttribution.referrer field stores the FULL URL (see buildTouch);
+   * this helper is intentionally separate.
+   */
+  function classifyReferrerForPlatform(): string {
     try {
       const ref = win.document.referrer || '';
       if (!ref) return 'direct';
@@ -188,6 +202,17 @@ export function createAttributionService(
       return refHost;
     } catch (e) {
       return 'unknown';
+    }
+  }
+
+  /** Extract the hostname from a referrer URL. Returns '' for empty input
+   *  or unparseable URLs — never throws. */
+  function extractReferrerDomain(referrer: string): string {
+    if (!referrer) return '';
+    try {
+      return new URL(referrer).hostname || '';
+    } catch (e) {
+      return '';
     }
   }
 
@@ -220,7 +245,13 @@ export function createAttributionService(
   }
 
   function buildTouch(params: Record<string, string>): TouchAttribution {
-    const referrer = classifyReferrer();
+    // Two referrer views: the classifier feeds platform detection
+    // (which keys on 'direct'/'internal' and hostname-substring matches),
+    // while the stored TouchAttribution.referrer is the FULL URL for
+    // downstream analytics joins (data-team contract).
+    const referrerClass = classifyReferrerForPlatform();
+    const referrerUrl = (win.document && win.document.referrer) || '';
+    const referrerDomain = extractReferrerDomain(referrerUrl);
     const source = resolveParam(params, 'utm_source', SOURCE_ALIASES);
     const medium = resolveParam(params, 'utm_medium', MEDIUM_ALIASES);
     const campaign = resolveParam(params, 'utm_campaign', CAMPAIGN_ALIASES);
@@ -228,7 +259,7 @@ export function createAttributionService(
     // Detect platform from click IDs, utm_source (not custom aliases), or referrer.
     // Custom aliases like ?source=febpt populate the source field but should NOT
     // override platform detection — platform should come from known signals only.
-    const platform = detectPlatform(params, referrer);
+    const platform = detectPlatform(params, referrerClass);
 
     return {
       source: source || (platform !== 'direct' ? platform.replace('_ads', '').replace('_', '') : 'direct'),
@@ -236,8 +267,11 @@ export function createAttributionService(
       campaign: campaign,
       platform: platform,
       clickId: extractClickId(params),
-      landingPage: win.location.pathname || '/',
-      referrer: referrer,
+      // Full URL with query string — `location.href` rather than pathname so
+      // analytics can correlate landing experience back to the exact entry URL.
+      landingPage: (win.location && win.location.href) || '/',
+      referrer: referrerUrl,
+      referrerDomain: referrerDomain,
       timestamp: new Date().toISOString(),
     };
   }
@@ -352,6 +386,7 @@ export function createAttributionService(
       clickId: current.clickId,
       landingPage: current.landingPage,
       referrer: current.referrer,
+      referrerDomain: current.referrerDomain,
       timestamp: current.timestamp,
     };
 
