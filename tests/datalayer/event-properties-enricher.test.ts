@@ -1,11 +1,27 @@
 import { createEventPropertiesEnricher } from '../../src/datalayer/enrichers/event-properties';
 import { createEventPropertiesBuilder } from '../../src/common/event-properties-builder';
 import { createGetQueryParam } from '../../src/common/url';
+import { createSetCookie, createDeleteCookie } from '../../src/common/cookies';
 import type { PPLib } from '../../src/types/common.types';
 
 function makePPLib(cookies?: Record<string, string>): PPLib {
+  const log = vi.fn();
+  // Read-through getCookie: serves the seeded cookies map first, then falls
+  // back to live document.cookie so PersistentValue-managed entries (e.g.
+  // pp_device_id) round-trip.
+  const getCookieReal = (name: string): string | null => {
+    if (cookies && Object.prototype.hasOwnProperty.call(cookies, name)) return cookies[name];
+    try {
+      if (!name || !document.cookie) return null;
+      const m = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+      return m ? decodeURIComponent(m[2]) : null;
+    } catch (e) { return null; }
+  };
   const ppLib = {
-    getCookie: vi.fn((name: string) => (cookies || {})[name] || null),
+    config: { cookieDomain: undefined } as never,
+    getCookie: vi.fn(getCookieReal),
+    setCookie: createSetCookie(document, window, log),
+    deleteCookie: createDeleteCookie(document, window, log),
     getQueryParam: createGetQueryParam(),
     session: {
       getOrCreateSessionId: vi.fn(() => 'test-session-id'),
@@ -17,7 +33,7 @@ function makePPLib(cookies?: Record<string, string>): PPLib {
       getLastTouch: vi.fn(() => ({ source: 'google', medium: 'cpc', campaign: 'spring', referrer: 'google.com' })),
       get: vi.fn(() => ({ source: 'google', medium: 'cpc', campaign: 'spring', platform: 'google_ads' })),
     },
-    log: vi.fn(),
+    log,
   } as unknown as PPLib;
   // Wire up the shared builder the same way common module does in production.
   ppLib.eventPropertiesBuilder = createEventPropertiesBuilder(window, ppLib);
@@ -34,6 +50,12 @@ function makeConfig() {
 describe('createEventPropertiesEnricher', () => {
   beforeEach(() => {
     localStorage.clear();
+    // Clear cookies — PersistentValue now uses cookies for pp_device_id,
+    // so test isolation needs them wiped alongside localStorage.
+    document.cookie.split(';').forEach(c => {
+      const name = c.split('=')[0].trim();
+      if (name) document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+    });
   });
 
   it('adds all required eventProperties to events', () => {
@@ -185,7 +207,13 @@ describe('createEventPropertiesEnricher', () => {
     const id2 = mockPush.mock.calls[1][0].eventProperties.device_id;
 
     expect(id1).toBe(id2);
-    expect(localStorage.getItem('pp_device_id')).toBe(id1);
+    // Storage moved from localStorage → cookie (cross-subdomain rollout).
+    // The legacy localStorage key is no longer written; the cookie is the
+    // source of truth.
+    expect(localStorage.getItem('pp_device_id')).toBeNull();
+    const cookieMatch = document.cookie.match(/pp_device_id=([^;]+)/);
+    expect(cookieMatch).not.toBeNull();
+    expect(decodeURIComponent((cookieMatch as RegExpMatchArray)[1])).toBe(id1);
   });
 
   it('reads cookies fresh on each call', () => {

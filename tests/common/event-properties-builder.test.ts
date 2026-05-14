@@ -6,6 +6,7 @@
  */
 import { createEventPropertiesBuilder } from '../../src/common/event-properties-builder';
 import { createGetQueryParam } from '../../src/common/url';
+import { createSetCookie, createDeleteCookie } from '../../src/common/cookies';
 import type { PPLib } from '../../src/types/common.types';
 
 function makePPLib(opts?: {
@@ -27,10 +28,25 @@ function makePPLib(opts?: {
   });
   const session = opts?.session === null ? undefined : (opts?.session || { id: 'test-session-id' });
 
+  const log = vi.fn();
+  // Cookie reader serves the seeded map first, then falls back to live
+  // document.cookie so PersistentValue-managed entries (pp_device_id,
+  // pp_utm_*) round-trip cleanly through write→read.
+  const getCookieReal = (name: string): string | null => {
+    if (Object.prototype.hasOwnProperty.call(cookies, name)) return cookies[name];
+    try {
+      if (!name || !document.cookie) return null;
+      const m = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+      return m ? decodeURIComponent(m[2]) : null;
+    } catch (e) { return null; }
+  };
   const ppLib: any = {
-    getCookie: vi.fn((name: string) => cookies[name] || null),
+    config: { cookieDomain: undefined },
+    getCookie: vi.fn(getCookieReal),
+    setCookie: createSetCookie(document, window, log),
+    deleteCookie: createDeleteCookie(document, window, log),
     getQueryParam: createGetQueryParam(),
-    log: vi.fn()
+    log
   };
   if (attribution) {
     ppLib.attribution = {
@@ -52,6 +68,11 @@ function makePPLib(opts?: {
 describe('createEventPropertiesBuilder', () => {
   beforeEach(() => {
     localStorage.clear();
+    // device_id / UTM touch now live in cookies — wipe both layers for isolation.
+    document.cookie.split(';').forEach(c => {
+      const name = c.split('=')[0].trim();
+      if (name) document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+    });
   });
 
   describe('build()', () => {
@@ -190,6 +211,21 @@ describe('createEventPropertiesBuilder', () => {
 
       expect(a).toBeTruthy();
       expect(a).toBe(b);
+    });
+
+    it('migrates a legacy localStorage device_id to the cookie on first read', () => {
+      // Seed legacy localStorage as if a user pre-dates the rollout.
+      window.localStorage.setItem('pp_device_id', 'legacy-device-uuid');
+      const ppLib = makePPLib();
+
+      const id = createEventPropertiesBuilder(window, ppLib).build().eventProperties.device_id;
+
+      // Same value carried over
+      expect(id).toBe('legacy-device-uuid');
+      // Cookie now holds it (the cross-subdomain source of truth)
+      expect(document.cookie).toContain('pp_device_id=legacy-device-uuid');
+      // Legacy localStorage entry was purged (one-time migration)
+      expect(window.localStorage.getItem('pp_device_id')).toBeNull();
     });
   });
 

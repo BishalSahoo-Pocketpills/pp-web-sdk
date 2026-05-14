@@ -21,6 +21,7 @@ import {
   MARKETING_ATTRIBUTION_KEY,
   MIXPANEL_SUPER_PROPERTY_KEYS_SET,
 } from '@src/common/super-property-keys';
+import { createPersistentValue } from '@src/common/persistent-storage';
 
 export interface EventPropertiesBuilderCookieNames {
   userId: string;
@@ -115,6 +116,26 @@ const UTM_FIRST_TOUCH_KEY = 'pp_utm_first_touch';
 const UTM_LAST_TOUCH_KEY = 'pp_utm_last_touch';
 const UTM_KEYS: ReadonlyArray<keyof RawUtmTouch> = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
 
+// Two-year max-age — device_id is a long-lived anonymous identifier; matches
+// the prior localStorage durability (effectively permanent until cleared).
+const DEVICE_ID_MAX_AGE_SECONDS = 63072000;
+
+function generateDeviceUuid(win: Window & typeof globalThis): string {
+  try {
+    if (typeof win.crypto !== 'undefined' && typeof win.crypto.randomUUID === 'function') {
+      return win.crypto.randomUUID();
+    }
+  } catch (e) { /* fallback below */ }
+  try {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+  } catch (e) {
+    return Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 11);
+  }
+}
+
 function emptyUtm(): RawUtmTouch {
   return { utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '' };
 }
@@ -161,27 +182,21 @@ export function createEventPropertiesBuilder(
     stableCache = null; // invalidate — country cookie name may have changed
   }
 
+  // Cross-subdomain device_id storage. Cookie-first read with one-time
+  // migration from the legacy localStorage entry, so users hopping between
+  // try.pocketpills.com and www.pocketpills.com keep the same anonymous ID.
+  const deviceIdStore = createPersistentValue<string>(win, ppLib, {
+    cookieName: DEVICE_ID_KEY,
+    maxAgeSeconds: DEVICE_ID_MAX_AGE_SECONDS,
+    serialize: (s) => s,
+    deserialize: (s) => (typeof s === 'string' && s.length > 0) ? s : null,
+    generate: () => generateDeviceUuid(win),
+    legacyLocalStorageKey: DEVICE_ID_KEY
+  });
+
   function getOrCreateDeviceId(): string {
     try {
-      const stored = win.localStorage.getItem(DEVICE_ID_KEY);
-      if (stored) return stored;
-
-      let id: string;
-      try {
-        if (typeof win.crypto !== 'undefined' && typeof win.crypto.randomUUID === 'function') {
-          id = win.crypto.randomUUID();
-        } else {
-          id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-            const r = Math.random() * 16 | 0;
-            return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-          });
-        }
-      } catch (e) {
-        id = Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 11);
-      }
-
-      win.localStorage.setItem(DEVICE_ID_KEY, id);
-      return id;
+      return deviceIdStore.read() || '';
     } catch (e) {
       return '';
     }
