@@ -10,6 +10,7 @@
 import type { PPLib } from '@src/types/common.types';
 import type { DeepPartial } from '@src/types/utility.types';
 import { pollUntil } from '@src/common/retry';
+import { createPersistentValue } from '@src/common/persistent-storage';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -42,9 +43,16 @@ export interface AttributionServiceConfig {
   enrichEvents: boolean;
   sessionTimeoutMs: number;
   persistFirstTouch: boolean;
+  /**
+   * Legacy localStorage keys retained for the cookie migration window.
+   * createPersistentValue treats these as one-time migration sources and
+   * deletes them after the first cookie write.
+   */
   storageKeyFirst: string;
   storageKeyLast: string;
   storageKeySession: string;
+  /** Prefix for the cookie names that replace the localStorage entries. */
+  cookiePrefix: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,10 +91,97 @@ export function createAttributionService(
     storageKeyFirst: 'mktg_first',
     storageKeyLast: 'mktg_last',
     storageKeySession: 'mktg_session',
+    cookiePrefix: 'pp_mktg_',
   };
 
   let cachedCurrent: TouchAttribution | null = null;
   let initialized = false;
+
+  // ---------------------------------------------------------------------------
+  // Persistent storage — cross-subdomain cookies (1B/1C migration).
+  //
+  // First touch: 2 years (long-lived attribution anchor).
+  // Last touch:  30 days (matches GA/Mixpanel last-touch window).
+  // Session:     30 min (re-anchored on every touchSession()).
+  //
+  // Each PersistentValue carries a legacyLocalStorageKey so values written by
+  // the pre-1C deploy migrate transparently on the next read. Deserializers
+  // return null when the parsed JSON lacks required fields (e.g. a stored
+  // TouchAttribution missing referrerDomain from before 1C) — the factory
+  // treats null as "corrupt" and falls through to legacy/generate (none here).
+  // ---------------------------------------------------------------------------
+
+  const FIRST_TOUCH_MAX_AGE = 63072000;  // 2 years
+  const LAST_TOUCH_MAX_AGE  = 2592000;   // 30 days
+  const SESSION_MAX_AGE     = 1800;      // 30 min
+
+  function parseTouchAttribution(raw: string): TouchAttribution | null {
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      const o = parsed as Record<string, unknown>;
+      // Required-field shape check — pre-1C entries lack referrerDomain and
+      // are treated as corrupt so the cookie self-heals on the next write.
+      const required: ReadonlyArray<keyof TouchAttribution> = [
+        'source', 'medium', 'campaign', 'platform', 'clickId',
+        'landingPage', 'referrer', 'referrerDomain', 'timestamp'
+      ];
+      for (let i = 0; i < required.length; i++) {
+        if (typeof o[required[i] as string] !== 'string') return null;
+      }
+      return {
+        source: o.source as string,
+        medium: o.medium as string,
+        campaign: o.campaign as string,
+        platform: o.platform as string,
+        clickId: o.clickId as string,
+        landingPage: o.landingPage as string,
+        referrer: o.referrer as string,
+        referrerDomain: o.referrerDomain as string,
+        timestamp: o.timestamp as string,
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function parseSession(raw: string): { ts: number } | null {
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      const ts = (parsed as Record<string, unknown>).ts;
+      if (typeof ts !== 'number') return null;
+      return { ts: ts };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  const firstTouchStore = createPersistentValue<TouchAttribution>(win, ppLib, {
+    cookieName: config.cookiePrefix + 'first_touch',
+    maxAgeSeconds: FIRST_TOUCH_MAX_AGE,
+    serialize: (v) => JSON.stringify(v),
+    deserialize: parseTouchAttribution,
+    legacyLocalStorageKey: config.storageKeyFirst,
+  });
+
+  const lastTouchStore = createPersistentValue<TouchAttribution>(win, ppLib, {
+    cookieName: config.cookiePrefix + 'last_touch',
+    maxAgeSeconds: LAST_TOUCH_MAX_AGE,
+    serialize: (v) => JSON.stringify(v),
+    deserialize: parseTouchAttribution,
+    legacyLocalStorageKey: config.storageKeyLast,
+  });
+
+  const sessionStore = createPersistentValue<{ ts: number }>(win, ppLib, {
+    cookieName: config.cookiePrefix + 'session',
+    maxAgeSeconds: SESSION_MAX_AGE,
+    serialize: (v) => JSON.stringify(v),
+    deserialize: parseSession,
+    legacyLocalStorageKey: config.storageKeySession,
+  });
 
   // ---------------------------------------------------------------------------
   // Configuration
@@ -281,39 +376,41 @@ export function createAttributionService(
   // ---------------------------------------------------------------------------
 
   function isSessionActive(): boolean {
-    const session = ppLib.Storage.get<{ ts: number }>(config.storageKeySession);
+    const session = sessionStore.read();
     if (!session || typeof session.ts !== 'number') return false;
     const elapsed = Date.now() - session.ts;
     return elapsed < config.sessionTimeoutMs;
   }
 
   function touchSession(): void {
-    ppLib.Storage.set(config.storageKeySession, { ts: Date.now() });
+    sessionStore.write({ ts: Date.now() });
   }
 
   // ---------------------------------------------------------------------------
-  // Storage (first/last touch)
+  // Storage (first/last touch) — domain-scoped cookies via PersistentValue.
+  // Legacy `mktg_*` localStorage entries are migrated transparently on first
+  // read (see the PersistentValue factory in common/persistent-storage.ts).
   // ---------------------------------------------------------------------------
 
   function storeFirstTouch(touch: TouchAttribution): void {
-    const existing = ppLib.Storage.get(config.storageKeyFirst, config.persistFirstTouch);
+    const existing = firstTouchStore.read();
     if (!existing) {
-      ppLib.Storage.set(config.storageKeyFirst, touch, config.persistFirstTouch);
+      firstTouchStore.write(touch);
       ppLib.log('info', '[ppAttribution] First touch stored: ' + touch.platform + ' / ' + touch.source);
     }
   }
 
   function storeLastTouch(touch: TouchAttribution): void {
-    ppLib.Storage.set(config.storageKeyLast, touch);
+    lastTouchStore.write(touch);
     ppLib.log('info', '[ppAttribution] Last touch stored: ' + touch.platform + ' / ' + touch.source);
   }
 
   function getFirstTouch(): TouchAttribution | null {
-    return ppLib.Storage.get(config.storageKeyFirst, config.persistFirstTouch) || null;
+    return firstTouchStore.read();
   }
 
   function getLastTouch(): TouchAttribution | null {
-    return ppLib.Storage.get(config.storageKeyLast) || null;
+    return lastTouchStore.read();
   }
 
   // ---------------------------------------------------------------------------
@@ -485,10 +582,9 @@ export function createAttributionService(
   // ---------------------------------------------------------------------------
 
   function clear(): void {
-    ppLib.Storage.remove(config.storageKeyFirst);
-    ppLib.Storage.remove(config.storageKeyFirst, true); // persistent
-    ppLib.Storage.remove(config.storageKeyLast);
-    ppLib.Storage.remove(config.storageKeySession);
+    firstTouchStore.clear();
+    lastTouchStore.clear();
+    sessionStore.clear();
     cachedCurrent = null;
     initialized = false;
     ppLib.log('info', '[ppAttribution] Attribution data cleared');
