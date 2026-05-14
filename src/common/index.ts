@@ -8,7 +8,7 @@
 import type { PPLib } from '@src/types/common.types';
 import { createSafeUtils } from '@src/common/safe-utils';
 import { createConfig } from '@src/common/config';
-import { createGetCookie, createDeleteCookie } from '@src/common/cookies';
+import { createGetCookie, createDeleteCookie, createSetCookie } from '@src/common/cookies';
 import { createGetQueryParam } from '@src/common/url';
 import { createSecurity } from '@src/common/security';
 import { createStorage } from '@src/common/storage';
@@ -66,6 +66,7 @@ import { safeLogPayload, safeLogError } from '@src/common/log-sanitize';
 
   ppLib.getCookie = createGetCookie(doc);
   ppLib.deleteCookie = createDeleteCookie(doc, win, ppLib.log);
+  ppLib.setCookie = createSetCookie(doc, win, ppLib.log);
 
   // =====================================================
   // URL UTILITIES

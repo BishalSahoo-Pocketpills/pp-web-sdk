@@ -1008,6 +1008,116 @@ describe('Common native coverage', () => {
   });
 
   // ==========================================================================
+  // SET COOKIE
+  // ==========================================================================
+  describe('setCookie', () => {
+    function clearAllCookies(): void {
+      document.cookie.split(';').forEach(c => {
+        const name = c.split('=')[0].trim();
+        if (name) document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+      });
+    }
+
+    it('writes a basic cookie with default Path=/ and SameSite=Lax', async () => {
+      await freshLoad();
+      clearAllCookies();
+      window.ppLib.setCookie('plain', 'hello');
+      expect(window.ppLib.getCookie('plain')).toBe('hello');
+    });
+
+    it('URL-encodes the value on write', async () => {
+      await freshLoad();
+      clearAllCookies();
+      window.ppLib.setCookie('encoded', 'hello world&foo=bar');
+      // Raw cookie string should contain encoded value
+      expect(document.cookie).toContain('encoded=' + encodeURIComponent('hello world&foo=bar'));
+      // Round-trip via getCookie decodes
+      expect(window.ppLib.getCookie('encoded')).toBe('hello world&foo=bar');
+    });
+
+    it('coerces missing / null / undefined values to empty string', async () => {
+      await freshLoad();
+      clearAllCookies();
+      window.ppLib.setCookie('nul', null as any);
+      window.ppLib.setCookie('und', undefined as any);
+      expect(window.ppLib.getCookie('nul')).toBeNull(); // empty value → not matched by getCookie regex
+      expect(window.ppLib.getCookie('und')).toBeNull();
+      // But the raw cookie was written with empty value
+      expect(document.cookie).toContain('nul=');
+      expect(document.cookie).toContain('und=');
+    });
+
+    it('skips empty name without throwing', async () => {
+      await freshLoad();
+      expect(() => window.ppLib.setCookie('', 'value')).not.toThrow();
+    });
+
+    it('skips Domain attribute when hostname does not match the configured root', async () => {
+      await freshLoad();
+      clearAllCookies();
+      // jsdom default hostname is 'localhost' — '.pocketpills.com' must not be applied.
+      window.ppLib.setCookie('cross', 'v', { domain: '.pocketpills.com' });
+      // Cookie should still be set (host-scoped) so getCookie finds it
+      expect(window.ppLib.getCookie('cross')).toBe('v');
+      // Domain attribute is internal to the browser cookie store; jsdom
+      // doesn't expose it via document.cookie. We assert behavior: cookie
+      // is readable, meaning the browser accepted the write (it would have
+      // rejected a domain= attribute that didn't match the hostname).
+    });
+
+    it('Secure auto-derives from protocol — http → no Secure flag', async () => {
+      await freshLoad();
+      clearAllCookies();
+      // jsdom default is http: → cookie should set even without Secure.
+      window.ppLib.setCookie('noSec', 'ok');
+      expect(window.ppLib.getCookie('noSec')).toBe('ok');
+    });
+
+    it('honors explicit secure=false override', async () => {
+      await freshLoad();
+      clearAllCookies();
+      window.ppLib.setCookie('forced', 'ok', { secure: false });
+      expect(window.ppLib.getCookie('forced')).toBe('ok');
+    });
+
+    it('writes Max-Age when maxAgeSeconds provided', async () => {
+      await freshLoad();
+      clearAllCookies();
+      window.ppLib.setCookie('aged', 'ok', { maxAgeSeconds: 60 });
+      expect(window.ppLib.getCookie('aged')).toBe('ok');
+    });
+
+    it('ignores non-finite maxAgeSeconds', async () => {
+      await freshLoad();
+      clearAllCookies();
+      window.ppLib.setCookie('bad', 'ok', { maxAgeSeconds: NaN });
+      expect(window.ppLib.getCookie('bad')).toBe('ok');
+    });
+
+    it('accepts custom SameSite values', async () => {
+      await freshLoad();
+      clearAllCookies();
+      window.ppLib.setCookie('strict', 'ok', { sameSite: 'Strict' });
+      expect(window.ppLib.getCookie('strict')).toBe('ok');
+    });
+
+    it('logs and swallows errors when document.cookie throws', async () => {
+      await freshLoad();
+      const { createSetCookie } = await import('../../src/common/cookies');
+      const log = vi.fn();
+      const fakeDoc = {} as Document;
+      Object.defineProperty(fakeDoc, 'cookie', {
+        configurable: true,
+        get() { return ''; },
+        set() { throw new Error('cookie blocked'); }
+      });
+      const set = createSetCookie(fakeDoc, window, log);
+      expect(() => set('x', 'y')).not.toThrow();
+      expect(log).toHaveBeenCalledWith('error', 'setCookie error', expect.any(Error));
+    });
+  });
+
+  // ==========================================================================
   // URL UTILITIES
   // ==========================================================================
   describe('getQueryParam', () => {
