@@ -980,7 +980,7 @@ type MixpanelQueueData = {
             type: 'mixpanel',
             data: {
               type: 'track',
-              eventName: 'Page View',
+              eventName: 'pageview',
               properties: data
             }
           });

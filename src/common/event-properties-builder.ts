@@ -49,11 +49,14 @@ export interface BuiltEventProperties {
   pp_session_id: string;
   pp_timestamp: number;
   platform: string;
-  is_logged_in: boolean;
+  // Stringified boolean ("true"/"false") per the event-attribute contract —
+  // consumers (Mixpanel, GTM, BigQuery) treat the value as a categorical
+  // string, not a boolean. The internal closure variable stays boolean.
+  logged_in: string;
   utm_source: string;
   utm_medium: string;
   utm_campaign: string;
-  country: string;
+  Country: string;
   browser: string;
   device_type: string;
   referrer: string;
@@ -401,15 +404,20 @@ export function createEventPropertiesBuilder(
     };
 
     const eventProperties: BuiltEventProperties = {
-      current_url: win.location.href,
-      url: win.location.pathname || '/',
+      // Per the event-attribute contract:
+      //   url         = exact URL of the page being visited (full href)
+      //   current_url = generic URL after removing params (pathname)
+      // The nested page.url (BuiltPage) stays as pathname — matches the
+      // contract sample shape.
+      url: win.location.href,
+      current_url: win.location.pathname || '/',
       device_id: stable.device_id,
       pp_user_id: userId,
       pp_patient_id: patientId,
       pp_session_id: ppLib.session ? ppLib.session.getOrCreateSessionId() : '',
       pp_timestamp: Date.now(),
       platform: defaultPlatform,
-      is_logged_in: isLoggedIn,
+      logged_in: isLoggedIn ? 'true' : 'false',
 
       // Current UTM — literal URL params with Mixpanel-style $direct/none
       // fallbacks for consistency with [first touch] / [last touch] keys.
@@ -428,7 +436,7 @@ export function createEventPropertiesBuilder(
       [UTM_LAST_TOUCH.campaign]: utmOrFallback(lastUtm, 'utm_campaign'),
 
       // User context
-      country: stable.country,
+      Country: stable.country,
       browser: stable.browser,
       device_type: stable.device_type,
       referrer: extractDomain(win.document.referrer),

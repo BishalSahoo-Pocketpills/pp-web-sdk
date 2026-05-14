@@ -67,7 +67,7 @@ describe('createEventPropertiesEnricher', () => {
     // Core identity
     expect(ep.pp_user_id).toBe('42');
     expect(ep.pp_patient_id).toBe('99');
-    expect(ep.is_logged_in).toBe(true);
+    expect(ep.logged_in).toBe('true');
     expect(ep.device_id).toBeTruthy();
 
     // URLs
@@ -95,7 +95,7 @@ describe('createEventPropertiesEnricher', () => {
     expect(ep['utm_campaign [last touch]']).toBe('spring');
 
     // User context
-    expect(ep.country).toBe('CA');
+    expect(ep.Country).toBe('CA');
     expect(typeof ep.browser).toBe('string');
     expect(typeof ep.device_type).toBe('string');
     expect(typeof ep.referrer).toBe('string');
@@ -123,7 +123,7 @@ describe('createEventPropertiesEnricher', () => {
     wrapped({ event: 'test' });
 
     const arg = mockPush.mock.calls[0][0];
-    expect(arg.eventProperties.is_logged_in).toBe(false);
+    expect(arg.eventProperties.logged_in).toBe('false');
     expect(arg.userProperties.pp_distinct_id).toBe(arg.eventProperties.device_id);
   });
 

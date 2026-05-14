@@ -1908,7 +1908,7 @@ describe('Tracker.trackPageView', () => {
     platforms.Mixpanel.queue = [];
 
     window.ppAnalyticsDebug.tracker.trackPageView();
-    const trackData = platforms.Mixpanel.queue.find(d => d.type === 'track' && d.eventName === 'Page View');
+    const trackData = platforms.Mixpanel.queue.find(d => d.type === 'track' && d.eventName === 'pageview');
     expect(trackData).toBeDefined();
     expect(trackData.properties.page_url).toBeDefined();
     vi.useRealTimers();
@@ -1936,7 +1936,7 @@ describe('Tracker.trackPageView', () => {
     platforms.Mixpanel.queue = [];
 
     window.ppAnalyticsDebug.tracker.trackPageView();
-    const trackData = platforms.Mixpanel.queue.find(d => d.type === 'track' && d.eventName === 'Page View');
+    const trackData = platforms.Mixpanel.queue.find(d => d.type === 'track' && d.eventName === 'pageview');
     expect(trackData).toBeUndefined();
     vi.useRealTimers();
   });

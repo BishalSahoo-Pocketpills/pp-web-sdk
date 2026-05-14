@@ -76,7 +76,7 @@ import { bootstrapModule } from '@src/common/bootstrap';
   // =====================================================
 
   function buildAuthOverride(data: { pp_user_id?: string; pp_patient_id?: string }): Partial<DataLayerUser> {
-    const override: Partial<DataLayerUser> = { logged_in: true };
+    const override: Partial<DataLayerUser> = { logged_in: 'true' };
     override.pp_user_id = data.pp_user_id || override.pp_user_id;
     override.pp_patient_id = data.pp_patient_id || override.pp_patient_id;
     return override;

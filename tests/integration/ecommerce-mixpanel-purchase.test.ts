@@ -90,7 +90,7 @@ describe('Integration: ecommerce → mixpanel + dataLayer', () => {
     expect(typeof propsObj.browser).toBe('string');
     expect(typeof propsObj.device_type).toBe('string');
     expect(typeof propsObj.current_url).toBe('string');
-    expect(propsObj.is_logged_in).toBeDefined();
+    expect(propsObj.logged_in).toBeDefined();
 
     // Caller's ecommerce data still flows through.
     expect(propsObj.currency).toEqual(expect.any(String));
