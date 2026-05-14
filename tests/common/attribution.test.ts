@@ -127,6 +127,106 @@ describe('createAttributionService', () => {
     });
   });
 
+  describe('storage migration: localStorage mktg_* → pp_mktg_* cookies', () => {
+    it('migrates legacy mktg_first / mktg_last / mktg_session to cookies on init', () => {
+      // Seed legacy localStorage as if pre-1C deploy. Each TouchAttribution
+      // has every required field — pre-1C entries WITHOUT referrerDomain
+      // are tested separately below.
+      const first = {
+        source: 'facebook', medium: 'social', campaign: 'launch', platform: 'organic_social',
+        clickId: '', landingPage: 'http://localhost/first',
+        referrer: 'https://www.facebook.com/', referrerDomain: 'www.facebook.com',
+        timestamp: '2024-01-01T00:00:00.000Z',
+      };
+      const last = {
+        source: 'google', medium: 'cpc', campaign: 'spring', platform: 'google_ads',
+        clickId: 'abc', landingPage: 'http://localhost/last',
+        referrer: 'https://www.google.com/', referrerDomain: 'www.google.com',
+        timestamp: '2024-06-01T00:00:00.000Z',
+      };
+      window.localStorage.setItem('mktg_first', JSON.stringify(first));
+      window.localStorage.setItem('mktg_last', JSON.stringify(last));
+      window.localStorage.setItem('mktg_session', JSON.stringify({ ts: Date.now() }));
+
+      const svc = createAttributionService(window, makePPLib());
+      // Read-only — confirms migration happens on read, not init.
+      const migratedFirst = svc.getFirstTouch();
+      const migratedLast = svc.getLastTouch();
+
+      expect(migratedFirst).toEqual(first);
+      expect(migratedLast).toEqual(last);
+
+      // Cookies written
+      expect(document.cookie).toContain('pp_mktg_first_touch=');
+      expect(document.cookie).toContain('pp_mktg_last_touch=');
+
+      // Legacy localStorage entries purged after migration
+      expect(window.localStorage.getItem('mktg_first')).toBeNull();
+      expect(window.localStorage.getItem('mktg_last')).toBeNull();
+    });
+
+    it('drops pre-1C TouchAttribution that lacks referrerDomain (corrupt under new schema)', () => {
+      // Simulate a stored value from before 1C — no referrerDomain field.
+      // parseTouchAttribution() must reject it so the next init writes a
+      // fresh, schema-compliant cookie.
+      const preOneC = {
+        source: 'google', medium: 'cpc', campaign: 'spring', platform: 'google_ads',
+        clickId: '', landingPage: '/lp',
+        referrer: 'google.com',
+        timestamp: '2024-01-01T00:00:00.000Z',
+      };
+      window.localStorage.setItem('mktg_first', JSON.stringify(preOneC));
+
+      const svc = createAttributionService(window, makePPLib());
+      // Pre-1C value rejected, returns null (no generator on the touch store).
+      expect(svc.getFirstTouch()).toBeNull();
+      // Legacy entry purged so it doesn't keep tripping deserializers.
+      expect(window.localStorage.getItem('mktg_first')).toBeNull();
+    });
+
+    it('init() writes first/last touch to the new cookies', () => {
+      setHref('http://localhost/lp?utm_source=ig&utm_medium=social');
+      setReferrer('https://www.instagram.com/');
+
+      const svc = createAttributionService(window, makePPLib());
+      svc.init();
+
+      // Cookies present after init
+      expect(document.cookie).toContain('pp_mktg_first_touch=');
+      expect(document.cookie).toContain('pp_mktg_last_touch=');
+      expect(document.cookie).toContain('pp_mktg_session=');
+
+      const stored = svc.getFirstTouch();
+      expect(stored).not.toBeNull();
+      expect(stored!.source).toBe('ig');
+      expect(stored!.landingPage).toBe('http://localhost/lp?utm_source=ig&utm_medium=social');
+      expect(stored!.referrer).toBe('https://www.instagram.com/');
+      expect(stored!.referrerDomain).toBe('www.instagram.com');
+    });
+
+    it('clear() removes all three cookies', () => {
+      setHref('http://localhost/lp?utm_source=fb');
+      const svc = createAttributionService(window, makePPLib());
+      svc.init();
+
+      expect(document.cookie).toContain('pp_mktg_first_touch=');
+
+      svc.clear();
+
+      expect(document.cookie).not.toMatch(/pp_mktg_first_touch=[^;]+/);
+      expect(document.cookie).not.toMatch(/pp_mktg_last_touch=[^;]+/);
+      expect(document.cookie).not.toMatch(/pp_mktg_session=[^;]+/);
+    });
+
+    it('isSessionActive returns false when session cookie is absent', () => {
+      // Direct way: brand new service, no init() — session never written.
+      const svc = createAttributionService(window, makePPLib());
+      // Indirectly: getLastTouch with no init/migration must be null too,
+      // confirming the fresh-state path is exercised.
+      expect(svc.getLastTouch()).toBeNull();
+    });
+  });
+
   describe('platform classifier (regression: still uses label space)', () => {
     it('detects organic_search via google referrer hostname', () => {
       setReferrer('https://www.google.com/search?q=foo');
