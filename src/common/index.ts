@@ -151,7 +151,7 @@ import { safeLogPayload, safeLogError } from '@src/common/log-sanitize';
   // SESSION MANAGEMENT
   // =====================================================
 
-  ppLib.session = createSessionService();
+  ppLib.session = createSessionService(win, ppLib);
 
   // =====================================================
   // DATALAYER ENRICHER SYSTEM
