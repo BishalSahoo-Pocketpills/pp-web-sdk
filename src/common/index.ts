@@ -8,7 +8,7 @@
 import type { PPLib } from '@src/types/common.types';
 import { createSafeUtils } from '@src/common/safe-utils';
 import { createConfig } from '@src/common/config';
-import { createGetCookie, createDeleteCookie } from '@src/common/cookies';
+import { createGetCookie, createDeleteCookie, createSetCookie } from '@src/common/cookies';
 import { createGetQueryParam } from '@src/common/url';
 import { createSecurity } from '@src/common/security';
 import { createStorage } from '@src/common/storage';
@@ -31,6 +31,23 @@ import { safeLogPayload, safeLogError } from '@src/common/log-sanitize';
   // =====================================================
 
   ppLib.config = createConfig();
+
+  // Cross-subdomain cookie domain auto-detection.
+  // try.pocketpills.com and www.pocketpills.com share session/device/UTM
+  // state via cookies scoped to `.pocketpills.com`. We derive the domain
+  // from the live hostname so the same SDK build can run in dev (localhost,
+  // jsdom) without writing cookies the browser would reject. A caller may
+  // set `ppLib.config.cookieDomain` before this script loads to override.
+  if (typeof ppLib.config.cookieDomain !== 'string') {
+    try {
+      const hostname = (win.location && win.location.hostname) || '';
+      if (hostname === 'pocketpills.com' || hostname.endsWith('.pocketpills.com')) {
+        ppLib.config.cookieDomain = '.pocketpills.com';
+      }
+    } catch (e) {
+      // location may be inaccessible in sandboxed contexts — leave undefined.
+    }
+  }
 
   // =====================================================
   // LOGGING
@@ -66,6 +83,7 @@ import { safeLogPayload, safeLogError } from '@src/common/log-sanitize';
 
   ppLib.getCookie = createGetCookie(doc);
   ppLib.deleteCookie = createDeleteCookie(doc, win, ppLib.log);
+  ppLib.setCookie = createSetCookie(doc, win, ppLib.log);
 
   // =====================================================
   // URL UTILITIES
@@ -133,7 +151,7 @@ import { safeLogPayload, safeLogError } from '@src/common/log-sanitize';
   // SESSION MANAGEMENT
   // =====================================================
 
-  ppLib.session = createSessionService();
+  ppLib.session = createSessionService(win, ppLib);
 
   // =====================================================
   // DATALAYER ENRICHER SYSTEM

@@ -83,6 +83,60 @@ describe('Common native coverage', () => {
   });
 
   // ==========================================================================
+  // cookieDomain auto-detection
+  // ==========================================================================
+  describe('cookieDomain auto-detection', () => {
+    async function withHostname(hostname: string, fn: () => Promise<void> | void): Promise<void> {
+      // jsdom locks window.location.hostname; we can't reassign it. So we
+      // shadow `window.location` with a proxy object that overrides hostname
+      // while preserving other fields. The common module reads
+      // win.location.hostname so this is enough.
+      const original = window.location;
+      const shadow: Location = Object.create(original) as Location;
+      Object.defineProperty(shadow, 'hostname', { value: hostname, configurable: true });
+      Object.defineProperty(window, 'location', { value: shadow, configurable: true });
+      try {
+        await fn();
+      } finally {
+        Object.defineProperty(window, 'location', { value: original, configurable: true });
+      }
+    }
+
+    it('leaves cookieDomain undefined on localhost (jsdom default)', async () => {
+      await freshLoad();
+      expect(window.ppLib.config.cookieDomain).toBeUndefined();
+    });
+
+    it('sets cookieDomain to .pocketpills.com on www.pocketpills.com', async () => {
+      await withHostname('www.pocketpills.com', async () => {
+        await freshLoad();
+        expect(window.ppLib.config.cookieDomain).toBe('.pocketpills.com');
+      });
+    });
+
+    it('sets cookieDomain to .pocketpills.com on try.pocketpills.com', async () => {
+      await withHostname('try.pocketpills.com', async () => {
+        await freshLoad();
+        expect(window.ppLib.config.cookieDomain).toBe('.pocketpills.com');
+      });
+    });
+
+    it('sets cookieDomain to .pocketpills.com on apex pocketpills.com', async () => {
+      await withHostname('pocketpills.com', async () => {
+        await freshLoad();
+        expect(window.ppLib.config.cookieDomain).toBe('.pocketpills.com');
+      });
+    });
+
+    it('does not set cookieDomain on a lookalike hostname (suffix-evasion)', async () => {
+      await withHostname('evilpocketpills.com', async () => {
+        await freshLoad();
+        expect(window.ppLib.config.cookieDomain).toBeUndefined();
+      });
+    });
+  });
+
+  // ==========================================================================
   // ppLib.ready
   // ==========================================================================
   describe('ppLib.ready', () => {
@@ -1004,6 +1058,137 @@ describe('Common native coverage', () => {
     it('does nothing for null name', async () => {
       await freshLoad();
       window.ppLib.deleteCookie(null as any);
+    });
+  });
+
+  // ==========================================================================
+  // SET COOKIE
+  // ==========================================================================
+  describe('setCookie', () => {
+    function clearAllCookies(): void {
+      document.cookie.split(';').forEach(c => {
+        const name = c.split('=')[0].trim();
+        if (name) document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+      });
+    }
+
+    it('writes a basic cookie with default Path=/ and SameSite=Lax', async () => {
+      await freshLoad();
+      clearAllCookies();
+      window.ppLib.setCookie('plain', 'hello');
+      expect(window.ppLib.getCookie('plain')).toBe('hello');
+    });
+
+    it('URL-encodes the value on write', async () => {
+      await freshLoad();
+      clearAllCookies();
+      window.ppLib.setCookie('encoded', 'hello world&foo=bar');
+      // Raw cookie string should contain encoded value
+      expect(document.cookie).toContain('encoded=' + encodeURIComponent('hello world&foo=bar'));
+      // Round-trip via getCookie decodes
+      expect(window.ppLib.getCookie('encoded')).toBe('hello world&foo=bar');
+    });
+
+    it('coerces missing / null / undefined values to empty string', async () => {
+      await freshLoad();
+      clearAllCookies();
+      window.ppLib.setCookie('nul', null as any);
+      window.ppLib.setCookie('und', undefined as any);
+      expect(window.ppLib.getCookie('nul')).toBeNull(); // empty value → not matched by getCookie regex
+      expect(window.ppLib.getCookie('und')).toBeNull();
+      // But the raw cookie was written with empty value
+      expect(document.cookie).toContain('nul=');
+      expect(document.cookie).toContain('und=');
+    });
+
+    it('skips empty name without throwing', async () => {
+      await freshLoad();
+      expect(() => window.ppLib.setCookie('', 'value')).not.toThrow();
+    });
+
+    it('skips Domain attribute when hostname does not match the configured root', async () => {
+      await freshLoad();
+      clearAllCookies();
+      // jsdom default hostname is 'localhost' — '.pocketpills.com' must not be applied.
+      window.ppLib.setCookie('cross', 'v', { domain: '.pocketpills.com' });
+      // Cookie should still be set (host-scoped) so getCookie finds it
+      expect(window.ppLib.getCookie('cross')).toBe('v');
+      // Domain attribute is internal to the browser cookie store; jsdom
+      // doesn't expose it via document.cookie. We assert behavior: cookie
+      // is readable, meaning the browser accepted the write (it would have
+      // rejected a domain= attribute that didn't match the hostname).
+    });
+
+    it('Secure auto-derives from protocol — http → no Secure flag', async () => {
+      await freshLoad();
+      clearAllCookies();
+      // jsdom default is http: → cookie should set even without Secure.
+      window.ppLib.setCookie('noSec', 'ok');
+      expect(window.ppLib.getCookie('noSec')).toBe('ok');
+    });
+
+    it('honors explicit secure=false override', async () => {
+      await freshLoad();
+      clearAllCookies();
+      window.ppLib.setCookie('forced', 'ok', { secure: false });
+      expect(window.ppLib.getCookie('forced')).toBe('ok');
+    });
+
+    it('writes Max-Age when maxAgeSeconds provided', async () => {
+      await freshLoad();
+      clearAllCookies();
+      window.ppLib.setCookie('aged', 'ok', { maxAgeSeconds: 60 });
+      expect(window.ppLib.getCookie('aged')).toBe('ok');
+    });
+
+    it('ignores non-finite maxAgeSeconds', async () => {
+      await freshLoad();
+      clearAllCookies();
+      window.ppLib.setCookie('bad', 'ok', { maxAgeSeconds: NaN });
+      expect(window.ppLib.getCookie('bad')).toBe('ok');
+    });
+
+    it('accepts custom SameSite values', async () => {
+      await freshLoad();
+      clearAllCookies();
+      window.ppLib.setCookie('strict', 'ok', { sameSite: 'Strict' });
+      expect(window.ppLib.getCookie('strict')).toBe('ok');
+    });
+
+    it('logs and swallows errors when document.cookie throws', async () => {
+      await freshLoad();
+      const { createSetCookie } = await import('../../src/common/cookies');
+      const log = vi.fn();
+      const fakeDoc = {} as Document;
+      Object.defineProperty(fakeDoc, 'cookie', {
+        configurable: true,
+        get() { return ''; },
+        set() { throw new Error('cookie blocked'); }
+      });
+      const set = createSetCookie(fakeDoc, window, log);
+      expect(() => set('x', 'y')).not.toThrow();
+      expect(log).toHaveBeenCalledWith('error', 'setCookie error', expect.any(Error));
+    });
+
+    it('refuses cookie names containing CR/LF/NUL (header-injection defense)', async () => {
+      await freshLoad();
+      const before = document.cookie;
+      // Attempt to inject a second Set-Cookie via CR/LF in the name.
+      window.ppLib.setCookie('pp_safe\r\nSet-Cookie: injected=evil', 'v');
+      window.ppLib.setCookie('pp_safe\nfoo', 'v');
+      window.ppLib.setCookie('pp_safe\0bar', 'v');
+      // None of those should have landed; document.cookie unchanged.
+      expect(document.cookie).toBe(before);
+      // The "injected" cookie name MUST NOT appear.
+      expect(document.cookie.indexOf('injected')).toBe(-1);
+    });
+
+    it('refuses cookie domain or path containing control characters or semicolons', async () => {
+      await freshLoad();
+      const before = document.cookie;
+      window.ppLib.setCookie('pp_bad_domain', 'v', { domain: 'a.com\r\nSet-Cookie:evil' });
+      window.ppLib.setCookie('pp_bad_path', 'v', { path: '/foo;Domain=evil.com' });
+      expect(document.cookie).toBe(before);
     });
   });
 

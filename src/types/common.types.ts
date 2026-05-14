@@ -16,6 +16,13 @@ export interface PPLibConfig {
   // payloads, bearer tokens in fetch URLs). Local debug builds may enable
   // this to surface verbatim message + stack via `messageRaw` / `stack`.
   debugErrors?: boolean;
+  /**
+   * Domain attribute for cross-subdomain cookies (e.g. '.pocketpills.com').
+   * Auto-detected at boot from window.location.hostname; left undefined in
+   * dev / test (localhost, *.local, jsdom) so cookies stay host-scoped. May
+   * be overridden by callers configuring the SDK pre-bootstrap.
+   */
+  cookieDomain?: string;
 }
 
 export interface SafeUtils {
@@ -79,6 +86,13 @@ export interface PPLib {
   Storage: Storage;
   getCookie: (name: string) => string | null;
   deleteCookie: (name: string) => void;
+  /**
+   * Write a cookie with optional domain / max-age / SameSite / Secure controls.
+   * URL-encodes the value. Skips the Domain attribute when the current
+   * hostname doesn't end with the configured root (dev/test safety).
+   * See `src/common/cookies.ts` for full semantics.
+   */
+  setCookie: (name: string, value: string, options?: import('../common/cookies').SetCookieOptions) => void;
   getQueryParam: (url: string, findParam: string) => string;
   log: (level: string, message: string, data?: unknown) => void;
   // PII-safe payload helper. Wraps untrusted user-attribute / event-property
