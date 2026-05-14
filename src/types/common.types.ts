@@ -16,6 +16,13 @@ export interface PPLibConfig {
   // payloads, bearer tokens in fetch URLs). Local debug builds may enable
   // this to surface verbatim message + stack via `messageRaw` / `stack`.
   debugErrors?: boolean;
+  /**
+   * Domain attribute for cross-subdomain cookies (e.g. '.pocketpills.com').
+   * Auto-detected at boot from window.location.hostname; left undefined in
+   * dev / test (localhost, *.local, jsdom) so cookies stay host-scoped. May
+   * be overridden by callers configuring the SDK pre-bootstrap.
+   */
+  cookieDomain?: string;
 }
 
 export interface SafeUtils {
