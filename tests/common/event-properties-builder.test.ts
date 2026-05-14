@@ -213,6 +213,34 @@ describe('createEventPropertiesBuilder', () => {
       expect(a).toBe(b);
     });
 
+    it('migrates legacy localStorage UTM first/last touch to cookies on first read', () => {
+      // Seed legacy localStorage UTM touches — JSON-encoded per the old contract.
+      const legacyFirst = { utm_source: 'facebook', utm_medium: 'social', utm_campaign: 'launch', utm_content: '', utm_term: '' };
+      const legacyLast = { utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'spring', utm_content: '', utm_term: '' };
+      window.localStorage.setItem('pp_utm_first_touch', JSON.stringify(legacyFirst));
+      window.localStorage.setItem('pp_utm_last_touch', JSON.stringify(legacyLast));
+
+      const ppLib = makePPLib();
+      const builder = createEventPropertiesBuilder(window, ppLib);
+      const bundle = builder.build();
+
+      // Values carried over into event properties
+      expect(bundle.eventProperties['utm_source [first touch]']).toBe('facebook');
+      expect(bundle.eventProperties['utm_medium [first touch]']).toBe('social');
+      expect(bundle.eventProperties['utm_source [last touch]']).toBe('google');
+      expect(bundle.eventProperties['utm_medium [last touch]']).toBe('cpc');
+
+      // Cookies seeded with JSON payloads (URL-encoded)
+      expect(document.cookie).toContain('pp_utm_first_touch=');
+      expect(document.cookie).toContain('pp_utm_last_touch=');
+      const decodedFirst = decodeURIComponent((document.cookie.match(/pp_utm_first_touch=([^;]+)/) as RegExpMatchArray)[1]);
+      expect(JSON.parse(decodedFirst)).toEqual(legacyFirst);
+
+      // Legacy localStorage entries purged
+      expect(window.localStorage.getItem('pp_utm_first_touch')).toBeNull();
+      expect(window.localStorage.getItem('pp_utm_last_touch')).toBeNull();
+    });
+
     it('migrates a legacy localStorage device_id to the cookie on first read', () => {
       // Seed legacy localStorage as if a user pre-dates the rollout.
       window.localStorage.setItem('pp_device_id', 'legacy-device-uuid');

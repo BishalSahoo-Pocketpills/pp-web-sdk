@@ -119,6 +119,31 @@ const UTM_KEYS: ReadonlyArray<keyof RawUtmTouch> = ['utm_source', 'utm_medium', 
 // Two-year max-age — device_id is a long-lived anonymous identifier; matches
 // the prior localStorage durability (effectively permanent until cleared).
 const DEVICE_ID_MAX_AGE_SECONDS = 63072000;
+// First touch UTM — 2 years, mirrors the device_id horizon. First-touch
+// attribution is by definition long-lived and we want it to survive
+// re-engagement campaigns.
+const UTM_FIRST_TOUCH_MAX_AGE_SECONDS = 63072000;
+// Last touch UTM — 30 days. Matches the standard Mixpanel/GA "last touch"
+// attribution window so analytics tools agree on which campaign gets credit.
+const UTM_LAST_TOUCH_MAX_AGE_SECONDS = 2592000;
+
+function parseUtmTouch(raw: string): RawUtmTouch | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const out: RawUtmTouch = { utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '' };
+    const keys: ReadonlyArray<keyof RawUtmTouch> = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      const v = (parsed as Record<string, unknown>)[k];
+      out[k] = typeof v === 'string' ? v : '';
+    }
+    return out;
+  } catch (e) {
+    return null;
+  }
+}
 
 function generateDeviceUuid(win: Window & typeof globalThis): string {
   try {
@@ -307,21 +332,34 @@ export function createEventPropertiesBuilder(
     }
   }
 
+  // Cross-subdomain UTM touch storage. First-touch + last-touch attribution
+  // must travel with the user across try.pocketpills.com ↔ www.pocketpills.com
+  // so the persisted source/medium/campaign matches the visit that actually
+  // attributed the conversion. Read-first: if a cookie exists, it wins; the
+  // legacy localStorage JSON is migrated on first access and purged.
+  const utmFirstTouchStore = createPersistentValue<RawUtmTouch>(win, ppLib, {
+    cookieName: UTM_FIRST_TOUCH_KEY,
+    maxAgeSeconds: UTM_FIRST_TOUCH_MAX_AGE_SECONDS,
+    serialize: (v) => JSON.stringify(v),
+    deserialize: parseUtmTouch,
+    legacyLocalStorageKey: UTM_FIRST_TOUCH_KEY
+  });
+
+  const utmLastTouchStore = createPersistentValue<RawUtmTouch>(win, ppLib, {
+    cookieName: UTM_LAST_TOUCH_KEY,
+    maxAgeSeconds: UTM_LAST_TOUCH_MAX_AGE_SECONDS,
+    serialize: (v) => JSON.stringify(v),
+    deserialize: parseUtmTouch,
+    legacyLocalStorageKey: UTM_LAST_TOUCH_KEY
+  });
+
+  function storeForKey(storageKey: string) {
+    return storageKey === UTM_FIRST_TOUCH_KEY ? utmFirstTouchStore : utmLastTouchStore;
+  }
+
   function readStoredUtm(storageKey: string): RawUtmTouch {
     try {
-      const raw = win.localStorage.getItem(storageKey);
-      if (!raw) return emptyUtm();
-      const parsed = ppLib.Security && ppLib.Security.json
-        ? ppLib.Security.json.parse(raw, null)
-        : JSON.parse(raw);
-      if (!parsed || typeof parsed !== 'object') return emptyUtm();
-      const out = emptyUtm();
-      for (let i = 0; i < UTM_KEYS.length; i++) {
-        const k = UTM_KEYS[i];
-        const v = (parsed as Record<string, unknown>)[k];
-        out[k] = typeof v === 'string' ? v : '';
-      }
-      return out;
+      return storeForKey(storageKey).read() || emptyUtm();
     } catch (e) {
       return emptyUtm();
     }
@@ -329,9 +367,9 @@ export function createEventPropertiesBuilder(
 
   function persistUtm(storageKey: string, value: RawUtmTouch): void {
     try {
-      win.localStorage.setItem(storageKey, JSON.stringify(value));
+      storeForKey(storageKey).write(value);
     } catch (e) {
-      /* localStorage may be disabled — leave persistence as best-effort */
+      /* persistence is best-effort */
     }
   }
 
