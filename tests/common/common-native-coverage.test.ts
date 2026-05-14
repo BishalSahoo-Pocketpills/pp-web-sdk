@@ -83,6 +83,60 @@ describe('Common native coverage', () => {
   });
 
   // ==========================================================================
+  // cookieDomain auto-detection
+  // ==========================================================================
+  describe('cookieDomain auto-detection', () => {
+    async function withHostname(hostname: string, fn: () => Promise<void> | void): Promise<void> {
+      // jsdom locks window.location.hostname; we can't reassign it. So we
+      // shadow `window.location` with a proxy object that overrides hostname
+      // while preserving other fields. The common module reads
+      // win.location.hostname so this is enough.
+      const original = window.location;
+      const shadow: Location = Object.create(original) as Location;
+      Object.defineProperty(shadow, 'hostname', { value: hostname, configurable: true });
+      Object.defineProperty(window, 'location', { value: shadow, configurable: true });
+      try {
+        await fn();
+      } finally {
+        Object.defineProperty(window, 'location', { value: original, configurable: true });
+      }
+    }
+
+    it('leaves cookieDomain undefined on localhost (jsdom default)', async () => {
+      await freshLoad();
+      expect(window.ppLib.config.cookieDomain).toBeUndefined();
+    });
+
+    it('sets cookieDomain to .pocketpills.com on www.pocketpills.com', async () => {
+      await withHostname('www.pocketpills.com', async () => {
+        await freshLoad();
+        expect(window.ppLib.config.cookieDomain).toBe('.pocketpills.com');
+      });
+    });
+
+    it('sets cookieDomain to .pocketpills.com on try.pocketpills.com', async () => {
+      await withHostname('try.pocketpills.com', async () => {
+        await freshLoad();
+        expect(window.ppLib.config.cookieDomain).toBe('.pocketpills.com');
+      });
+    });
+
+    it('sets cookieDomain to .pocketpills.com on apex pocketpills.com', async () => {
+      await withHostname('pocketpills.com', async () => {
+        await freshLoad();
+        expect(window.ppLib.config.cookieDomain).toBe('.pocketpills.com');
+      });
+    });
+
+    it('does not set cookieDomain on a lookalike hostname (suffix-evasion)', async () => {
+      await withHostname('evilpocketpills.com', async () => {
+        await freshLoad();
+        expect(window.ppLib.config.cookieDomain).toBeUndefined();
+      });
+    });
+  });
+
+  // ==========================================================================
   // ppLib.ready
   // ==========================================================================
   describe('ppLib.ready', () => {

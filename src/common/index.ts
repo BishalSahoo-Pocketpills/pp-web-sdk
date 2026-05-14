@@ -32,6 +32,23 @@ import { safeLogPayload, safeLogError } from '@src/common/log-sanitize';
 
   ppLib.config = createConfig();
 
+  // Cross-subdomain cookie domain auto-detection.
+  // try.pocketpills.com and www.pocketpills.com share session/device/UTM
+  // state via cookies scoped to `.pocketpills.com`. We derive the domain
+  // from the live hostname so the same SDK build can run in dev (localhost,
+  // jsdom) without writing cookies the browser would reject. A caller may
+  // set `ppLib.config.cookieDomain` before this script loads to override.
+  if (typeof ppLib.config.cookieDomain !== 'string') {
+    try {
+      const hostname = (win.location && win.location.hostname) || '';
+      if (hostname === 'pocketpills.com' || hostname.endsWith('.pocketpills.com')) {
+        ppLib.config.cookieDomain = '.pocketpills.com';
+      }
+    } catch (e) {
+      // location may be inaccessible in sandboxed contexts — leave undefined.
+    }
+  }
+
   // =====================================================
   // LOGGING
   // =====================================================
