@@ -725,7 +725,9 @@ describe('Mixpanel native coverage', () => {
 
       // Anonymous: pp_distinct_id falls back to device_id (the SDK's stored
       // UUID), so identify() should be called with that exact value.
-      const ppDeviceId = window.localStorage.getItem('pp_device_id');
+      // device_id now lives in a cross-subdomain cookie (pp_device_id) — read
+      // via ppLib.getCookie so the assertion travels with the storage location.
+      const ppDeviceId = window.ppLib.getCookie('pp_device_id');
       expect(ppDeviceId).toBeTruthy();
       expect(mp.identify).toHaveBeenCalledWith(ppDeviceId);
     });
