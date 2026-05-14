@@ -142,6 +142,13 @@ import { createOffersManager } from '@src/voucherify/offers-manager';
     const metadata: CustomerMetadata = {};
 
     if (CONFIG.context.includeLoginState) {
+      // INTENTIONALLY keyed `is_logged_in` (boolean), NOT renamed to
+      // `logged_in: string` even though the SDK's event-payload contract
+      // uses that newer shape. This field is Voucherify customer-metadata
+      // sent to /qualifications and consumed by customer-configured
+      // Voucherify validation rules — renaming would break those rules
+      // server-side. Keep boolean here; the event-payload `logged_in`
+      // (stringified) is a separate concern.
       metadata.is_logged_in = !!(ppLib.login && ppLib.login.isLoggedIn());
     }
 
