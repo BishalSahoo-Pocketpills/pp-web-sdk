@@ -75,14 +75,10 @@ describe('Integration: ecommerce → mixpanel + dataLayer', () => {
     expect(eventName).toBe('add_to_cart');
 
     // Canonical event-properties context merged in by the facade —
-    // these fields come from ppLib.eventPropertiesBuilder.buildFlat() and
-    // must reach Mixpanel via the facade's enrichTrack path. If the facade
-    // stops calling the builder, OR the builder drops a field, this fails.
-    //
-    // Note: UTM touch keys (`utm_source [first touch]`, etc.) and
-    // `marketing_attribution` are intentionally NOT in buildFlat output —
-    // they're registered as Mixpanel super-properties separately.
-    // Asserting them here would create a false negative.
+    // these fields come from ppLib.eventPropertiesBuilder (in the configured
+    // emitMode, default 'dual') and must reach Mixpanel via the facade's
+    // enrichTrack path. If the facade stops calling the builder, OR the
+    // builder drops a field, this fails.
     const propsObj = props as Record<string, unknown>;
     expect(typeof propsObj.device_id).toBe('string');
     expect((propsObj.device_id as string).length).toBeGreaterThan(0);
