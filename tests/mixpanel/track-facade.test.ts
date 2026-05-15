@@ -241,6 +241,35 @@ describe('ppLib.mixpanel.track facade', () => {
       const [, mergedProps] = (window as any).mixpanel.track.mock.calls[0];
       expect(mergedProps.eventProperties).toEqual({ custom: 'value' });
     });
+
+    it('caller can replace ALL nested wrappers at once (documented escape hatch)', () => {
+      // Defensive test for the documented precedence rule: caller props
+      // REPLACE wrappers entirely, they are not shallow-merged. This is the
+      // intentional escape hatch for callers that need a custom shape; the
+      // SDK does NOT silently merge wrapper contents.
+      loadWithCommon('mixpanel');
+      (window as any).ppLib.mixpanel.configure({ token: 'tok', emitMode: 'nested' });
+      (window as any).mixpanel = createMockMixpanel();
+
+      const override = {
+        page: { custom_page: true },
+        userProperties: { custom_user: 'x' },
+        eventProperties: { custom_event: 'y' },
+        attribution: { custom_attr: 'z' },
+      };
+      (window as any).ppLib.mixpanel.track('view_item', override);
+
+      const [, mergedProps] = (window as any).mixpanel.track.mock.calls[0];
+      // Each wrapper carries ONLY the caller's keys — the SDK's wrapper
+      // contents are entirely replaced.
+      expect(mergedProps.page).toEqual({ custom_page: true });
+      expect(mergedProps.userProperties).toEqual({ custom_user: 'x' });
+      expect(mergedProps.eventProperties).toEqual({ custom_event: 'y' });
+      expect(mergedProps.attribution).toEqual({ custom_attr: 'z' });
+      // No SDK-side fields leak through (would indicate accidental merge).
+      expect(mergedProps.eventProperties.device_id).toBeUndefined();
+      expect(mergedProps.userProperties.pp_distinct_id).toBeUndefined();
+    });
   });
 
   it('returns false and logs error when the underlying mixpanel.track throws', () => {
