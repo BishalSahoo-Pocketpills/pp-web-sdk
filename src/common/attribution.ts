@@ -529,7 +529,17 @@ export function createAttributionService(
         ppLib.log('info', '[ppAttribution] self-referral detected — last-touch unchanged (referrer=' +
           referrerUrl + ', host=' + win.location.hostname + ')');
       }
-      // Restore cached current from existing last touch for consistency
+      // INVARIANT: when last-touch is vetoed (self-referral OR same session
+      // with no new params), `cachedCurrent` is restored from the persisted
+      // last-touch so that:
+      //   - `getCurrent()` returns the SAME values that downstream sees in
+      //     `getLastTouch()` (no drift between in-memory + persisted state).
+      //   - `registerMixpanelAttribution()` below reads `cachedCurrent` and
+      //     therefore registers the stable last-touch as Mixpanel's super-
+      //     property (not the just-built `current`, which carries a
+      //     transient self-referral that we deliberately rejected).
+      // A future maintainer "optimizing away" this restoration would
+      // silently break that Mixpanel super-property invariant.
       const existingLast = getLastTouch();
       if (existingLast) cachedCurrent = existingLast;
     }
@@ -537,7 +547,9 @@ export function createAttributionService(
     // Touch session
     touchSession();
 
-    // Register Mixpanel super property (dataLayer enrichment is now via the enricher HOF)
+    // Register Mixpanel super property (dataLayer enrichment is now via the
+    // enricher HOF). Reads `cachedCurrent`, which after the block above is
+    // the canonical last-touch — see invariant comment.
     registerMixpanelAttribution();
 
     ppLib.log('info', '[ppAttribution] Initialized — platform: ' + current.platform + ', source: ' + current.source +
