@@ -19,7 +19,6 @@ import {
   UTM_FIRST_TOUCH,
   UTM_LAST_TOUCH,
   MARKETING_ATTRIBUTION_KEY,
-  MIXPANEL_SUPER_PROPERTY_KEYS_SET,
 } from '@src/common/super-property-keys';
 import { createPersistentValue } from '@src/common/persistent-storage';
 
@@ -60,6 +59,14 @@ export interface BuiltEventProperties {
   Country: string;
   browser: string;
   device_type: string;
+  /**
+   * Device MODEL — `iPhone` / `iPad` / `iPod` / `Android` / `MacBook` /
+   * `Windows` / `Linux` / `''`. Parsed from user-agent. Distinct from
+   * `device_type` (mobile / tablet / desktop). Per the data-team contract,
+   * analysts use `device` for the model breakdown and `device_type` for
+   * the form-factor breakdown — both are needed.
+   */
+  device: string;
   referrer: string;
   initial_referrer: string;
   marketing_attribution: unknown;
@@ -111,6 +118,14 @@ export interface EventPropertiesBuilder {
   configure: (next: EventPropertiesBuilderOpts) => void;
   build: () => BuiltEventBundle;
   buildFlat: () => Record<string, unknown>;
+  /**
+   * Returns the bundle's four wrapper blocks as own-keys at the top level of
+   * a fresh object — the same shape the dataLayer enricher emits. Used by
+   * the Mixpanel facade when `emitMode === 'nested'` (and the wrapper half
+   * of `emitMode === 'dual'`) to align Mixpanel's payload with the
+   * dataLayer contract.
+   */
+  buildNested: () => Record<string, unknown>;
   /** Literal utm_* params from the current visit's URL (no normalization). */
   getCurrentUtm: () => RawUtmTouch;
   /** Persisted first-touch utm_* — only set on the first visit that had utm_* params. */
@@ -173,12 +188,6 @@ function emptyUtm(): RawUtmTouch {
   return { utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '' };
 }
 
-// Properties already registered as Mixpanel super-properties elsewhere in the
-// SDK. Skipping them in buildFlat() avoids redundant per-event payload bloat.
-// Sourced from the canonical key catalog so the filter list can't drift out
-// of sync with the Mixpanel module's super-property registration.
-const MIXPANEL_SUPER_PROP_KEYS = MIXPANEL_SUPER_PROPERTY_KEYS_SET;
-
 function defaultCookieNames(): EventPropertiesBuilderCookieNames {
   return {
     userId: 'userId',
@@ -197,7 +206,7 @@ export function createEventPropertiesBuilder(
   let defaultPlatform: string = 'web';
 
   // Stable per-session fields — derived once, reset on configure().
-  let stableCache: { browser: string; device_type: string; country: string; device_id: string } | null = null;
+  let stableCache: { browser: string; device_type: string; device: string; country: string; device_id: string } | null = null;
 
   function configure(next: EventPropertiesBuilderOpts): void {
     if (next.cookieNames) {
@@ -254,6 +263,25 @@ export function createEventPropertiesBuilder(
     if (lower.indexOf('mobi') !== -1 || lower.indexOf('android') !== -1 && lower.indexOf('mobile') !== -1) return 'mobile';
     if (lower.indexOf('android') !== -1) return 'tablet';
     return 'desktop';
+  }
+
+  // Device MODEL parser. Distinct from parseDeviceType (which returns
+  // form-factor: mobile/tablet/desktop). Order matters — iPad and iPod
+  // both contain the substring "iP", and the iPhone check must NOT match
+  // them. Macintosh UAs map to MacBook (UA can't reliably distinguish
+  // iMac / Mac mini / MacBook so we pick the most common). The data-team
+  // contract requires this exact set: iPhone, iPad, iPod, Android,
+  // MacBook, Windows, Linux, ''.
+  function parseDevice(ua: string): string {
+    if (!ua) return '';
+    if (ua.indexOf('iPhone') !== -1) return 'iPhone';
+    if (ua.indexOf('iPad') !== -1) return 'iPad';
+    if (ua.indexOf('iPod') !== -1) return 'iPod';
+    if (ua.indexOf('Android') !== -1) return 'Android';
+    if (ua.indexOf('Macintosh') !== -1) return 'MacBook';
+    if (ua.indexOf('Windows') !== -1) return 'Windows';
+    if (ua.indexOf('Linux') !== -1) return 'Linux';
+    return '';
   }
 
   function extractDomain(url: string): string {
@@ -433,6 +461,7 @@ export function createEventPropertiesBuilder(
     stableCache = {
       browser: parseBrowser(ua),
       device_type: parseDeviceType(ua),
+      device: parseDevice(ua),
       country: ppLib.getCookie(cookieNames.country) || '',
       device_id: getOrCreateDeviceId()
     };
@@ -501,6 +530,7 @@ export function createEventPropertiesBuilder(
       Country: stable.country,
       browser: stable.browser,
       device_type: stable.device_type,
+      device: stable.device,
       referrer: extractDomain(win.document.referrer),
       // initial_referrer still comes from the attribution service's first-touch
       // (referrer is not a UTM concept).
@@ -556,11 +586,15 @@ export function createEventPropertiesBuilder(
     for (let i = 0; i < userKeys.length; i++) {
       flat[userKeys[i]] = userObj[userKeys[i]];
     }
+    // Per the data-team contract, every event payload carries the full
+    // property bag — including utm_* [first/last touch] and marketing_attribution.
+    // Mixpanel also registers these as super-properties; the redundancy is
+    // intentional so dataLayer / GTM / BigQuery consumers see the same data
+    // as Mixpanel reports without depending on the super-property side channel.
     const eventObj = bundle.eventProperties as unknown as Record<string, unknown>;
     const eventKeys = Object.keys(eventObj);
     for (let j = 0; j < eventKeys.length; j++) {
       const k = eventKeys[j];
-      if (MIXPANEL_SUPER_PROP_KEYS[k]) continue; // skip super-prop duplication
       flat[k] = eventObj[k];
     }
 
@@ -576,10 +610,24 @@ export function createEventPropertiesBuilder(
     return flat;
   }
 
+  // Nested-wrapper shape: same four blocks the dataLayer enricher emits,
+  // hoisted to the top level of a fresh object. The end-state contract
+  // shape — Mixpanel's `nested` and `dual` modes use this.
+  function buildNested(): Record<string, unknown> {
+    const bundle = build();
+    return {
+      page: bundle.page,
+      userProperties: bundle.userProperties,
+      eventProperties: bundle.eventProperties,
+      attribution: bundle.attribution,
+    };
+  }
+
   return {
     configure: configure,
     build: build,
     buildFlat: buildFlat,
+    buildNested: buildNested,
     getCurrentUtm: getCurrentUtm,
     getFirstTouchUtm: getFirstTouchUtm,
     getLastTouchUtm: getLastTouchUtm

@@ -30,6 +30,28 @@ export interface MixpanelConfig extends SdkSecurityOptions {
    * existing super-properties continue to attach automatically either way.
    */
   enrichTrack: boolean;
+  /**
+   * How the Mixpanel facade serializes the per-event property bag.
+   *   - 'flat':   current legacy behavior — flat keys only (no nested wrappers).
+   *   - 'dual':   both flat keys AND nested wrappers (default for migration).
+   *   - 'nested': nested wrappers only — eventProperties / userProperties /
+   *               page / attribution. The contract-aligned end state.
+   *
+   * 'dual' is the default so consumers' Mixpanel reports / BigQuery queries
+   * can migrate to the nested shape on their own schedule. Flip to 'nested'
+   * once downstream is ready.
+   *
+   * **Caller precedence** — properties passed by the caller of
+   * `ppLib.mixpanel.track(name, properties)` always win on key collision.
+   * In 'nested' and 'dual' modes this means: if a caller passes a key that
+   * matches one of the nested wrappers (`page`, `userProperties`,
+   * `eventProperties`, `attribution`), the caller's value REPLACES the
+   * SDK's wrapper entirely — it is NOT shallow-merged into it. This is the
+   * intentional escape hatch for callers that need to inject custom shapes;
+   * SDK consumers wanting to override one nested field should pass a
+   * complete wrapper object (e.g. `{ eventProperties: { ...defaults, key: v } }`).
+   */
+  emitMode: 'flat' | 'dual' | 'nested';
 }
 
 export interface SessionManager {

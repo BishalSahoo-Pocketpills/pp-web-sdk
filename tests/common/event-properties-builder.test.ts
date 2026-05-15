@@ -272,6 +272,60 @@ describe('createEventPropertiesBuilder', () => {
       expect(bundle.eventProperties['landing_page_url [last touch]']).toBe('');
     });
 
+    describe('device (model) parsing', () => {
+      const cases: Array<{ ua: string; expected: string; label: string }> = [
+        { ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15', expected: 'iPhone', label: 'iPhone' },
+        { ua: 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15', expected: 'iPad', label: 'iPad' },
+        // iPod touch UA also contains "iPhone OS" — the parser checks iPhone
+        // first, so a real iPod touch UA returns 'iPhone'. To verify the iPod
+        // branch in isolation we use a synthetic UA with iPod but no iPhone.
+        { ua: 'Mozilla/5.0 (iPod; CPU OS 12_0 like Mac OS X) AppleWebKit/605.1.15', expected: 'iPod', label: 'iPod (no iPhone substring)' },
+        { ua: 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Mobile', expected: 'Android', label: 'Android phone' },
+        { ua: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15', expected: 'MacBook', label: 'Macintosh -> MacBook' },
+        { ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', expected: 'Windows', label: 'Windows' },
+        { ua: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36', expected: 'Linux', label: 'Linux (no Android)' },
+        { ua: 'Mozilla/5.0 (CrKey; like iOS 9_3_3 not-a-real-device)', expected: '', label: 'unrecognized UA falls back to empty' },
+        { ua: '', expected: '', label: 'empty UA' },
+      ];
+
+      const originalUA = navigator.userAgent;
+      afterEach(() => {
+        Object.defineProperty(navigator, 'userAgent', { value: originalUA, configurable: true });
+      });
+
+      for (let i = 0; i < cases.length; i++) {
+        const c = cases[i];
+        it(`maps ${c.label} → "${c.expected}"`, () => {
+          Object.defineProperty(navigator, 'userAgent', { value: c.ua, configurable: true });
+          const ppLib = makePPLib();
+          const bundle = createEventPropertiesBuilder(window, ppLib).build();
+          expect(bundle.eventProperties.device).toBe(c.expected);
+        });
+      }
+
+      it('emits device alongside device_type (the two are distinct)', () => {
+        Object.defineProperty(navigator, 'userAgent', {
+          value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile',
+          configurable: true
+        });
+        const ppLib = makePPLib();
+        const bundle = createEventPropertiesBuilder(window, ppLib).build();
+        // device (model) is iPhone; device_type (form-factor) is mobile.
+        expect(bundle.eventProperties.device).toBe('iPhone');
+        expect(bundle.eventProperties.device_type).toBe('mobile');
+      });
+
+      it('iPhone UA does not match iPad/iPod parsers (substring ordering)', () => {
+        Object.defineProperty(navigator, 'userAgent', {
+          value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)',
+          configurable: true
+        });
+        const ppLib = makePPLib();
+        const bundle = createEventPropertiesBuilder(window, ppLib).build();
+        expect(bundle.eventProperties.device).toBe('iPhone');
+      });
+    });
+
     it('migrates legacy localStorage UTM first/last touch to cookies on first read', () => {
       // Seed legacy localStorage UTM touches — JSON-encoded per the old contract.
       const legacyFirst = { utm_source: 'facebook', utm_medium: 'social', utm_campaign: 'launch', utm_content: '', utm_term: '' };
@@ -392,19 +446,21 @@ describe('createEventPropertiesBuilder', () => {
       expect(flat['landing_page_url [last touch]']).toBe('http://localhost/b?utm_source=google');
     });
 
-    it('skips fields already registered as Mixpanel super-properties', () => {
+    it('includes utm_* [first/last touch] and marketing_attribution per-event (parity with dataLayer)', () => {
       const ppLib = makePPLib();
       const flat = createEventPropertiesBuilder(window, ppLib).buildFlat();
 
-      // These are registered separately as super-properties; including them
-      // again would just bloat the per-event payload.
-      expect(flat['utm_source [first touch]']).toBeUndefined();
-      expect(flat['utm_medium [first touch]']).toBeUndefined();
-      expect(flat['utm_campaign [first touch]']).toBeUndefined();
-      expect(flat['utm_source [last touch]']).toBeUndefined();
-      expect(flat['utm_medium [last touch]']).toBeUndefined();
-      expect(flat['utm_campaign [last touch]']).toBeUndefined();
-      expect(flat.marketing_attribution).toBeUndefined();
+      // Per the data-team contract: these keys ride per-event so dataLayer
+      // / GTM consumers see the same data as Mixpanel reports — even though
+      // Mixpanel ALSO registers them as super-properties on the side.
+      expect(flat['utm_source [first touch]']).toBe('$direct');
+      expect(flat['utm_medium [first touch]']).toBe('none');
+      expect(flat['utm_campaign [first touch]']).toBe('none');
+      expect(flat['utm_source [last touch]']).toBe('$direct');
+      expect(flat['utm_medium [last touch]']).toBe('none');
+      expect(flat['utm_campaign [last touch]']).toBe('none');
+      // marketing_attribution from the fixture's `summary` block (see makePPLib defaults).
+      expect(flat.marketing_attribution).toEqual({ source: 'google', medium: 'cpc', campaign: 'spring' });
     });
 
     it('keeps the current (non-touch) UTM keys, sourced from URL', () => {
@@ -440,6 +496,64 @@ describe('createEventPropertiesBuilder', () => {
       expect(Object.prototype.hasOwnProperty.call(flat, 'fbclid')).toBe(false);
       expect(Object.prototype.hasOwnProperty.call(flat, 'gclid')).toBe(false);
       expect(Object.prototype.hasOwnProperty.call(flat, 'rdt_cid')).toBe(false);
+    });
+  });
+
+  describe('buildNested()', () => {
+    it('returns exactly the four wrapper blocks at the top level', () => {
+      const ppLib = makePPLib({
+        cookies: { userId: '42', patientId: '99', app_is_authenticated: 'true', country: 'CA' }
+      });
+      const nested = createEventPropertiesBuilder(window, ppLib).buildNested();
+
+      // Exactly four top-level keys — no leakage of flat fields.
+      expect(Object.keys(nested).sort()).toEqual(['attribution', 'eventProperties', 'page', 'userProperties']);
+    });
+
+    it('each wrapper has the same shape as build()', () => {
+      const ppLib = makePPLib({
+        cookies: { userId: '42', patientId: '99', app_is_authenticated: 'true', country: 'CA' }
+      });
+      const builder = createEventPropertiesBuilder(window, ppLib);
+      const bundle = builder.build();
+      const nested = builder.buildNested();
+
+      const userProps = nested.userProperties as Record<string, unknown>;
+      expect(userProps.userId).toBe(bundle.userProperties.userId);
+      expect(userProps.patientId).toBe(bundle.userProperties.patientId);
+      expect(userProps.pp_distinct_id).toBe(bundle.userProperties.pp_distinct_id);
+
+      const eventProps = nested.eventProperties as Record<string, unknown>;
+      expect(eventProps.pp_user_id).toBe(bundle.eventProperties.pp_user_id);
+      expect(eventProps.logged_in).toBe('true');
+      expect(eventProps.platform).toBe('web');
+
+      const page = nested.page as Record<string, unknown>;
+      expect(typeof page.url).toBe('string');
+      expect(typeof page.title).toBe('string');
+      expect(typeof page.referrer).toBe('string');
+
+      const attribution = nested.attribution as Record<string, unknown>;
+      // All click-ID fields exist (null when absent), unlike buildFlat which omits nulls.
+      expect('fbclid' in attribution).toBe(true);
+      expect('gclid' in attribution).toBe(true);
+      expect('rdt_cid' in attribution).toBe(true);
+    });
+
+    it('does not include any flat keys at the top level', () => {
+      const ppLib = makePPLib({
+        cookies: { userId: '42', patientId: '99', app_is_authenticated: 'true' }
+      });
+      const nested = createEventPropertiesBuilder(window, ppLib).buildNested();
+
+      // Flat-mode fields must NOT appear at the top level.
+      expect('pp_user_id' in nested).toBe(false);
+      expect('pp_session_id' in nested).toBe(false);
+      expect('device_id' in nested).toBe(false);
+      expect('logged_in' in nested).toBe(false);
+      expect('utm_source' in nested).toBe(false);
+      expect('utm_source [first touch]' in nested).toBe(false);
+      expect('marketing_attribution' in nested).toBe(false);
     });
   });
 });
