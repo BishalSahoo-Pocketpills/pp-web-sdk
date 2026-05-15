@@ -320,6 +320,45 @@ export function createAttributionService(
     }
   }
 
+  /**
+   * Detect whether a referrer is "ours" — same host as current, or any
+   * subdomain of the configured cookieDomain root (e.g. `.pocketpills.com`
+   * covers `www.pocketpills.com → try.pocketpills.com`).
+   *
+   * Used by init() to veto last-touch overwrite on refreshes and internal
+   * navigations: `document.referrer` after F5 is the same-site URL, which
+   * would otherwise mis-attribute last-touch to "pocketpills.com" (issues
+   * 3.b and 3.c from the data-team audit).
+   *
+   * Conservative on parse errors: an unparseable referrer is treated as
+   * NOT a self-referral (so the normal last-touch logic runs). Empty
+   * referrer is also not a self-referral — that's a direct visit.
+   */
+  function isSelfReferral(referrer: string, w: Window): boolean {
+    if (!referrer) return false;
+    let refHost: string;
+    try {
+      refHost = new URL(referrer).hostname;
+    } catch (e) {
+      return false;
+    }
+    if (!refHost) return false;
+
+    const currentHost = w.location.hostname;
+    if (refHost === currentHost) return true;
+
+    // Cross-subdomain self-referral: any host matching the cookie domain root.
+    // cookieDomain conventionally starts with a leading dot (`.pocketpills.com`);
+    // strip it before the suffix check.
+    const cookieDomain = ppLib.config && ppLib.config.cookieDomain;
+    if (typeof cookieDomain === 'string' && cookieDomain.length > 0) {
+      const root = cookieDomain.charAt(0) === '.' ? cookieDomain.slice(1) : cookieDomain;
+      if (root && (refHost === root || refHost.endsWith('.' + root))) return true;
+    }
+
+    return false;
+  }
+
   function inferMedium(params: Record<string, string>, platform: string): string {
     if (params.utm_medium) return params.utm_medium;
     // Infer from platform
@@ -405,6 +444,18 @@ export function createAttributionService(
   // read (see the PersistentValue factory in common/persistent-storage.ts).
   // ---------------------------------------------------------------------------
 
+  /**
+   * First-touch immutability contract.
+   *
+   * First touch is written exactly ONCE per browser (per cookie horizon)
+   * and is never overwritten — not on re-init, not on a new session, not
+   * on a new UTM-bearing landing. The `if (!existing)` guard below is the
+   * load-bearing line; do not remove it without a corresponding data-team
+   * sign-off. This guarantees `utm_source[first touch]` reflects the
+   * acquisition channel, not the most recent campaign.
+   *
+   * To intentionally reset (e.g. on consent revocation), use `clear()`.
+   */
   function storeFirstTouch(touch: TouchAttribution): void {
     const existing = firstTouchStore.read();
     if (!existing) {
@@ -459,10 +510,25 @@ export function createAttributionService(
 
     // Update last touch only if:
     // 1. New marketing params detected (user arrived from a new campaign), OR
-    // 2. Session has expired (new session = new touch)
-    if (hasNewParams || !sessionActive) {
+    // 2. Session has expired AND the referrer is NOT a self-referral.
+    //
+    // Self-referral filter (branch 2 / audit issues 3.b + 3.c): pressing
+    // refresh on a signup page leaves `document.referrer` pointing at the
+    // same site, which would otherwise flip `utm_source[last touch]` to
+    // "pocketpills.com" once the 30-min session expires. We veto that
+    // overwrite — last touch stays whatever earned it.
+    //
+    // hasNewParams still beats the self-referral veto: a fresh UTM is strong
+    // signal the user is mid-campaign, even if they bounced internally.
+    const referrerUrl = (win.document && win.document.referrer) || '';
+    const selfReferral = isSelfReferral(referrerUrl, win);
+    if (hasNewParams || (!sessionActive && !selfReferral)) {
       storeLastTouch(current);
     } else {
+      if (!hasNewParams && !sessionActive && selfReferral) {
+        ppLib.log('info', '[ppAttribution] self-referral detected — last-touch unchanged (referrer=' +
+          referrerUrl + ', host=' + win.location.hostname + ')');
+      }
       // Restore cached current from existing last touch for consistency
       const existingLast = getLastTouch();
       if (existingLast) cachedCurrent = existingLast;
