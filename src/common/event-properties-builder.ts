@@ -59,6 +59,14 @@ export interface BuiltEventProperties {
   Country: string;
   browser: string;
   device_type: string;
+  /**
+   * Device MODEL — `iPhone` / `iPad` / `iPod` / `Android` / `MacBook` /
+   * `Windows` / `Linux` / `''`. Parsed from user-agent. Distinct from
+   * `device_type` (mobile / tablet / desktop). Per the data-team contract,
+   * analysts use `device` for the model breakdown and `device_type` for
+   * the form-factor breakdown — both are needed.
+   */
+  device: string;
   referrer: string;
   initial_referrer: string;
   marketing_attribution: unknown;
@@ -198,7 +206,7 @@ export function createEventPropertiesBuilder(
   let defaultPlatform: string = 'web';
 
   // Stable per-session fields — derived once, reset on configure().
-  let stableCache: { browser: string; device_type: string; country: string; device_id: string } | null = null;
+  let stableCache: { browser: string; device_type: string; device: string; country: string; device_id: string } | null = null;
 
   function configure(next: EventPropertiesBuilderOpts): void {
     if (next.cookieNames) {
@@ -255,6 +263,25 @@ export function createEventPropertiesBuilder(
     if (lower.indexOf('mobi') !== -1 || lower.indexOf('android') !== -1 && lower.indexOf('mobile') !== -1) return 'mobile';
     if (lower.indexOf('android') !== -1) return 'tablet';
     return 'desktop';
+  }
+
+  // Device MODEL parser. Distinct from parseDeviceType (which returns
+  // form-factor: mobile/tablet/desktop). Order matters — iPad and iPod
+  // both contain the substring "iP", and the iPhone check must NOT match
+  // them. Macintosh UAs map to MacBook (UA can't reliably distinguish
+  // iMac / Mac mini / MacBook so we pick the most common). The data-team
+  // contract requires this exact set: iPhone, iPad, iPod, Android,
+  // MacBook, Windows, Linux, ''.
+  function parseDevice(ua: string): string {
+    if (!ua) return '';
+    if (ua.indexOf('iPhone') !== -1) return 'iPhone';
+    if (ua.indexOf('iPad') !== -1) return 'iPad';
+    if (ua.indexOf('iPod') !== -1) return 'iPod';
+    if (ua.indexOf('Android') !== -1) return 'Android';
+    if (ua.indexOf('Macintosh') !== -1) return 'MacBook';
+    if (ua.indexOf('Windows') !== -1) return 'Windows';
+    if (ua.indexOf('Linux') !== -1) return 'Linux';
+    return '';
   }
 
   function extractDomain(url: string): string {
@@ -434,6 +461,7 @@ export function createEventPropertiesBuilder(
     stableCache = {
       browser: parseBrowser(ua),
       device_type: parseDeviceType(ua),
+      device: parseDevice(ua),
       country: ppLib.getCookie(cookieNames.country) || '',
       device_id: getOrCreateDeviceId()
     };
@@ -502,6 +530,7 @@ export function createEventPropertiesBuilder(
       Country: stable.country,
       browser: stable.browser,
       device_type: stable.device_type,
+      device: stable.device,
       referrer: extractDomain(win.document.referrer),
       // initial_referrer still comes from the attribution service's first-touch
       // (referrer is not a UTM concept).

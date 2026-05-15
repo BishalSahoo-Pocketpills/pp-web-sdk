@@ -272,6 +272,60 @@ describe('createEventPropertiesBuilder', () => {
       expect(bundle.eventProperties['landing_page_url [last touch]']).toBe('');
     });
 
+    describe('device (model) parsing', () => {
+      const cases: Array<{ ua: string; expected: string; label: string }> = [
+        { ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15', expected: 'iPhone', label: 'iPhone' },
+        { ua: 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15', expected: 'iPad', label: 'iPad' },
+        // iPod touch UA also contains "iPhone OS" — the parser checks iPhone
+        // first, so a real iPod touch UA returns 'iPhone'. To verify the iPod
+        // branch in isolation we use a synthetic UA with iPod but no iPhone.
+        { ua: 'Mozilla/5.0 (iPod; CPU OS 12_0 like Mac OS X) AppleWebKit/605.1.15', expected: 'iPod', label: 'iPod (no iPhone substring)' },
+        { ua: 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Mobile', expected: 'Android', label: 'Android phone' },
+        { ua: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15', expected: 'MacBook', label: 'Macintosh -> MacBook' },
+        { ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', expected: 'Windows', label: 'Windows' },
+        { ua: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36', expected: 'Linux', label: 'Linux (no Android)' },
+        { ua: 'Mozilla/5.0 (CrKey; like iOS 9_3_3 not-a-real-device)', expected: '', label: 'unrecognized UA falls back to empty' },
+        { ua: '', expected: '', label: 'empty UA' },
+      ];
+
+      const originalUA = navigator.userAgent;
+      afterEach(() => {
+        Object.defineProperty(navigator, 'userAgent', { value: originalUA, configurable: true });
+      });
+
+      for (let i = 0; i < cases.length; i++) {
+        const c = cases[i];
+        it(`maps ${c.label} → "${c.expected}"`, () => {
+          Object.defineProperty(navigator, 'userAgent', { value: c.ua, configurable: true });
+          const ppLib = makePPLib();
+          const bundle = createEventPropertiesBuilder(window, ppLib).build();
+          expect(bundle.eventProperties.device).toBe(c.expected);
+        });
+      }
+
+      it('emits device alongside device_type (the two are distinct)', () => {
+        Object.defineProperty(navigator, 'userAgent', {
+          value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile',
+          configurable: true
+        });
+        const ppLib = makePPLib();
+        const bundle = createEventPropertiesBuilder(window, ppLib).build();
+        // device (model) is iPhone; device_type (form-factor) is mobile.
+        expect(bundle.eventProperties.device).toBe('iPhone');
+        expect(bundle.eventProperties.device_type).toBe('mobile');
+      });
+
+      it('iPhone UA does not match iPad/iPod parsers (substring ordering)', () => {
+        Object.defineProperty(navigator, 'userAgent', {
+          value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)',
+          configurable: true
+        });
+        const ppLib = makePPLib();
+        const bundle = createEventPropertiesBuilder(window, ppLib).build();
+        expect(bundle.eventProperties.device).toBe('iPhone');
+      });
+    });
+
     it('migrates legacy localStorage UTM first/last touch to cookies on first read', () => {
       // Seed legacy localStorage UTM touches — JSON-encoded per the old contract.
       const legacyFirst = { utm_source: 'facebook', utm_medium: 'social', utm_campaign: 'launch', utm_content: '', utm_term: '' };
