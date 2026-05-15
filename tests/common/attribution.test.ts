@@ -125,6 +125,21 @@ describe('createAttributionService', () => {
       const current = svc.getCurrent();
       expect(current!.landingPage).toBe('http://localhost/lp/spring?utm_source=fb&utm_medium=social&promo=abc');
     });
+
+    it('strips URL fragment from landing page (OAuth token leak defense)', () => {
+      // An OAuth implicit-flow callback would land with the access token in
+      // the hash. Persisting that for 2 years in a cookie is a credential
+      // leak — buildTouch() must strip the fragment.
+      setHref('http://localhost/oauth/callback?utm_source=email#access_token=secret-abc-xyz&token_type=Bearer');
+
+      const svc = createAttributionService(window, makePPLib());
+      svc.init();
+
+      const current = svc.getCurrent();
+      expect(current!.landingPage).toBe('http://localhost/oauth/callback?utm_source=email');
+      expect(current!.landingPage.indexOf('access_token')).toBe(-1);
+      expect(current!.landingPage.indexOf('#')).toBe(-1);
+    });
   });
 
   describe('storage migration: localStorage mktg_* → pp_mktg_* cookies', () => {
