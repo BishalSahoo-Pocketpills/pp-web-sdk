@@ -110,6 +110,14 @@ export interface EventPropertiesBuilder {
   configure: (next: EventPropertiesBuilderOpts) => void;
   build: () => BuiltEventBundle;
   buildFlat: () => Record<string, unknown>;
+  /**
+   * Returns the bundle's four wrapper blocks as own-keys at the top level of
+   * a fresh object — the same shape the dataLayer enricher emits. Used by
+   * the Mixpanel facade when `emitMode === 'nested'` (and the wrapper half
+   * of `emitMode === 'dual'`) to align Mixpanel's payload with the
+   * dataLayer contract.
+   */
+  buildNested: () => Record<string, unknown>;
   /** Literal utm_* params from the current visit's URL (no normalization). */
   getCurrentUtm: () => RawUtmTouch;
   /** Persisted first-touch utm_* — only set on the first visit that had utm_* params. */
@@ -573,10 +581,24 @@ export function createEventPropertiesBuilder(
     return flat;
   }
 
+  // Nested-wrapper shape: same four blocks the dataLayer enricher emits,
+  // hoisted to the top level of a fresh object. The end-state contract
+  // shape — Mixpanel's `nested` and `dual` modes use this.
+  function buildNested(): Record<string, unknown> {
+    const bundle = build();
+    return {
+      page: bundle.page,
+      userProperties: bundle.userProperties,
+      eventProperties: bundle.eventProperties,
+      attribution: bundle.attribution,
+    };
+  }
+
   return {
     configure: configure,
     build: build,
     buildFlat: buildFlat,
+    buildNested: buildNested,
     getCurrentUtm: getCurrentUtm,
     getFirstTouchUtm: getFirstTouchUtm,
     getLastTouchUtm: getLastTouchUtm
