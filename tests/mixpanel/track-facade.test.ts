@@ -144,6 +144,105 @@ describe('ppLib.mixpanel.track facade', () => {
     expect(typeof mergedProps.device_id).toBe('string');
   });
 
+  describe('emitMode dispatch', () => {
+    const NESTED_KEYS = ['page', 'userProperties', 'eventProperties', 'attribution'];
+    // Representative flat fields that MUST appear at the top level in
+    // flat/dual modes and MUST be absent in nested mode.
+    const FLAT_FIELDS = [
+      'pp_user_id', 'pp_patient_id', 'pp_session_id', 'device_id', 'logged_in',
+      'platform', 'browser', 'device', 'device_type', 'Country', 'utm_source',
+      'utm_source [first touch]', 'utm_source [last touch]', 'marketing_attribution',
+    ];
+
+    it('defaults to "dual" mode', () => {
+      loadWithCommon('mixpanel');
+      const cfg = (window as any).ppLib.mixpanel.configure();
+      expect(cfg.emitMode).toBe('dual');
+    });
+
+    it('"flat" mode emits ONLY flat keys — no nested wrappers at top level', () => {
+      setCookie('userId', '42');
+      setCookie('patientId', '99');
+      setCookie('app_is_authenticated', 'true');
+      loadWithCommon('mixpanel');
+      (window as any).ppLib.mixpanel.configure({ token: 'tok', emitMode: 'flat' });
+      (window as any).mixpanel = createMockMixpanel();
+
+      (window as any).ppLib.mixpanel.track('view_item', {});
+
+      const [, mergedProps] = (window as any).mixpanel.track.mock.calls[0];
+      // Flat fields present.
+      for (let i = 0; i < FLAT_FIELDS.length; i++) {
+        expect(mergedProps).toHaveProperty(FLAT_FIELDS[i]);
+      }
+      // Nested wrappers absent.
+      for (let j = 0; j < NESTED_KEYS.length; j++) {
+        expect(NESTED_KEYS[j] in mergedProps).toBe(false);
+      }
+    });
+
+    it('"nested" mode emits ONLY the 4 nested wrappers — no flat keys at top level', () => {
+      setCookie('userId', '42');
+      setCookie('patientId', '99');
+      setCookie('app_is_authenticated', 'true');
+      loadWithCommon('mixpanel');
+      (window as any).ppLib.mixpanel.configure({ token: 'tok', emitMode: 'nested' });
+      (window as any).mixpanel = createMockMixpanel();
+
+      (window as any).ppLib.mixpanel.track('view_item', {});
+
+      const [, mergedProps] = (window as any).mixpanel.track.mock.calls[0];
+      // Exactly the four wrappers at top level (caller passed no props).
+      expect(Object.keys(mergedProps).sort()).toEqual(['attribution', 'eventProperties', 'page', 'userProperties']);
+      // Nested wrappers have the expected shape.
+      expect(mergedProps.userProperties).toMatchObject({ userId: '42', patientId: '99' });
+      expect(mergedProps.eventProperties).toMatchObject({ pp_user_id: '42', logged_in: 'true' });
+
+      // No leakage of flat fields at the top.
+      for (let i = 0; i < FLAT_FIELDS.length; i++) {
+        expect(FLAT_FIELDS[i] in mergedProps).toBe(false);
+      }
+    });
+
+    it('"dual" mode emits BOTH flat keys AND the 4 nested wrappers', () => {
+      setCookie('userId', '42');
+      setCookie('patientId', '99');
+      setCookie('app_is_authenticated', 'true');
+      loadWithCommon('mixpanel');
+      (window as any).ppLib.mixpanel.configure({ token: 'tok', emitMode: 'dual' });
+      (window as any).mixpanel = createMockMixpanel();
+
+      (window as any).ppLib.mixpanel.track('view_item', {});
+
+      const [, mergedProps] = (window as any).mixpanel.track.mock.calls[0];
+
+      // All flat fields present.
+      for (let i = 0; i < FLAT_FIELDS.length; i++) {
+        expect(mergedProps).toHaveProperty(FLAT_FIELDS[i]);
+      }
+      // All four nested wrappers present.
+      for (let j = 0; j < NESTED_KEYS.length; j++) {
+        expect(mergedProps).toHaveProperty(NESTED_KEYS[j]);
+      }
+      // Nested wrapper contents intact.
+      expect(mergedProps.eventProperties).toMatchObject({ pp_user_id: '42' });
+      // Flat copy of the same field also intact.
+      expect(mergedProps.pp_user_id).toBe('42');
+    });
+
+    it('caller props still win in nested mode (e.g. override eventProperties wrapper)', () => {
+      loadWithCommon('mixpanel');
+      (window as any).ppLib.mixpanel.configure({ token: 'tok', emitMode: 'nested' });
+      (window as any).mixpanel = createMockMixpanel();
+
+      const override = { eventProperties: { custom: 'value' } };
+      (window as any).ppLib.mixpanel.track('view_item', override);
+
+      const [, mergedProps] = (window as any).mixpanel.track.mock.calls[0];
+      expect(mergedProps.eventProperties).toEqual({ custom: 'value' });
+    });
+  });
+
   it('returns false and logs error when the underlying mixpanel.track throws', () => {
     loadWithCommon('mixpanel');
     (window as any).ppLib.mixpanel.configure({ token: 'tok' });
