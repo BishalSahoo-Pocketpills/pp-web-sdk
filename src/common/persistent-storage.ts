@@ -102,9 +102,12 @@ export function createPersistentValue<T>(
         deleteLocalStorage();
         return parsed;
       }
-      // Corrupted legacy value — drop it to free the key.
+      // Legacy entry failed to deserialize — this is EXPECTED on the first
+      // visit after a schema upgrade (e.g., pre-1C TouchAttribution missing
+      // referrerDomain). Logged at info level (not warn) so Sentry / alert
+      // thresholds tied to warn count don't spike on rollout.
       ppLib.log(
-        'warn',
+        'info',
         '[persistent-storage] legacy localStorage value failed deserialize; dropping',
         { cookieName: opts.cookieName, legacyKey: opts.legacyLocalStorageKey, rawLength: legacyRaw.length },
       );

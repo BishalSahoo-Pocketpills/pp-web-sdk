@@ -63,6 +63,14 @@ export interface BuiltEventProperties {
   referrer: string;
   initial_referrer: string;
   marketing_attribution: unknown;
+  // 1C touch attributes — captured by the attribution service. Full URL,
+  // its hostname, and the full landing URL, for both first and last touch.
+  'referrer [first touch]': string;
+  'referrer [last touch]': string;
+  'referrer_domain [first touch]': string;
+  'referrer_domain [last touch]': string;
+  'landing_page_url [first touch]': string;
+  'landing_page_url [last touch]': string;
   [bracketKey: string]: unknown;
 }
 
@@ -449,6 +457,7 @@ export function createEventPropertiesBuilder(
     const lastUtm = readStoredUtm(UTM_LAST_TOUCH_KEY);
 
     const firstTouchAttr = ppLib.attribution ? ppLib.attribution.getFirstTouch() : null;
+    const lastTouchAttr = ppLib.attribution ? ppLib.attribution.getLastTouch() : null;
 
     const userProperties: BuiltUserProperties = {
       userId: userId,
@@ -499,6 +508,17 @@ export function createEventPropertiesBuilder(
 
       // Marketing attribution — the normalized view (handles source=, gclid, …).
       [MARKETING_ATTRIBUTION_KEY]: ppLib.attribution ? ppLib.attribution.get() : null,
+
+      // 1C touch attributes (data-team contract). Distinct from utm_*: the
+      // attribution service captures these once per touch (first + last),
+      // including the full referring URL, its hostname, and the full
+      // landing-page URL. Mirrors the bracket convention used for utm_*.
+      'referrer [first touch]': firstTouchAttr ? firstTouchAttr.referrer : '',
+      'referrer [last touch]': lastTouchAttr ? lastTouchAttr.referrer : '',
+      'referrer_domain [first touch]': firstTouchAttr ? firstTouchAttr.referrerDomain : '',
+      'referrer_domain [last touch]': lastTouchAttr ? lastTouchAttr.referrerDomain : '',
+      'landing_page_url [first touch]': firstTouchAttr ? firstTouchAttr.landingPage : '',
+      'landing_page_url [last touch]': lastTouchAttr ? lastTouchAttr.landingPage : '',
     };
 
     const page: BuiltPage = {

@@ -9,12 +9,21 @@ import { createGetQueryParam } from '../../src/common/url';
 import { createSetCookie, createDeleteCookie } from '../../src/common/cookies';
 import type { PPLib } from '../../src/types/common.types';
 
+type FixtureTouch = {
+  source: string;
+  medium: string;
+  campaign: string;
+  referrer: string;
+  referrerDomain?: string;
+  landingPage?: string;
+};
+
 function makePPLib(opts?: {
   cookies?: Record<string, string>;
   attribution?: {
-    current?: { source: string; medium: string; campaign: string; referrer: string } | null;
-    first?: { source: string; medium: string; campaign: string; referrer: string } | null;
-    last?: { source: string; medium: string; campaign: string; referrer: string } | null;
+    current?: FixtureTouch | null;
+    first?: FixtureTouch | null;
+    last?: FixtureTouch | null;
     summary?: unknown;
   } | null;
   session?: { id: string } | null;
@@ -213,6 +222,56 @@ describe('createEventPropertiesBuilder', () => {
       expect(a).toBe(b);
     });
 
+    it('emits the 6 new 1C touch attributes from first/last attribution touches', () => {
+      const first: FixtureTouch = {
+        source: 'facebook', medium: 'social', campaign: 'launch', referrer: 'https://www.facebook.com/some-page',
+        referrerDomain: 'www.facebook.com',
+        landingPage: 'http://localhost/lp/first?utm_source=facebook',
+      };
+      const last: FixtureTouch = {
+        source: 'google', medium: 'cpc', campaign: 'spring', referrer: 'https://www.google.com/search?q=pp',
+        referrerDomain: 'www.google.com',
+        landingPage: 'http://localhost/lp/last?utm_source=google&utm_medium=cpc',
+      };
+      const ppLib = makePPLib({
+        attribution: { current: last, first: first, last: last }
+      });
+      const bundle = createEventPropertiesBuilder(window, ppLib).build();
+
+      expect(bundle.eventProperties['referrer [first touch]']).toBe('https://www.facebook.com/some-page');
+      expect(bundle.eventProperties['referrer [last touch]']).toBe('https://www.google.com/search?q=pp');
+      expect(bundle.eventProperties['referrer_domain [first touch]']).toBe('www.facebook.com');
+      expect(bundle.eventProperties['referrer_domain [last touch]']).toBe('www.google.com');
+      expect(bundle.eventProperties['landing_page_url [first touch]']).toBe('http://localhost/lp/first?utm_source=facebook');
+      expect(bundle.eventProperties['landing_page_url [last touch]']).toBe('http://localhost/lp/last?utm_source=google&utm_medium=cpc');
+    });
+
+    it('emits empty strings for 1C touch attributes when attribution is unavailable', () => {
+      const ppLib = makePPLib({ attribution: null });
+      const bundle = createEventPropertiesBuilder(window, ppLib).build();
+
+      expect(bundle.eventProperties['referrer [first touch]']).toBe('');
+      expect(bundle.eventProperties['referrer [last touch]']).toBe('');
+      expect(bundle.eventProperties['referrer_domain [first touch]']).toBe('');
+      expect(bundle.eventProperties['referrer_domain [last touch]']).toBe('');
+      expect(bundle.eventProperties['landing_page_url [first touch]']).toBe('');
+      expect(bundle.eventProperties['landing_page_url [last touch]']).toBe('');
+    });
+
+    it('emits empty strings for 1C touch attributes when first/last touches are null', () => {
+      const ppLib = makePPLib({
+        attribution: { current: null, first: null, last: null, summary: null }
+      });
+      const bundle = createEventPropertiesBuilder(window, ppLib).build();
+
+      expect(bundle.eventProperties['referrer [first touch]']).toBe('');
+      expect(bundle.eventProperties['referrer [last touch]']).toBe('');
+      expect(bundle.eventProperties['referrer_domain [first touch]']).toBe('');
+      expect(bundle.eventProperties['referrer_domain [last touch]']).toBe('');
+      expect(bundle.eventProperties['landing_page_url [first touch]']).toBe('');
+      expect(bundle.eventProperties['landing_page_url [last touch]']).toBe('');
+    });
+
     it('migrates legacy localStorage UTM first/last touch to cookies on first read', () => {
       // Seed legacy localStorage UTM touches — JSON-encoded per the old contract.
       const legacyFirst = { utm_source: 'facebook', utm_medium: 'social', utm_campaign: 'launch', utm_content: '', utm_term: '' };
@@ -307,6 +366,30 @@ describe('createEventPropertiesBuilder', () => {
       expect(flat.logged_in).toBe('true');
       expect(typeof flat.device_id).toBe('string');
       expect(typeof flat.current_url).toBe('string');
+    });
+
+    it('emits 1C touch attributes in the flat payload (NOT in the super-prop skip set)', () => {
+      const first: FixtureTouch = {
+        source: 'facebook', medium: 'social', campaign: 'launch',
+        referrer: 'https://www.facebook.com/x', referrerDomain: 'www.facebook.com',
+        landingPage: 'http://localhost/a?utm_source=facebook',
+      };
+      const last: FixtureTouch = {
+        source: 'google', medium: 'cpc', campaign: 'spring',
+        referrer: 'https://www.google.com/', referrerDomain: 'www.google.com',
+        landingPage: 'http://localhost/b?utm_source=google',
+      };
+      const ppLib = makePPLib({
+        attribution: { current: last, first: first, last: last }
+      });
+      const flat = createEventPropertiesBuilder(window, ppLib).buildFlat();
+
+      expect(flat['referrer [first touch]']).toBe('https://www.facebook.com/x');
+      expect(flat['referrer [last touch]']).toBe('https://www.google.com/');
+      expect(flat['referrer_domain [first touch]']).toBe('www.facebook.com');
+      expect(flat['referrer_domain [last touch]']).toBe('www.google.com');
+      expect(flat['landing_page_url [first touch]']).toBe('http://localhost/a?utm_source=facebook');
+      expect(flat['landing_page_url [last touch]']).toBe('http://localhost/b?utm_source=google');
     });
 
     it('skips fields already registered as Mixpanel super-properties', () => {
