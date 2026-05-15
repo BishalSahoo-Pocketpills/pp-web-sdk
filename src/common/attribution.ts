@@ -300,6 +300,15 @@ export function createAttributionService(
     }
   }
 
+  /** Strip the URL fragment (`#...`) from a href. Defense-in-depth against
+   *  credential leakage (OAuth implicit-flow access_tokens, session keys)
+   *  ending up persisted in landingPage cookies for years. */
+  function stripFragment(href: string): string {
+    if (!href) return href;
+    const idx = href.indexOf('#');
+    return idx === -1 ? href : href.slice(0, idx);
+  }
+
   /** Extract the hostname from a referrer URL. Returns '' for empty input
    *  or unparseable URLs — never throws. */
   function extractReferrerDomain(referrer: string): string {
@@ -362,9 +371,13 @@ export function createAttributionService(
       campaign: campaign,
       platform: platform,
       clickId: extractClickId(params),
-      // Full URL with query string — `location.href` rather than pathname so
-      // analytics can correlate landing experience back to the exact entry URL.
-      landingPage: (win.location && win.location.href) || '/',
+      // Full URL with query string but WITHOUT the URL fragment.
+      // Rationale: OAuth implicit-flow and other auth flows return tokens
+      // in `#access_token=…` fragments; persisting those for 2 years in a
+      // cookie is a credential-leak vector. The query string is preserved
+      // because UTM / marketing params live there. `location.href` includes
+      // the fragment by browser default, so we strip it explicitly.
+      landingPage: stripFragment((win.location && win.location.href) || '/'),
       referrer: referrerUrl,
       referrerDomain: referrerDomain,
       timestamp: new Date().toISOString(),

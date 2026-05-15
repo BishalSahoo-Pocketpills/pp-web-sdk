@@ -266,7 +266,10 @@ describe('createPersistentValue', () => {
       expect(warnCall![2]).toMatchObject({ cookieName: 'pv_corrupt' });
     });
 
-    it('logs a warn when a legacy localStorage value is corrupt and dropped', () => {
+    it('logs an info when a legacy localStorage value is corrupt and dropped', () => {
+      // Info level (not warn) because legacy-shape entries are EXPECTED
+      // on the first visit after a schema upgrade. Warn would trigger
+      // false-positive alerts at deploy time.
       const ppLib = makePPLib();
       const logSpy = ppLib.log as ReturnType<typeof vi.fn>;
       localStorage.setItem('legacy_corrupt', '{not-json');
@@ -282,11 +285,11 @@ describe('createPersistentValue', () => {
       });
 
       expect(pv.read()).toBeNull();
-      const warnCall = logSpy.mock.calls.find(c =>
-        c[0] === 'warn' && typeof c[1] === 'string' && c[1].indexOf('legacy localStorage') !== -1
+      const infoCall = logSpy.mock.calls.find(c =>
+        c[0] === 'info' && typeof c[1] === 'string' && c[1].indexOf('legacy localStorage') !== -1
       );
-      expect(warnCall).toBeDefined();
-      expect(warnCall![2]).toMatchObject({ legacyKey: 'legacy_corrupt' });
+      expect(infoCall).toBeDefined();
+      expect(infoCall![2]).toMatchObject({ legacyKey: 'legacy_corrupt' });
       // And the bad legacy value gets cleared.
       expect(localStorage.getItem('legacy_corrupt')).toBeNull();
     });
