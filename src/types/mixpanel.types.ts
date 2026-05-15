@@ -30,6 +30,18 @@ export interface MixpanelConfig extends SdkSecurityOptions {
    * existing super-properties continue to attach automatically either way.
    */
   enrichTrack: boolean;
+  /**
+   * How the Mixpanel facade serializes the per-event property bag.
+   *   - 'flat':   current legacy behavior — flat keys only (no nested wrappers).
+   *   - 'dual':   both flat keys AND nested wrappers (default for migration).
+   *   - 'nested': nested wrappers only — eventProperties / userProperties /
+   *               page / attribution. The contract-aligned end state.
+   *
+   * 'dual' is the default so consumers' Mixpanel reports / BigQuery queries
+   * can migrate to the nested shape on their own schedule. Flip to 'nested'
+   * once downstream is ready.
+   */
+  emitMode: 'flat' | 'dual' | 'nested';
 }
 
 export interface SessionManager {

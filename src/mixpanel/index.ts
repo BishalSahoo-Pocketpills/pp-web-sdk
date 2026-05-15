@@ -33,7 +33,11 @@ import { bootstrapModule } from '@src/common/bootstrap';
       ipAddress: 'ipAddress',
       experiments: 'exp'
     },
-    enrichTrack: true
+    enrichTrack: true,
+    // 'dual' default — emits BOTH flat + nested-wrapper keys on every
+    // Mixpanel event so downstream reports / BigQuery queries can migrate
+    // from flat → nested at their own pace. See MixpanelConfig.emitMode docs.
+    emitMode: 'dual'
   };
 
   // =====================================================
@@ -43,6 +47,32 @@ import { bootstrapModule } from '@src/common/bootstrap';
   // marketing attribution, click IDs). Mixpanel super-properties are
   // skipped by the builder to avoid payload duplication.
   // =====================================================
+
+  // Mode dispatch for the per-event property bag.
+  //   'flat':   buildFlat() — flat keys only (legacy).
+  //   'nested': buildNested() — only page/userProperties/eventProperties/attribution.
+  //   'dual':   flat keys + the 4 nested wrappers. The 4 wrapper key names
+  //             ('page', 'userProperties', 'eventProperties', 'attribution')
+  //             do not collide with any flat field, so a shallow merge is
+  //             always lossless.
+  // Returns {} when the builder is missing — callers (trackFacade) only
+  // invoke this when `ppLib.eventPropertiesBuilder` is present, so this is
+  // defensive belt-and-braces. Caller-passed properties are layered on
+  // separately and still win on collision.
+  function buildForMode(mode: 'flat' | 'dual' | 'nested'): Record<string, unknown> {
+    const builder = ppLib.eventPropertiesBuilder;
+    if (!builder) return {};
+    if (mode === 'flat') return builder.buildFlat();
+    if (mode === 'nested') return builder.buildNested();
+    // 'dual' — flat is the base; layer the 4 nested wrappers on top.
+    const flat = builder.buildFlat();
+    const nested = builder.buildNested();
+    const nestedKeys = Object.keys(nested);
+    for (let i = 0; i < nestedKeys.length; i++) {
+      flat[nestedKeys[i]] = nested[nestedKeys[i]];
+    }
+    return flat;
+  }
 
   function trackFacade(eventName: string, properties?: Record<string, unknown>): boolean {
     try {
@@ -59,7 +89,7 @@ import { bootstrapModule } from '@src/common/bootstrap';
 
       let merged: Record<string, unknown>;
       if (CONFIG.enrichTrack && ppLib.eventPropertiesBuilder) {
-        const enriched = ppLib.eventPropertiesBuilder.buildFlat();
+        const enriched = buildForMode(CONFIG.emitMode);
         // Caller-wins merge: enriched is the floor, caller's props override.
         merged = enriched;
         if (properties) {
