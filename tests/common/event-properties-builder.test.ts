@@ -392,19 +392,21 @@ describe('createEventPropertiesBuilder', () => {
       expect(flat['landing_page_url [last touch]']).toBe('http://localhost/b?utm_source=google');
     });
 
-    it('skips fields already registered as Mixpanel super-properties', () => {
+    it('includes utm_* [first/last touch] and marketing_attribution per-event (parity with dataLayer)', () => {
       const ppLib = makePPLib();
       const flat = createEventPropertiesBuilder(window, ppLib).buildFlat();
 
-      // These are registered separately as super-properties; including them
-      // again would just bloat the per-event payload.
-      expect(flat['utm_source [first touch]']).toBeUndefined();
-      expect(flat['utm_medium [first touch]']).toBeUndefined();
-      expect(flat['utm_campaign [first touch]']).toBeUndefined();
-      expect(flat['utm_source [last touch]']).toBeUndefined();
-      expect(flat['utm_medium [last touch]']).toBeUndefined();
-      expect(flat['utm_campaign [last touch]']).toBeUndefined();
-      expect(flat.marketing_attribution).toBeUndefined();
+      // Per the data-team contract: these keys ride per-event so dataLayer
+      // / GTM consumers see the same data as Mixpanel reports — even though
+      // Mixpanel ALSO registers them as super-properties on the side.
+      expect(flat['utm_source [first touch]']).toBe('$direct');
+      expect(flat['utm_medium [first touch]']).toBe('none');
+      expect(flat['utm_campaign [first touch]']).toBe('none');
+      expect(flat['utm_source [last touch]']).toBe('$direct');
+      expect(flat['utm_medium [last touch]']).toBe('none');
+      expect(flat['utm_campaign [last touch]']).toBe('none');
+      // marketing_attribution from the fixture's `summary` block (see makePPLib defaults).
+      expect(flat.marketing_attribution).toEqual({ source: 'google', medium: 'cpc', campaign: 'spring' });
     });
 
     it('keeps the current (non-touch) UTM keys, sourced from URL', () => {

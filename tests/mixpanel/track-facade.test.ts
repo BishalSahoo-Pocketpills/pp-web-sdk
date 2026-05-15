@@ -96,7 +96,7 @@ describe('ppLib.mixpanel.track facade', () => {
     expect(mergedProps.current_url).toBe('/override');
   });
 
-  it('does not include Mixpanel super-property keys in the per-event payload', () => {
+  it('includes utm_* [first/last touch] and marketing_attribution in the per-event payload (parity with dataLayer)', () => {
     loadWithCommon('mixpanel');
     (window as any).ppLib.mixpanel.configure({ token: 'tok' });
     (window as any).mixpanel = createMockMixpanel();
@@ -104,15 +104,17 @@ describe('ppLib.mixpanel.track facade', () => {
     (window as any).ppLib.mixpanel.track('view_item', {});
 
     const [, mergedProps] = (window as any).mixpanel.track.mock.calls[0];
-    // These are registered as Mixpanel super-properties elsewhere; sending
-    // them per-event would just bloat the payload.
-    expect(mergedProps['utm_source [first touch]']).toBeUndefined();
-    expect(mergedProps['utm_medium [first touch]']).toBeUndefined();
-    expect(mergedProps['utm_campaign [first touch]']).toBeUndefined();
-    expect(mergedProps['utm_source [last touch]']).toBeUndefined();
-    expect(mergedProps['utm_medium [last touch]']).toBeUndefined();
-    expect(mergedProps['utm_campaign [last touch]']).toBeUndefined();
-    expect(mergedProps.marketing_attribution).toBeUndefined();
+    // Per the data-team contract: parity with the dataLayer payload.
+    // Mixpanel still registers these as super-properties on the side, but
+    // they also ride per-event so BigQuery / GTM consumers see them
+    // directly without depending on the super-property side channel.
+    expect(mergedProps['utm_source [first touch]']).toBe('$direct');
+    expect(mergedProps['utm_medium [first touch]']).toBe('none');
+    expect(mergedProps['utm_campaign [first touch]']).toBe('none');
+    expect(mergedProps['utm_source [last touch]']).toBe('$direct');
+    expect(mergedProps['utm_medium [last touch]']).toBe('none');
+    expect(mergedProps['utm_campaign [last touch]']).toBe('none');
+    expect('marketing_attribution' in mergedProps).toBe(true);
   });
 
   it('forwards bare props (no enrichment) when enrichTrack is false', () => {
