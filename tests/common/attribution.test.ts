@@ -242,6 +242,58 @@ describe('createAttributionService', () => {
     });
   });
 
+  describe('first-touch immutability (branch 2 / audit T9)', () => {
+    it('does not overwrite first touch on subsequent inits with new UTMs', () => {
+      // Initial visit: google/cpc.
+      setHref('http://localhost/lp?utm_source=google&utm_medium=cpc&utm_campaign=spring');
+      setReferrer('https://www.google.com/');
+      const svc1 = createAttributionService(window, makePPLib());
+      svc1.init();
+
+      const firstA = svc1.getFirstTouch();
+      expect(firstA).not.toBeNull();
+      expect(firstA!.source).toBe('google');
+      expect(firstA!.campaign).toBe('spring');
+
+      // Second visit (fresh service to simulate a new page-load): facebook.
+      // Mid-funnel re-login style scenario — first-touch must NOT change.
+      setHref('http://localhost/lp?utm_source=facebook&utm_medium=social&utm_campaign=relaunch');
+      setReferrer('https://www.facebook.com/');
+      const svc2 = createAttributionService(window, makePPLib());
+      svc2.init();
+
+      const firstB = svc2.getFirstTouch();
+      expect(firstB).not.toBeNull();
+      // Same touch object — immutability holds across services/inits.
+      expect(firstB!.source).toBe('google');
+      expect(firstB!.campaign).toBe('spring');
+      expect(firstB!.timestamp).toBe(firstA!.timestamp);
+
+      // Last touch DID move (new UTM params is the trigger).
+      const last = svc2.getLastTouch();
+      expect(last!.source).toBe('facebook');
+    });
+
+    it('only resets first touch when clear() is explicitly called', () => {
+      setHref('http://localhost/lp?utm_source=tiktok');
+      const svc = createAttributionService(window, makePPLib());
+      svc.init();
+      const before = svc.getFirstTouch();
+      expect(before!.source).toBe('tiktok');
+
+      svc.clear();
+
+      // After clear, first-touch is gone.
+      expect(svc.getFirstTouch()).toBeNull();
+
+      // A subsequent init can write a NEW first touch (post-consent re-grant).
+      setHref('http://localhost/lp?utm_source=bing');
+      const svc2 = createAttributionService(window, makePPLib());
+      svc2.init();
+      expect(svc2.getFirstTouch()!.source).toBe('bing');
+    });
+  });
+
   describe('platform classifier (regression: still uses label space)', () => {
     it('detects organic_search via google referrer hostname', () => {
       setReferrer('https://www.google.com/search?q=foo');
