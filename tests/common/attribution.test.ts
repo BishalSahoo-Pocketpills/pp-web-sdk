@@ -242,6 +242,157 @@ describe('createAttributionService', () => {
     });
   });
 
+  describe('self-referral filter on last-touch (branch 2 / audit 3.b + 3.c)', () => {
+    // Setup pattern for every scenario in this block:
+    //   1. Seed an initial last-touch (e.g. arrival from google).
+    //   2. Expire the session by deleting the session cookie.
+    //   3. Simulate a "second visit" with a controlled referrer/URL.
+    //   4. Assert whether last-touch was rewritten.
+    function seedInitialLastTouch(): void {
+      setHref('http://localhost/lp?utm_source=google&utm_medium=cpc&utm_campaign=spring');
+      setReferrer('https://www.google.com/');
+      createAttributionService(window, makePPLib()).init();
+      // Expire the session cookie so the next init() takes the
+      // !sessionActive branch (which is where the self-referral gate lives).
+      document.cookie = 'pp_mktg_session=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+    }
+
+    it('same-host referral, no new UTM, session expired → last-touch NOT updated', () => {
+      // localhost → localhost: user mid-funnel pressed refresh on signup.
+      seedInitialLastTouch();
+      const before = createAttributionService(window, makePPLib()).getLastTouch();
+      expect(before!.source).toBe('google');
+
+      setHref('http://localhost/signup');
+      setReferrer('http://localhost/cart');
+      const svc = createAttributionService(window, makePPLib());
+      svc.init();
+
+      // Last-touch survives the refresh — would have been "localhost" otherwise.
+      const after = svc.getLastTouch();
+      expect(after!.source).toBe('google');
+      expect(after!.campaign).toBe('spring');
+      expect(after!.timestamp).toBe(before!.timestamp);
+    });
+
+    it('cross-subdomain referral via cookieDomain, no new UTM → last-touch NOT updated', () => {
+      // www.pocketpills.com → try.pocketpills.com: different hostnames
+      // but both under .pocketpills.com — the cookieDomain rule covers it.
+      seedInitialLastTouch();
+
+      setHref('https://try.pocketpills.com/checkout');
+      setReferrer('https://www.pocketpills.com/cart');
+
+      const ppLib = makePPLib();
+      (ppLib as any).config.cookieDomain = '.pocketpills.com';
+      const svc = createAttributionService(window, ppLib);
+      svc.init();
+
+      const after = svc.getLastTouch();
+      // Initial last-touch (google) preserved despite session expiry.
+      expect(after!.source).toBe('google');
+    });
+
+    it('external referral, no new UTM, session expired → last-touch IS updated', () => {
+      // bing.com → localhost: a real new touch via an external referrer.
+      seedInitialLastTouch();
+
+      setHref('http://localhost/lp');
+      setReferrer('https://www.bing.com/search?q=pocketpills');
+      const svc = createAttributionService(window, makePPLib());
+      svc.init();
+
+      const after = svc.getLastTouch();
+      // Last-touch moved to the new external-referrer-derived touch.
+      // No utm_source on the URL, so source falls back to the platform.
+      expect(after!.platform).toBe('organic_search');
+      expect(after!.source).not.toBe('google');
+    });
+
+    it('same-host referral WITH new UTM params → last-touch IS updated (UTM beats veto)', () => {
+      // localhost → localhost but URL carries ?utm_source=facebook — the
+      // campaign signal beats the self-referral veto.
+      seedInitialLastTouch();
+
+      setHref('http://localhost/lp?utm_source=facebook&utm_medium=social&utm_campaign=relaunch');
+      setReferrer('http://localhost/home');
+      const svc = createAttributionService(window, makePPLib());
+      svc.init();
+
+      const after = svc.getLastTouch();
+      expect(after!.source).toBe('facebook');
+      expect(after!.campaign).toBe('relaunch');
+    });
+
+    it('logs an info message when self-referral veto fires', () => {
+      seedInitialLastTouch();
+
+      const ppLib = makePPLib();
+      const logSpy = ppLib.log as ReturnType<typeof vi.fn>;
+      logSpy.mockClear();
+
+      setHref('http://localhost/signup');
+      setReferrer('http://localhost/cart');
+      createAttributionService(window, ppLib).init();
+
+      const calls = logSpy.mock.calls.map(args => (args[1] as string) || '');
+      const hit = calls.some(msg => msg.indexOf('self-referral detected') !== -1);
+      expect(hit).toBe(true);
+    });
+  });
+
+  describe('first-touch immutability (branch 2 / audit T9)', () => {
+    it('does not overwrite first touch on subsequent inits with new UTMs', () => {
+      // Initial visit: google/cpc.
+      setHref('http://localhost/lp?utm_source=google&utm_medium=cpc&utm_campaign=spring');
+      setReferrer('https://www.google.com/');
+      const svc1 = createAttributionService(window, makePPLib());
+      svc1.init();
+
+      const firstA = svc1.getFirstTouch();
+      expect(firstA).not.toBeNull();
+      expect(firstA!.source).toBe('google');
+      expect(firstA!.campaign).toBe('spring');
+
+      // Second visit (fresh service to simulate a new page-load): facebook.
+      // Mid-funnel re-login style scenario — first-touch must NOT change.
+      setHref('http://localhost/lp?utm_source=facebook&utm_medium=social&utm_campaign=relaunch');
+      setReferrer('https://www.facebook.com/');
+      const svc2 = createAttributionService(window, makePPLib());
+      svc2.init();
+
+      const firstB = svc2.getFirstTouch();
+      expect(firstB).not.toBeNull();
+      // Same touch object — immutability holds across services/inits.
+      expect(firstB!.source).toBe('google');
+      expect(firstB!.campaign).toBe('spring');
+      expect(firstB!.timestamp).toBe(firstA!.timestamp);
+
+      // Last touch DID move (new UTM params is the trigger).
+      const last = svc2.getLastTouch();
+      expect(last!.source).toBe('facebook');
+    });
+
+    it('only resets first touch when clear() is explicitly called', () => {
+      setHref('http://localhost/lp?utm_source=tiktok');
+      const svc = createAttributionService(window, makePPLib());
+      svc.init();
+      const before = svc.getFirstTouch();
+      expect(before!.source).toBe('tiktok');
+
+      svc.clear();
+
+      // After clear, first-touch is gone.
+      expect(svc.getFirstTouch()).toBeNull();
+
+      // A subsequent init can write a NEW first touch (post-consent re-grant).
+      setHref('http://localhost/lp?utm_source=bing');
+      const svc2 = createAttributionService(window, makePPLib());
+      svc2.init();
+      expect(svc2.getFirstTouch()!.source).toBe('bing');
+    });
+  });
+
   describe('platform classifier (regression: still uses label space)', () => {
     it('detects organic_search via google referrer hostname', () => {
       setReferrer('https://www.google.com/search?q=foo');

@@ -222,6 +222,42 @@ describe('createEventPropertiesBuilder', () => {
       expect(a).toBe(b);
     });
 
+    it('keeps device_id stable across UTM-changed re-visits (branch 2 / audit P7+T5)', () => {
+      // Audit P7/T5: same browser hitting the site with different UTMs
+      // (e.g. google → facebook campaign) was generating a new device_id,
+      // breaking cross-session user joins. The cross-subdomain cookie from
+      // branch 1B owns the fix; this test locks in the contract so a
+      // regression can't slip through.
+      const originalURL = document.URL;
+      try {
+        document.cookie = 'pp_device_id=known-device-uuid-v1; path=/';
+
+        // First visit: google UTM.
+        Object.defineProperty(document, 'URL', {
+          value: 'http://localhost/lp?utm_source=google&utm_medium=cpc',
+          writable: true, configurable: true,
+        });
+        const ppLib1 = makePPLib();
+        const idA = createEventPropertiesBuilder(window, ppLib1).build().eventProperties.device_id;
+        expect(idA).toBe('known-device-uuid-v1');
+
+        // Second visit (fresh builder, fresh ppLib): facebook UTM.
+        // The cookie is still set; device_id MUST read through.
+        Object.defineProperty(document, 'URL', {
+          value: 'http://localhost/lp?utm_source=facebook&utm_medium=social',
+          writable: true, configurable: true,
+        });
+        const ppLib2 = makePPLib();
+        const idB = createEventPropertiesBuilder(window, ppLib2).build().eventProperties.device_id;
+        expect(idB).toBe('known-device-uuid-v1');
+        expect(idB).toBe(idA);
+      } finally {
+        Object.defineProperty(document, 'URL', {
+          value: originalURL, writable: true, configurable: true,
+        });
+      }
+    });
+
     it('emits the 6 new 1C touch attributes from first/last attribution touches', () => {
       const first: FixtureTouch = {
         source: 'facebook', medium: 'social', campaign: 'launch', referrer: 'https://www.facebook.com/some-page',
