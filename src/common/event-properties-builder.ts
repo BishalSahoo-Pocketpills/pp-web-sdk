@@ -19,7 +19,6 @@ import {
   UTM_FIRST_TOUCH,
   UTM_LAST_TOUCH,
   MARKETING_ATTRIBUTION_KEY,
-  MIXPANEL_SUPER_PROPERTY_KEYS_SET,
 } from '@src/common/super-property-keys';
 import { createPersistentValue } from '@src/common/persistent-storage';
 
@@ -172,12 +171,6 @@ function generateDeviceUuid(win: Window & typeof globalThis): string {
 function emptyUtm(): RawUtmTouch {
   return { utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '' };
 }
-
-// Properties already registered as Mixpanel super-properties elsewhere in the
-// SDK. Skipping them in buildFlat() avoids redundant per-event payload bloat.
-// Sourced from the canonical key catalog so the filter list can't drift out
-// of sync with the Mixpanel module's super-property registration.
-const MIXPANEL_SUPER_PROP_KEYS = MIXPANEL_SUPER_PROPERTY_KEYS_SET;
 
 function defaultCookieNames(): EventPropertiesBuilderCookieNames {
   return {
@@ -556,11 +549,15 @@ export function createEventPropertiesBuilder(
     for (let i = 0; i < userKeys.length; i++) {
       flat[userKeys[i]] = userObj[userKeys[i]];
     }
+    // Per the data-team contract, every event payload carries the full
+    // property bag — including utm_* [first/last touch] and marketing_attribution.
+    // Mixpanel also registers these as super-properties; the redundancy is
+    // intentional so dataLayer / GTM / BigQuery consumers see the same data
+    // as Mixpanel reports without depending on the super-property side channel.
     const eventObj = bundle.eventProperties as unknown as Record<string, unknown>;
     const eventKeys = Object.keys(eventObj);
     for (let j = 0; j < eventKeys.length; j++) {
       const k = eventKeys[j];
-      if (MIXPANEL_SUPER_PROP_KEYS[k]) continue; // skip super-prop duplication
       flat[k] = eventObj[k];
     }
 
