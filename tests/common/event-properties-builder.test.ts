@@ -444,4 +444,62 @@ describe('createEventPropertiesBuilder', () => {
       expect(Object.prototype.hasOwnProperty.call(flat, 'rdt_cid')).toBe(false);
     });
   });
+
+  describe('buildNested()', () => {
+    it('returns exactly the four wrapper blocks at the top level', () => {
+      const ppLib = makePPLib({
+        cookies: { userId: '42', patientId: '99', app_is_authenticated: 'true', country: 'CA' }
+      });
+      const nested = createEventPropertiesBuilder(window, ppLib).buildNested();
+
+      // Exactly four top-level keys — no leakage of flat fields.
+      expect(Object.keys(nested).sort()).toEqual(['attribution', 'eventProperties', 'page', 'userProperties']);
+    });
+
+    it('each wrapper has the same shape as build()', () => {
+      const ppLib = makePPLib({
+        cookies: { userId: '42', patientId: '99', app_is_authenticated: 'true', country: 'CA' }
+      });
+      const builder = createEventPropertiesBuilder(window, ppLib);
+      const bundle = builder.build();
+      const nested = builder.buildNested();
+
+      const userProps = nested.userProperties as Record<string, unknown>;
+      expect(userProps.userId).toBe(bundle.userProperties.userId);
+      expect(userProps.patientId).toBe(bundle.userProperties.patientId);
+      expect(userProps.pp_distinct_id).toBe(bundle.userProperties.pp_distinct_id);
+
+      const eventProps = nested.eventProperties as Record<string, unknown>;
+      expect(eventProps.pp_user_id).toBe(bundle.eventProperties.pp_user_id);
+      expect(eventProps.logged_in).toBe('true');
+      expect(eventProps.platform).toBe('web');
+
+      const page = nested.page as Record<string, unknown>;
+      expect(typeof page.url).toBe('string');
+      expect(typeof page.title).toBe('string');
+      expect(typeof page.referrer).toBe('string');
+
+      const attribution = nested.attribution as Record<string, unknown>;
+      // All click-ID fields exist (null when absent), unlike buildFlat which omits nulls.
+      expect('fbclid' in attribution).toBe(true);
+      expect('gclid' in attribution).toBe(true);
+      expect('rdt_cid' in attribution).toBe(true);
+    });
+
+    it('does not include any flat keys at the top level', () => {
+      const ppLib = makePPLib({
+        cookies: { userId: '42', patientId: '99', app_is_authenticated: 'true' }
+      });
+      const nested = createEventPropertiesBuilder(window, ppLib).buildNested();
+
+      // Flat-mode fields must NOT appear at the top level.
+      expect('pp_user_id' in nested).toBe(false);
+      expect('pp_session_id' in nested).toBe(false);
+      expect('device_id' in nested).toBe(false);
+      expect('logged_in' in nested).toBe(false);
+      expect('utm_source' in nested).toBe(false);
+      expect('utm_source [first touch]' in nested).toBe(false);
+      expect('marketing_attribution' in nested).toBe(false);
+    });
+  });
 });
