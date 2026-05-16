@@ -28,6 +28,14 @@ export interface PersistentValueOptions<T> {
   generate?: () => T;
   /** Legacy localStorage key for one-time migration; deleted after the value is copied into the cookie. */
   legacyLocalStorageKey?: string;
+  /**
+   * Legacy cookie names to migrate from (ordered: first match wins).
+   * On read, if the primary cookie is absent, each legacy name is consulted in
+   * order; the first decoded value is copied into the new cookie and every
+   * legacy entry is deleted. Enables in-flight cookie renames without losing
+   * established users' session/identity continuity.
+   */
+  legacyCookieNames?: string[];
 }
 
 export interface PersistentValue<T> {
@@ -75,6 +83,27 @@ export function createPersistentValue<T>(
     }
   }
 
+  function deleteLegacyCookies(): void {
+    if (!opts.legacyCookieNames || opts.legacyCookieNames.length === 0) return;
+    for (const legacyName of opts.legacyCookieNames) {
+      try {
+        ppLib.setCookie(legacyName, '', {
+          domain: ppLib.config.cookieDomain,
+          path: '/',
+          maxAgeSeconds: 0,
+          sameSite: 'Lax'
+        });
+      } catch (e) {
+        // best-effort
+      }
+      try {
+        ppLib.deleteCookie(legacyName);
+      } catch (e) {
+        // best-effort — covers the host-scoped legacy form
+      }
+    }
+  }
+
   function read(): T | null {
     // 1. Cookie — primary source after migration completes.
     const cookieRaw = ppLib.getCookie(opts.cookieName);
@@ -92,7 +121,32 @@ export function createPersistentValue<T>(
       );
     }
 
-    // 2. Legacy localStorage — one-time migration. Copy to cookie, delete
+    // 2. Legacy cookie names — one-time rename migration. First match wins;
+    //    all legacy entries are deleted regardless so subsequent reads come
+    //    from the canonical cookie name.
+    if (opts.legacyCookieNames && opts.legacyCookieNames.length > 0) {
+      for (const legacyName of opts.legacyCookieNames) {
+        const legacyCookieRaw = ppLib.getCookie(legacyName);
+        if (legacyCookieRaw === null || legacyCookieRaw === '') continue;
+        const parsed = opts.deserialize(legacyCookieRaw);
+        if (parsed !== null) {
+          write(parsed);
+          deleteLegacyCookies();
+          return parsed;
+        }
+        // Legacy cookie failed to deserialize — drop it and keep looking.
+        ppLib.log(
+          'info',
+          '[persistent-storage] legacy cookie value failed deserialize; dropping',
+          { cookieName: opts.cookieName, legacyCookieName: legacyName, rawLength: legacyCookieRaw.length },
+        );
+      }
+      // If we got here, every legacy cookie was empty or unparseable —
+      // clean them up so we don't keep checking on every read.
+      deleteLegacyCookies();
+    }
+
+    // 3. Legacy localStorage — one-time migration. Copy to cookie, delete
     //    the local entry so subsequent reads come from the cookie.
     const legacyRaw = readLocalStorage();
     if (legacyRaw !== null && legacyRaw !== '') {
@@ -114,7 +168,7 @@ export function createPersistentValue<T>(
       deleteLocalStorage();
     }
 
-    // 3. Generate (when caller provided a generator).
+    // 4. Generate (when caller provided a generator).
     if (opts.generate) {
       const generated = opts.generate();
       write(generated);
@@ -146,6 +200,9 @@ export function createPersistentValue<T>(
     } catch (e) {
       // best-effort
     }
+    // Mid-migration callers may still have legacy-named cookies kicking
+    // around — wipe those too so clear() leaves no residue.
+    deleteLegacyCookies();
     deleteLocalStorage();
   }
 

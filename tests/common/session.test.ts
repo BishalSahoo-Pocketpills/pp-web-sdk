@@ -55,18 +55,18 @@ describe('createSessionService', () => {
   it('persists session ID in localStorage', () => {
     const session = createSessionService();
     const id = session.getOrCreateSessionId();
-    expect(localStorage.getItem('pp_analytics_session_id')).toBe(id);
+    expect(localStorage.getItem('_pps')).toBe(id);
   });
 
   it('updates last activity timestamp on each call', () => {
     vi.useFakeTimers();
     const session = createSessionService();
     session.getOrCreateSessionId();
-    const ts1 = localStorage.getItem('pp_analytics_last_activity');
+    const ts1 = localStorage.getItem('_ppsa');
 
     vi.advanceTimersByTime(5000);
     session.getOrCreateSessionId();
-    const ts2 = localStorage.getItem('pp_analytics_last_activity');
+    const ts2 = localStorage.getItem('_ppsa');
 
     expect(Number(ts2)).toBeGreaterThan(Number(ts1));
     vi.useRealTimers();
@@ -75,11 +75,11 @@ describe('createSessionService', () => {
   it('clearSession removes localStorage entries', () => {
     const session = createSessionService();
     session.getOrCreateSessionId();
-    expect(localStorage.getItem('pp_analytics_session_id')).not.toBeNull();
+    expect(localStorage.getItem('_pps')).not.toBeNull();
 
     session.clearSession();
-    expect(localStorage.getItem('pp_analytics_session_id')).toBeNull();
-    expect(localStorage.getItem('pp_analytics_last_activity')).toBeNull();
+    expect(localStorage.getItem('_pps')).toBeNull();
+    expect(localStorage.getItem('_ppsa')).toBeNull();
   });
 
   it('generates new ID after clearSession', () => {
@@ -139,23 +139,23 @@ describe('createSessionService (cookie-backed, win + ppLib)', () => {
     const id = session.getOrCreateSessionId();
 
     expect(id).toBeTruthy();
-    expect(document.cookie).toContain('pp_analytics_session_id=' + encodeURIComponent(id));
+    expect(document.cookie).toContain('_pps=' + encodeURIComponent(id));
     // localStorage stays empty under the new contract
-    expect(localStorage.getItem('pp_analytics_session_id')).toBeNull();
-    expect(localStorage.getItem('pp_analytics_last_activity')).toBeNull();
+    expect(localStorage.getItem('_pps')).toBeNull();
+    expect(localStorage.getItem('_ppsa')).toBeNull();
   });
 
   it('updates the last_activity cookie on every call', () => {
     vi.useFakeTimers();
     const session = createSessionService(window, makeCookiePPLib());
     session.getOrCreateSessionId();
-    const ts1Match = document.cookie.match(/pp_analytics_last_activity=(\d+)/);
+    const ts1Match = document.cookie.match(/_ppsa=(\d+)/);
     expect(ts1Match).not.toBeNull();
     const ts1 = Number((ts1Match as RegExpMatchArray)[1]);
 
     vi.advanceTimersByTime(5000);
     session.getOrCreateSessionId();
-    const ts2Match = document.cookie.match(/pp_analytics_last_activity=(\d+)/);
+    const ts2Match = document.cookie.match(/_ppsa=(\d+)/);
     const ts2 = Number((ts2Match as RegExpMatchArray)[1]);
 
     expect(ts2).toBeGreaterThan(ts1);
@@ -181,8 +181,8 @@ describe('createSessionService (cookie-backed, win + ppLib)', () => {
     vi.useRealTimers();
   });
 
-  it('migrates legacy localStorage session_id + last_activity into cookies on first read', () => {
-    // Seed legacy values — pretend the user pre-dates the rollout.
+  it('migrates legacy localStorage session_id + last_activity into the new cookies on first read', () => {
+    // Seed legacy localStorage — pretend the user pre-dates the cookie rollout.
     const legacyId = 'legacy-session-uuid';
     const legacyActivity = Date.now(); // recent — should NOT trigger rotation
     localStorage.setItem('pp_analytics_session_id', legacyId);
@@ -192,20 +192,57 @@ describe('createSessionService (cookie-backed, win + ppLib)', () => {
     const id = session.getOrCreateSessionId();
 
     expect(id).toBe(legacyId);
-    // Cookies now seeded
-    expect(document.cookie).toContain('pp_analytics_session_id=' + encodeURIComponent(legacyId));
-    expect(document.cookie).toContain('pp_analytics_last_activity=');
+    // New cookies now seeded
+    expect(document.cookie).toContain('_pps=' + encodeURIComponent(legacyId));
+    expect(document.cookie).toContain('_ppsa=');
     // Legacy localStorage entries purged
     expect(localStorage.getItem('pp_analytics_session_id')).toBeNull();
     expect(localStorage.getItem('pp_analytics_last_activity')).toBeNull();
   });
 
-  it('clearSession deletes both cookies', () => {
+  it('migrates legacy cookie session_id + last_activity (pp_analytics_*) into the new _pps / _ppsa names', () => {
+    // Seed the pre-rename cookies on the document directly.
+    const legacyId = 'cookie-legacy-uuid';
+    const legacyActivity = Date.now();
+    document.cookie = 'pp_analytics_session_id=' + encodeURIComponent(legacyId) + ';path=/';
+    document.cookie = 'pp_analytics_last_activity=' + legacyActivity + ';path=/';
+
+    const session = createSessionService(window, makeCookiePPLib());
+    const id = session.getOrCreateSessionId();
+
+    expect(id).toBe(legacyId);
+    expect(document.cookie).toContain('_pps=' + encodeURIComponent(legacyId));
+    expect(document.cookie).toContain('_ppsa=');
+    // Legacy cookies purged so we don't re-migrate on every read.
+    expect(document.cookie).not.toMatch(/pp_analytics_session_id=[^;]/);
+    expect(document.cookie).not.toMatch(/pp_analytics_last_activity=[^;]/);
+  });
+
+  it('prefers the new cookie over the legacy cookie when both are present', () => {
+    // Defensive: simulate a tab race where the new cookies are already written.
+    // Both _pps and _ppsa must be seeded — without a fresh activity timestamp
+    // the freshness check would rotate the session and mask precedence.
+    document.cookie = '_pps=' + encodeURIComponent('new-id') + ';path=/';
+    document.cookie = '_ppsa=' + Date.now() + ';path=/';
+    document.cookie = 'pp_analytics_session_id=' + encodeURIComponent('old-id') + ';path=/';
+    document.cookie = 'pp_analytics_last_activity=' + Date.now() + ';path=/';
+
+    const session = createSessionService(window, makeCookiePPLib());
+    const id = session.getOrCreateSessionId();
+
+    expect(id).toBe('new-id');
+  });
+
+  it('clearSession deletes both cookies (and any legacy residue)', () => {
+    // Plant a leftover legacy cookie to verify clear() wipes it too.
+    document.cookie = 'pp_analytics_session_id=stale;path=/';
     const session = createSessionService(window, makeCookiePPLib());
     session.getOrCreateSessionId();
-    expect(document.cookie).toContain('pp_analytics_session_id=');
+    expect(document.cookie).toContain('_pps=');
 
     session.clearSession();
+    expect(document.cookie).not.toMatch(/_pps=[^;]/);
+    expect(document.cookie).not.toMatch(/_ppsa=[^;]/);
     expect(document.cookie).not.toMatch(/pp_analytics_session_id=[^;]/);
     expect(document.cookie).not.toMatch(/pp_analytics_last_activity=[^;]/);
   });

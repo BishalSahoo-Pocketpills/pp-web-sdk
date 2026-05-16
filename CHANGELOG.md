@@ -157,6 +157,18 @@ been published behind a version tag. Breaking changes are flagged
 
 ### Changed
 
+- **Session cookies renamed to `_pps` / `_ppsa`.** The cross-subdomain
+  session ID and last-activity timestamp now live in `_pps` and
+  `_ppsa` cookies (was `pp_analytics_session_id` /
+  `pp_analytics_last_activity`). The leading underscore is the
+  conventional "internal" marker and the short, opaque names are less
+  inviting for users or third-party scripts to inspect or tamper with.
+  Established users carrying the previous names are migrated
+  transparently on the next read via the new
+  `PersistentValueOptions.legacyCookieNames` field on
+  `createPersistentValue`; the legacy cookies are deleted after a
+  successful migration. `clear()` wipes legacy residue too.
+
 - **`configure()` signatures use `DeepPartial<T>`.** All module
   `configure()` methods (analytics, braze, datalayer, ecommerce, event-
   source, login, mixpanel, vwo, voucherify, common/attribution, common/

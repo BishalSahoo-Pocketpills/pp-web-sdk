@@ -294,4 +294,103 @@ describe('createPersistentValue', () => {
       expect(localStorage.getItem('legacy_corrupt')).toBeNull();
     });
   });
+
+  describe('legacy cookie migration', () => {
+    it('migrates a legacy cookie value into the new cookie name on first read, then deletes the legacy cookie', () => {
+      const ppLib = makePPLib();
+      document.cookie = 'pv_old=legacy-value; path=/';
+
+      const pv = createPersistentValue<string>(window, ppLib, {
+        cookieName: 'pv_new',
+        maxAgeSeconds: 60,
+        serialize: (s) => s,
+        deserialize: (s) => (s.length > 0 ? s : null),
+        legacyCookieNames: ['pv_old'],
+      });
+
+      expect(pv.read()).toBe('legacy-value');
+      expect(ppLib.getCookie('pv_new')).toBe('legacy-value');
+      // Legacy cookie purged so subsequent reads come straight from the new name.
+      expect(ppLib.getCookie('pv_old')).toBeNull();
+    });
+
+    it('the new cookie wins when both new and legacy cookies are present', () => {
+      const ppLib = makePPLib();
+      document.cookie = 'pv_new=new-value; path=/';
+      document.cookie = 'pv_old=old-value; path=/';
+
+      const pv = createPersistentValue<string>(window, ppLib, {
+        cookieName: 'pv_new',
+        maxAgeSeconds: 60,
+        serialize: (s) => s,
+        deserialize: (s) => (s.length > 0 ? s : null),
+        legacyCookieNames: ['pv_old'],
+      });
+
+      expect(pv.read()).toBe('new-value');
+    });
+
+    it('tries multiple legacy cookies in order and picks the first that deserializes', () => {
+      const ppLib = makePPLib();
+      // First legacy candidate is junk; second is valid.
+      document.cookie = 'pv_old_a={not-json; path=/';
+      document.cookie = 'pv_old_b={"ok":true}; path=/';
+
+      const pv = createPersistentValue<{ ok: boolean }>(window, ppLib, {
+        cookieName: 'pv_new',
+        maxAgeSeconds: 60,
+        serialize: JSON.stringify,
+        deserialize: (raw) => {
+          try { return JSON.parse(raw); } catch { return null; }
+        },
+        legacyCookieNames: ['pv_old_a', 'pv_old_b'],
+      });
+
+      expect(pv.read()).toEqual({ ok: true });
+      // Both legacy entries cleared after a successful migration.
+      expect(ppLib.getCookie('pv_old_a')).toBeNull();
+      expect(ppLib.getCookie('pv_old_b')).toBeNull();
+    });
+
+    it('cleans up every legacy cookie when none deserialize, then falls through to generate', () => {
+      const ppLib = makePPLib();
+      document.cookie = 'pv_old_x={broken; path=/';
+      document.cookie = 'pv_old_y={also-broken; path=/';
+
+      const pv = createPersistentValue<{ ok: boolean }>(window, ppLib, {
+        cookieName: 'pv_new',
+        maxAgeSeconds: 60,
+        serialize: JSON.stringify,
+        deserialize: (raw) => {
+          try { return JSON.parse(raw); } catch { return null; }
+        },
+        legacyCookieNames: ['pv_old_x', 'pv_old_y'],
+        generate: () => ({ ok: true }),
+      });
+
+      expect(pv.read()).toEqual({ ok: true });
+      expect(ppLib.getCookie('pv_old_x')).toBeNull();
+      expect(ppLib.getCookie('pv_old_y')).toBeNull();
+      // New cookie was generated.
+      expect(ppLib.getCookie('pv_new')).toBe('{"ok":true}');
+    });
+
+    it('clear() also wipes any leftover legacy cookies', () => {
+      const ppLib = makePPLib();
+      document.cookie = 'pv_old=residue; path=/';
+
+      const pv = createPersistentValue<string>(window, ppLib, {
+        cookieName: 'pv_new',
+        maxAgeSeconds: 60,
+        serialize: (s) => s,
+        deserialize: (s) => (s.length > 0 ? s : null),
+        legacyCookieNames: ['pv_old'],
+      });
+
+      pv.write('current');
+      pv.clear();
+      expect(ppLib.getCookie('pv_new')).toBeNull();
+      expect(ppLib.getCookie('pv_old')).toBeNull();
+    });
+  });
 });

@@ -8,6 +8,12 @@
  * so a user navigating between try.pocketpills.com and www.pocketpills.com
  * keeps the same session_id / activity timestamp. A one-time migration copies
  * any legacy localStorage values into the cookie and purges them.
+ *
+ * Cookie names use the short `_pps` / `_ppsa` form (leading underscore is the
+ * conventional "internal" marker, and the obscure name makes it less inviting
+ * for users / external scripts to inspect or tamper with). Established users
+ * carrying the previous `pp_analytics_*` cookies are migrated transparently
+ * on first read via `legacyCookieNames`.
  */
 import type { PPLib } from '@src/types/common.types';
 import { createPersistentValue } from '@src/common/persistent-storage';
@@ -17,8 +23,10 @@ export interface SessionService {
   clearSession: () => void;
 }
 
-const SESSION_KEY = 'pp_analytics_session_id';
-const ACTIVITY_KEY = 'pp_analytics_last_activity';
+const SESSION_KEY = '_pps';
+const ACTIVITY_KEY = '_ppsa';
+const LEGACY_SESSION_KEYS = ['pp_analytics_session_id'];
+const LEGACY_ACTIVITY_KEYS = ['pp_analytics_last_activity'];
 const TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const COOKIE_MAX_AGE_SECONDS = 30 * 60; // 30 minutes (sliding via every read)
 
@@ -81,7 +89,8 @@ export function createSessionService(
     serialize: (s) => s,
     deserialize: (s) => (typeof s === 'string' && s.length > 0) ? s : null,
     // No generate fn — we coordinate generation with the activity check below.
-    legacyLocalStorageKey: SESSION_KEY
+    legacyLocalStorageKey: LEGACY_SESSION_KEYS[0],
+    legacyCookieNames: LEGACY_SESSION_KEYS,
   });
 
   const activityStore = createPersistentValue<number>(win, ppLib, {
@@ -92,7 +101,8 @@ export function createSessionService(
       const n = parseInt(raw, 10);
       return isFinite(n) && n > 0 ? n : null;
     },
-    legacyLocalStorageKey: ACTIVITY_KEY
+    legacyLocalStorageKey: LEGACY_ACTIVITY_KEYS[0],
+    legacyCookieNames: LEGACY_ACTIVITY_KEYS,
   });
 
   function getOrCreateSessionId(): string {
