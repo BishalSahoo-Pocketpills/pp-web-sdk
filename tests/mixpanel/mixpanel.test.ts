@@ -705,21 +705,19 @@ describe('Campaign / UTM Attribution', () => {
   });
 
   describe('resetCampaign()', () => {
-    it('sets utm_source [last touch] to $direct and other utm_* keys to "none" on session timeout', () => {
+    it('sets utm_* [last touch] to $direct on session timeout when no utm params present', () => {
       const loadedCallback = initAndGetLoadedCallback({ sessionTimeout: 1 });
       const mp = createMockMixpanel();
 
       mp.register({ 'last event time': Date.now() - 100, 'session ID': 'old' });
       invokeLoadedCallback(loadedCallback, mp);
 
-      // Mixpanel convention: $direct means "no source", and the other utm_*
-      // dimensions default to "none" so direct visits produce queryable values.
-      expect(mp.people.set).toHaveBeenCalledWith(
-        expect.objectContaining({ 'utm_source [last touch]': '$direct' })
-      );
-      ['utm_medium', 'utm_campaign', 'utm_content', 'utm_term'].forEach((kw) => {
+      // Per the Analytics UTM events spec, every utm_* dimension defaults to
+      // '$direct' on direct visits — uniform across source/medium/campaign/
+      // content/term so direct visits produce queryable values.
+      ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'].forEach((kw) => {
         expect(mp.people.set).toHaveBeenCalledWith(
-          expect.objectContaining({ [kw + ' [last touch]']: 'none' })
+          expect.objectContaining({ [kw + ' [last touch]']: '$direct' })
         );
       });
     });
@@ -752,7 +750,7 @@ describe('Campaign / UTM Attribution', () => {
       });
     });
 
-    it('registers $direct/none super-properties when no UTM params present', () => {
+    it('registers $direct super-properties when no UTM params present', () => {
       const originalURL = document.URL;
       Object.defineProperty(document, 'URL', {
         value: 'http://localhost/test?foo=bar',
@@ -769,19 +767,19 @@ describe('Campaign / UTM Attribution', () => {
       expect(mp.register).toHaveBeenCalledWith(
         expect.objectContaining({
           'utm_source [last touch]': '$direct',
-          'utm_medium [last touch]': 'none',
-          'utm_campaign [last touch]': 'none',
-          'utm_content [last touch]': 'none',
-          'utm_term [last touch]': 'none',
+          'utm_medium [last touch]': '$direct',
+          'utm_campaign [last touch]': '$direct',
+          'utm_content [last touch]': '$direct',
+          'utm_term [last touch]': '$direct',
         })
       );
       expect(mp.register).toHaveBeenCalledWith(
         expect.objectContaining({
           'utm_source [first touch]': '$direct',
-          'utm_medium [first touch]': 'none',
-          'utm_campaign [first touch]': 'none',
-          'utm_content [first touch]': 'none',
-          'utm_term [first touch]': 'none',
+          'utm_medium [first touch]': '$direct',
+          'utm_campaign [first touch]': '$direct',
+          'utm_content [first touch]': '$direct',
+          'utm_term [first touch]': '$direct',
         })
       );
 
@@ -878,8 +876,8 @@ describe('Campaign / UTM Attribution', () => {
       expect(mp.register).toHaveBeenCalledWith(
         expect.objectContaining({
           'utm_source [last touch]': '$direct',
-          'utm_medium [last touch]': 'none',
-          'utm_campaign [last touch]': 'none',
+          'utm_medium [last touch]': '$direct',
+          'utm_campaign [last touch]': '$direct',
         })
       );
       // Crucially, "febpt" must NOT have leaked from attribution into utm_*.
@@ -894,7 +892,7 @@ describe('Campaign / UTM Attribution', () => {
       });
     });
 
-    it('falls back to "none" for missing UTM dimensions when some are present', () => {
+    it('falls back to "$direct" for missing UTM dimensions when some are present', () => {
       const originalURL = document.URL;
       Object.defineProperty(document, 'URL', {
         value: 'http://localhost/test?utm_source=google',
@@ -909,10 +907,10 @@ describe('Campaign / UTM Attribution', () => {
       expect(mp.register).toHaveBeenCalledWith(
         expect.objectContaining({
           'utm_source [last touch]': 'google',
-          'utm_medium [last touch]': 'none',
-          'utm_campaign [last touch]': 'none',
-          'utm_content [last touch]': 'none',
-          'utm_term [last touch]': 'none',
+          'utm_medium [last touch]': '$direct',
+          'utm_campaign [last touch]': '$direct',
+          'utm_content [last touch]': '$direct',
+          'utm_term [last touch]': '$direct',
         })
       );
 

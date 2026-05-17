@@ -156,23 +156,28 @@ describe('createEventPropertiesBuilder', () => {
       });
     });
 
-    it('uses $direct/none fallbacks when first/last/current touch are missing', () => {
+    it('uses $direct fallbacks across all UTM dimensions when first/last/current touch are missing', () => {
       const ppLib = makePPLib({
         attribution: { current: null, first: null, last: null, summary: null }
       });
       const bundle = createEventPropertiesBuilder(window, ppLib).build();
 
+      // Per the Analytics UTM events spec, every utm_* [first/last touch] key
+      // defaults to '$direct' (not 'none') when no value is set.
       expect(bundle.eventProperties['utm_source [first touch]']).toBe('$direct');
-      expect(bundle.eventProperties['utm_medium [first touch]']).toBe('none');
-      expect(bundle.eventProperties['utm_campaign [first touch]']).toBe('none');
+      expect(bundle.eventProperties['utm_medium [first touch]']).toBe('$direct');
+      expect(bundle.eventProperties['utm_campaign [first touch]']).toBe('$direct');
+      expect(bundle.eventProperties['utm_content [first touch]']).toBe('$direct');
+      expect(bundle.eventProperties['utm_term [first touch]']).toBe('$direct');
       expect(bundle.eventProperties['utm_source [last touch]']).toBe('$direct');
-      expect(bundle.eventProperties['utm_medium [last touch]']).toBe('none');
-      expect(bundle.eventProperties['utm_campaign [last touch]']).toBe('none');
-      // Current UTM keys also follow the $direct/none convention so direct
-      // visits produce stable values across all UTM dimensions.
+      expect(bundle.eventProperties['utm_medium [last touch]']).toBe('$direct');
+      expect(bundle.eventProperties['utm_campaign [last touch]']).toBe('$direct');
+      expect(bundle.eventProperties['utm_content [last touch]']).toBe('$direct');
+      expect(bundle.eventProperties['utm_term [last touch]']).toBe('$direct');
+      // Current-visit utm_* mirror the same convention for cross-dimension consistency.
       expect(bundle.eventProperties.utm_source).toBe('$direct');
-      expect(bundle.eventProperties.utm_medium).toBe('none');
-      expect(bundle.eventProperties.utm_campaign).toBe('none');
+      expect(bundle.eventProperties.utm_medium).toBe('$direct');
+      expect(bundle.eventProperties.utm_campaign).toBe('$direct');
       expect(bundle.eventProperties.initial_referrer).toBe('');
     });
 
@@ -490,11 +495,11 @@ describe('createEventPropertiesBuilder', () => {
       // / GTM consumers see the same data as Mixpanel reports — even though
       // Mixpanel ALSO registers them as super-properties on the side.
       expect(flat['utm_source [first touch]']).toBe('$direct');
-      expect(flat['utm_medium [first touch]']).toBe('none');
-      expect(flat['utm_campaign [first touch]']).toBe('none');
+      expect(flat['utm_medium [first touch]']).toBe('$direct');
+      expect(flat['utm_campaign [first touch]']).toBe('$direct');
       expect(flat['utm_source [last touch]']).toBe('$direct');
-      expect(flat['utm_medium [last touch]']).toBe('none');
-      expect(flat['utm_campaign [last touch]']).toBe('none');
+      expect(flat['utm_medium [last touch]']).toBe('$direct');
+      expect(flat['utm_campaign [last touch]']).toBe('$direct');
       // marketing_attribution from the fixture's `summary` block (see makePPLib defaults).
       expect(flat.marketing_attribution).toEqual({ source: 'google', medium: 'cpc', campaign: 'spring' });
     });

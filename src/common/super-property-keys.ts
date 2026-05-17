@@ -44,7 +44,11 @@ export const MIXPANEL_SUPER_PROPERTY_KEYS: ReadonlyArray<string> = [
   UTM_FIRST_TOUCH.source,
   UTM_FIRST_TOUCH.medium,
   UTM_FIRST_TOUCH.campaign,
+  UTM_FIRST_TOUCH.content,
+  UTM_FIRST_TOUCH.term,
   UTM_LAST_TOUCH.source,
   UTM_LAST_TOUCH.medium,
   UTM_LAST_TOUCH.campaign,
+  UTM_LAST_TOUCH.content,
+  UTM_LAST_TOUCH.term,
 ];

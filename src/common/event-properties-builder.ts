@@ -139,6 +139,84 @@ const UTM_FIRST_TOUCH_KEY = 'pp_utm_first_touch';
 const UTM_LAST_TOUCH_KEY = 'pp_utm_last_touch';
 const UTM_KEYS: ReadonlyArray<keyof RawUtmTouch> = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
 
+// ---------------------------------------------------------------------------
+// 5-step UTM resolution helpers (Analytics UTM events spec).
+//
+// Search-engine names — matched against the referrer hostname using a
+// "dot or start of segment, then engine token, then dot" pattern so we hit
+// regional TLDs (`google.co.uk`, `bing.co.in`) and subdomains
+// (`images.google.com`) but NOT bogus collisions like `googleads.example.com`
+// (their token isn't followed by a dot leading into the TLD). The token
+// list mirrors the attribution service's ORGANIC_SEARCH_DOMAINS plus a few
+// more (ecosia / brave) commonly cited in the data team's prior reports.
+// ---------------------------------------------------------------------------
+export const SEARCH_ENGINE_PATTERNS: ReadonlyArray<{ token: string; name: string }> = [
+  { token: 'google', name: 'google' },
+  { token: 'bing', name: 'bing' },
+  { token: 'yahoo', name: 'yahoo' },
+  { token: 'duckduckgo', name: 'duckduckgo' },
+  { token: 'baidu', name: 'baidu' },
+  { token: 'yandex', name: 'yandex' },
+  { token: 'ecosia', name: 'ecosia' },
+  { token: 'brave', name: 'brave' },
+];
+
+/**
+ * Recognise a search-engine referrer by hostname. Returns the canonical
+ * engine name (`google` / `bing` / …) or null. Match rule:
+ *   <start-of-host or `.`> <engine token> `.` …
+ * Engine token must be followed by a dot to avoid matching e.g. `googleads`.
+ */
+export function getSearchEngineName(refHost: string): string | null {
+  if (!refHost) return null;
+  const h = refHost.toLowerCase();
+  for (let i = 0; i < SEARCH_ENGINE_PATTERNS.length; i++) {
+    const t = SEARCH_ENGINE_PATTERNS[i].token;
+    // Anchor: start-of-string OR preceded by '.'; then the token followed by '.'
+    const idx = h.indexOf(t + '.');
+    if (idx === -1) continue;
+    if (idx === 0 || h.charAt(idx - 1) === '.') return SEARCH_ENGINE_PATTERNS[i].name;
+  }
+  return null;
+}
+
+/**
+ * Multi-part public-suffix exception list (Option C hybrid). Anything in this
+ * set causes `getRootDomain` to return the last THREE labels instead of two
+ * (so `news.bbc.co.uk` → `bbc.co.uk`, not `co.uk`). Curated for the regions
+ * we actually see traffic from; falls back gracefully to the last-2 default
+ * for anything not listed.
+ */
+export const MULTI_PART_TLDS: ReadonlySet<string> = new Set([
+  'co.uk', 'co.jp', 'co.kr', 'co.in', 'co.nz', 'co.za', 'co.il', 'co.id',
+  'co.th', 'co.cr', 'co.ve',
+  'com.au', 'com.br', 'com.cn', 'com.hk', 'com.mx', 'com.sg', 'com.tr',
+  'com.tw', 'com.ar', 'com.ph', 'com.my', 'com.pl', 'com.vn', 'com.co',
+  'org.uk', 'gov.uk', 'ac.uk', 'me.uk', 'ne.jp', 'or.jp', 'ac.jp',
+  'ac.in', 'gov.in', 'net.au', 'org.au', 'gov.au',
+]);
+
+/**
+ * Extract the registrable root domain from a hostname. Hybrid strategy:
+ *   - Default: take the last two labels (`news.example.com` → `example.com`).
+ *   - If the last two labels match a multi-part-TLD entry, take the last three
+ *     (`news.bbc.co.uk` → `bbc.co.uk`).
+ *
+ * Returns the hostname unchanged for single-label inputs and the empty string
+ * for empty input. Public Suffix List proper would be more complete but adds
+ * ~30KB; the hybrid covers our actual traffic with ~500 bytes of data.
+ */
+export function getRootDomain(hostname: string): string {
+  if (!hostname) return '';
+  const parts = hostname.split('.');
+  if (parts.length < 2) return hostname;
+  const last2 = parts.slice(-2).join('.').toLowerCase();
+  if (MULTI_PART_TLDS.has(last2) && parts.length >= 3) {
+    return parts.slice(-3).join('.');
+  }
+  return parts.slice(-2).join('.');
+}
+
 // Two-year max-age — device_id is a long-lived anonymous identifier; matches
 // the prior localStorage durability (effectively permanent until cleared).
 const DEVICE_ID_MAX_AGE_SECONDS = 63072000;
@@ -409,26 +487,128 @@ export function createEventPropertiesBuilder(
     }
   }
 
-  // Capture the current visit's utm_* into last-touch (always overwritten when
-  // present) and first-touch (set once, locked thereafter). Skipped on visits
-  // with no utm_* params so a direct return doesn't clobber stored attribution.
+  // ---------------------------------------------------------------------------
+  // 5-step UTM resolver (Analytics UTM events spec).
+  //
+  // First-ever capture (no prior last-touch persisted):
+  //   1. URL param present → use it.
+  //   2. Else search-engine referrer → utm_source = engine name,
+  //                                    utm_medium = 'organic',
+  //                                    utm_campaign/content/term = '$direct'.
+  //   3. Else external (non-self) referrer → utm_source = root domain,
+  //                                          utm_medium = 'referral',
+  //                                          utm_campaign/content/term = '$direct'.
+  //   4. Else no referrer → all keys = '$direct'.
+  //
+  // Subsequent captures:
+  //   1. URL param present for a key → overwrite that key.
+  //   2. Else → carry forward (no update).
+  //
+  // Critically, rules 2/3/4 do NOT fire on session rotation — session expiry
+  // only rotates session_id; the persisted UTM is retained. The "first-ever
+  // capture" signal is the absence of any last-touch entry in the cookie.
+  // ---------------------------------------------------------------------------
+
+  function isSelfReferralRef(refHost: string): boolean {
+    if (!refHost) return false;
+    const currentHost = (win.location && win.location.hostname) || '';
+    if (refHost === currentHost) return true;
+    const cookieDomain = ppLib.config && ppLib.config.cookieDomain;
+    if (typeof cookieDomain === 'string' && cookieDomain.length > 0) {
+      const root = cookieDomain.charAt(0) === '.' ? cookieDomain.slice(1) : cookieDomain;
+      if (root && (refHost === root || refHost.endsWith('.' + root))) return true;
+    }
+    return false;
+  }
+
+  function classifyReferrerForResolver(): { kind: 'search' | 'external' | 'direct'; engine: string | null; rootDomain: string } {
+    const refRaw = (win.document && win.document.referrer) || '';
+    if (!refRaw) return { kind: 'direct', engine: null, rootDomain: '' };
+    let refHost = '';
+    try { refHost = new URL(refRaw).hostname; } catch (e) { /* unparseable → treat as direct */ }
+    if (!refHost) return { kind: 'direct', engine: null, rootDomain: '' };
+    if (isSelfReferralRef(refHost)) return { kind: 'direct', engine: null, rootDomain: '' };
+
+    const engine = getSearchEngineName(refHost);
+    if (engine) return { kind: 'search', engine: engine, rootDomain: '' };
+    return { kind: 'external', engine: null, rootDomain: getRootDomain(refHost) };
+  }
+
+  /**
+   * Resolve the UTM bag for a first-ever capture. URL params always win;
+   * the referrer-based fallbacks (rules 2/3/4) only fill the gaps.
+   */
+  function resolveFirstCapture(urlUtm: RawUtmTouch): RawUtmTouch {
+    const cls = classifyReferrerForResolver();
+
+    let sourceFallback: string;
+    let mediumFallback: string;
+    if (cls.kind === 'search') {
+      sourceFallback = cls.engine || '$direct';
+      mediumFallback = 'organic';
+    } else if (cls.kind === 'external') {
+      sourceFallback = cls.rootDomain || '$direct';
+      mediumFallback = 'referral';
+    } else {
+      sourceFallback = '$direct';
+      mediumFallback = '$direct';
+    }
+
+    return {
+      utm_source: urlUtm.utm_source || sourceFallback,
+      utm_medium: urlUtm.utm_medium || mediumFallback,
+      utm_campaign: urlUtm.utm_campaign || '$direct',
+      utm_content: urlUtm.utm_content || '$direct',
+      utm_term: urlUtm.utm_term || '$direct',
+    };
+  }
+
+  function isFirstEverCapture(stored: RawUtmTouch): boolean {
+    for (let i = 0; i < UTM_KEYS.length; i++) {
+      if (stored[UTM_KEYS[i]] !== '') return false;
+    }
+    return true;
+  }
+
   let utmCaptured = false;
   function captureUtmTouches(): void {
     if (utmCaptured) return;
     utmCaptured = true;
-    const current = readUtmFromUrl();
-    let hasAny = false;
-    for (let i = 0; i < UTM_KEYS.length; i++) {
-      if (current[UTM_KEYS[i]]) { hasAny = true; break; }
+
+    const urlUtm = readUtmFromUrl();
+    const existingLast = readStoredUtm(UTM_LAST_TOUCH_KEY);
+    const firstEver = isFirstEverCapture(existingLast);
+
+    let resolved: RawUtmTouch;
+    if (firstEver) {
+      // First-ever capture — run rules 1–4. ALWAYS persists, even on direct
+      // visits, so the "have we ever captured?" signal is durable.
+      resolved = resolveFirstCapture(urlUtm);
+    } else {
+      // Subsequent capture — URL params overwrite per-key; everything else
+      // carries forward. Session rotation does NOT trigger referrer fallbacks.
+      resolved = {
+        utm_source: existingLast.utm_source,
+        utm_medium: existingLast.utm_medium,
+        utm_campaign: existingLast.utm_campaign,
+        utm_content: existingLast.utm_content,
+        utm_term: existingLast.utm_term,
+      };
+      for (let i = 0; i < UTM_KEYS.length; i++) {
+        const k = UTM_KEYS[i];
+        if (urlUtm[k]) resolved[k] = urlUtm[k];
+      }
     }
-    if (!hasAny) return;
-    persistUtm(UTM_LAST_TOUCH_KEY, current);
+    persistUtm(UTM_LAST_TOUCH_KEY, resolved);
+
+    // First-touch: set once from the resolved last-touch value. Locked
+    // thereafter — 3C hardens this on the Mixpanel side via register_once /
+    // set_once so cross-session reseeding is impossible even if a cookie
+    // somehow gets cleared.
     const existingFirst = readStoredUtm(UTM_FIRST_TOUCH_KEY);
-    let firstAlreadySet = false;
-    for (let j = 0; j < UTM_KEYS.length; j++) {
-      if (existingFirst[UTM_KEYS[j]]) { firstAlreadySet = true; break; }
+    if (isFirstEverCapture(existingFirst)) {
+      persistUtm(UTM_FIRST_TOUCH_KEY, resolved);
     }
-    if (!firstAlreadySet) persistUtm(UTM_FIRST_TOUCH_KEY, current);
   }
 
   // Each getter triggers captureUtmTouches() so the persistence runs on the
@@ -448,11 +628,12 @@ export function createEventPropertiesBuilder(
     return readStoredUtm(UTM_LAST_TOUCH_KEY);
   }
 
-  function utmFallback(key: keyof RawUtmTouch): string {
-    return key === 'utm_source' ? '$direct' : 'none';
-  }
+  // Per the Analytics UTM events spec, every utm_* [first/last touch] key
+  // defaults to '$direct' when no value is set (not 'none'). This fills any
+  // legacy partial data with the spec default; freshly-captured users already
+  // have '$direct' baked into the resolved persisted value.
   function utmOrFallback(touch: RawUtmTouch, key: keyof RawUtmTouch): string {
-    return touch[key] || utmFallback(key);
+    return touch[key] || '$direct';
   }
 
   function buildStable() {
@@ -516,15 +697,22 @@ export function createEventPropertiesBuilder(
       utm_medium: utmOrFallback(currentUtm, 'utm_medium'),
       utm_campaign: utmOrFallback(currentUtm, 'utm_campaign'),
 
-      // First touch UTM — locked once on the first visit that had utm_* params.
+      // First touch UTM — snapshot of the resolved last-touch at first-ever
+      // capture; locked thereafter (also enforced via Mixpanel register_once
+      // / set_once on the Mixpanel side).
       [UTM_FIRST_TOUCH.source]: utmOrFallback(firstUtm, 'utm_source'),
       [UTM_FIRST_TOUCH.medium]: utmOrFallback(firstUtm, 'utm_medium'),
       [UTM_FIRST_TOUCH.campaign]: utmOrFallback(firstUtm, 'utm_campaign'),
+      [UTM_FIRST_TOUCH.content]: utmOrFallback(firstUtm, 'utm_content'),
+      [UTM_FIRST_TOUCH.term]: utmOrFallback(firstUtm, 'utm_term'),
 
-      // Last touch UTM — overwritten on every visit with utm_* params.
+      // Last touch UTM — resolved via the 5-step spec (URL → search engine
+      // → external referrer → $direct → carry forward).
       [UTM_LAST_TOUCH.source]: utmOrFallback(lastUtm, 'utm_source'),
       [UTM_LAST_TOUCH.medium]: utmOrFallback(lastUtm, 'utm_medium'),
       [UTM_LAST_TOUCH.campaign]: utmOrFallback(lastUtm, 'utm_campaign'),
+      [UTM_LAST_TOUCH.content]: utmOrFallback(lastUtm, 'utm_content'),
+      [UTM_LAST_TOUCH.term]: utmOrFallback(lastUtm, 'utm_term'),
 
       // User context
       Country: stable.country,

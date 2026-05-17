@@ -109,11 +109,11 @@ describe('ppLib.mixpanel.track facade', () => {
     // they also ride per-event so BigQuery / GTM consumers see them
     // directly without depending on the super-property side channel.
     expect(mergedProps['utm_source [first touch]']).toBe('$direct');
-    expect(mergedProps['utm_medium [first touch]']).toBe('none');
-    expect(mergedProps['utm_campaign [first touch]']).toBe('none');
+    expect(mergedProps['utm_medium [first touch]']).toBe('$direct');
+    expect(mergedProps['utm_campaign [first touch]']).toBe('$direct');
     expect(mergedProps['utm_source [last touch]']).toBe('$direct');
-    expect(mergedProps['utm_medium [last touch]']).toBe('none');
-    expect(mergedProps['utm_campaign [last touch]']).toBe('none');
+    expect(mergedProps['utm_medium [last touch]']).toBe('$direct');
+    expect(mergedProps['utm_campaign [last touch]']).toBe('$direct');
     expect('marketing_attribution' in mergedProps).toBe(true);
   });
 

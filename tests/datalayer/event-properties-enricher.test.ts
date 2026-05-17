@@ -170,16 +170,16 @@ describe('createEventPropertiesEnricher', () => {
     wrapped({ event: 'test' });
 
     const ep = mockPush.mock.calls[0][0].eventProperties;
-    // Current UTM keys also follow the $direct/none convention.
+    // Per the Analytics UTM events spec, every utm_* defaults to '$direct'.
     expect(ep.utm_source).toBe('$direct');
-    expect(ep.utm_medium).toBe('none');
-    expect(ep.utm_campaign).toBe('none');
+    expect(ep.utm_medium).toBe('$direct');
+    expect(ep.utm_campaign).toBe('$direct');
     expect(ep['utm_source [first touch]']).toBe('$direct');
-    expect(ep['utm_medium [first touch]']).toBe('none');
-    expect(ep['utm_campaign [first touch]']).toBe('none');
+    expect(ep['utm_medium [first touch]']).toBe('$direct');
+    expect(ep['utm_campaign [first touch]']).toBe('$direct');
     expect(ep['utm_source [last touch]']).toBe('$direct');
-    expect(ep['utm_medium [last touch]']).toBe('none');
-    expect(ep['utm_campaign [last touch]']).toBe('none');
+    expect(ep['utm_medium [last touch]']).toBe('$direct');
+    expect(ep['utm_campaign [last touch]']).toBe('$direct');
   });
 
   it('handles missing session service gracefully', () => {

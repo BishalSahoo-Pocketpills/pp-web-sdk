@@ -315,14 +315,12 @@ import { bootstrapModule } from '@src/common/bootstrap';
   const VWO_BRIDGE_POLL_MAX_ATTEMPTS = 30;
   const VWO_BRIDGE_POLL_INTERVAL_MS = 500;
 
-  // Fallback convention (Mixpanel-style):
-  //   utm_source → '$direct'   (matches Mixpanel's stock attribution model)
-  //   everything else → 'none'
-  // Applied uniformly across [first touch] / [last touch] / session-reset
-  // so direct visits produce stable, queryable values rather than empty
-  // strings or missing keys.
-  function fallbackForKeyword(keyword: string): string {
-    return keyword === 'utm_source' ? '$direct' : 'none';
+  // Per the Analytics UTM events spec, every utm_* [first/last touch] key
+  // defaults to '$direct' when no value is set. Applied uniformly across
+  // [first touch] / [last touch] / session-reset so direct visits produce
+  // stable, queryable values rather than empty strings or missing keys.
+  function fallbackForKeyword(_keyword: string): string {
+    return '$direct';
   }
 
   // Read utm_* values from the shared event-properties builder. The builder

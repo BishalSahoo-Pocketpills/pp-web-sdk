@@ -157,6 +157,34 @@ been published behind a version tag. Breaking changes are flagged
 
 ### Changed
 
+- **UTM last-touch resolution per Analytics spec (5-step resolver).**
+  The `eventPropertiesBuilder` now resolves `utm_*` values via the
+  spec'd cascade on first-ever capture: (1) explicit URL params win;
+  otherwise (2) recognized search-engine referrer → `utm_source =
+  <engine>`, `utm_medium = organic`; (3) any other external referrer →
+  `utm_source = <root-domain>`, `utm_medium = referral`; (4) no
+  referrer → `utm_source = $direct`, `utm_medium = $direct`; (5) on
+  subsequent visits without URL params, carry forward the existing
+  last-touch (referrer/search fallbacks run **only** on first-ever
+  capture, never on session rotation). Self-referrals (same root
+  domain as `cookieDomain`) are excluded. Search-engine recognition
+  uses an 8-engine token list (google/bing/yahoo/duckduckgo/baidu/
+  yandex/ecosia/brave) anchored with a trailing-dot guard to avoid
+  `googleads.example.com` false positives. Root-domain extraction uses
+  a Public Suffix List hybrid (last-2-parts default + ~30 multi-part
+  TLD exceptions like `co.uk`).
+  - **BREAKING (analytics contract):** the default fallback for *all*
+    `utm_*` dimensions on direct visits is now `'$direct'` (was
+    `'none'` for medium/campaign/content/term, only source got
+    `'$direct'`). Uniform across `utm_source`/`medium`/`campaign`/
+    `content`/`term`, on both `[first touch]` and `[last touch]` super-
+    properties and per-event payloads. Reports filtering on `medium =
+    'none'` need updating to `medium = '$direct'`.
+  - **Added:** `utm_content [first touch]` / `utm_content [last touch]`
+    and `utm_term [first touch]` / `utm_term [last touch]` are now
+    surfaced in the per-event payload and registered as Mixpanel super-
+    properties (previously omitted from the payload).
+
 - **Session cookies renamed to `_pps` / `_ppsa`.** The cross-subdomain
   session ID and last-activity timestamp now live in `_pps` and
   `_ppsa` cookies (was `pp_analytics_session_id` /
