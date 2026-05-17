@@ -47,6 +47,15 @@ export interface DataLayerConfig {
   navigationDelay: number;
   initDelay: number;
   autoViewItem: boolean;
+  /**
+   * 3E: when `true`, null / undefined / '' values in user + event properties
+   * are passed through to the dataLayer unchanged (opt-out). When `false`
+   * (default), the enricher strips them to match Mixpanel's behavior so
+   * downstream consumers don't see "(empty)" segments. Set to `true` only
+   * when a GTM consumer relies on explicit nulls — most teams should leave
+   * the default.
+   */
+  preserveEmptyProperties: boolean;
   // Allowlist for cross-origin redirects from `<a data-dl-event>` clicks.
   // Same-origin / relative hrefs are always allowed; cross-origin hrefs
   // must match an entry exactly or as a subdomain (`.host` suffix).

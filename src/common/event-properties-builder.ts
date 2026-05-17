@@ -134,6 +134,25 @@ export interface EventPropertiesBuilder {
   getLastTouchUtm: () => RawUtmTouch;
 }
 
+// Per Analytics events spec (3E): strip null / undefined / '' values from
+// property bags before they leave the SDK. Mixpanel ingestion treats
+// empty strings as legitimate values, polluting funnels with "(empty)"
+// segments; null/undefined breaks BigQuery exports. Stripping at the
+// builder boundary is cheaper than stripping at every dispatcher.
+// Pure: returns a fresh object; does NOT mutate the input.
+export function stripEmptyProps(input: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const keys = Object.keys(input);
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys[i];
+    const v = input[k];
+    if (v === null || v === undefined) continue;
+    if (typeof v === 'string' && v === '') continue;
+    out[k] = v;
+  }
+  return out;
+}
+
 const DEVICE_ID_KEY = 'pp_device_id';
 const UTM_FIRST_TOUCH_KEY = 'pp_utm_first_touch';
 const UTM_LAST_TOUCH_KEY = 'pp_utm_last_touch';
@@ -795,19 +814,25 @@ export function createEventPropertiesBuilder(
       if (av !== null && av !== undefined) flat[ak] = av;
     }
 
-    return flat;
+    // 3E: strip null / undefined / empty-string before sending to Mixpanel.
+    // Mixpanel ingests empty strings as legitimate values, which pollutes
+    // funnels with "(empty)" segments. The builder's UTM fallback already
+    // produces '$direct' for direct visits (not ''), so this only catches
+    // unset cookies / login-state-dependent fields / unset attribution.
+    return stripEmptyProps(flat);
   }
 
   // Nested-wrapper shape: same four blocks the dataLayer enricher emits,
   // hoisted to the top level of a fresh object. The end-state contract
-  // shape — Mixpanel's `nested` and `dual` modes use this.
+  // shape — Mixpanel's `nested` and `dual` modes use this. 3E: each
+  // sub-bag is stripped of null/undefined/empty before being wrapped.
   function buildNested(): Record<string, unknown> {
     const bundle = build();
     return {
-      page: bundle.page,
-      userProperties: bundle.userProperties,
-      eventProperties: bundle.eventProperties,
-      attribution: bundle.attribution,
+      page: stripEmptyProps(bundle.page as unknown as Record<string, unknown>),
+      userProperties: stripEmptyProps(bundle.userProperties as unknown as Record<string, unknown>),
+      eventProperties: stripEmptyProps(bundle.eventProperties as unknown as Record<string, unknown>),
+      attribution: stripEmptyProps(bundle.attribution as unknown as Record<string, unknown>),
     };
   }
 

@@ -114,7 +114,9 @@ describe('ppLib.mixpanel.track facade', () => {
     expect(mergedProps['utm_source [last touch]']).toBe('$direct');
     expect(mergedProps['utm_medium [last touch]']).toBe('$direct');
     expect(mergedProps['utm_campaign [last touch]']).toBe('$direct');
-    expect('marketing_attribution' in mergedProps).toBe(true);
+    // marketing_attribution rides only when the attribution service has
+    // a non-null normalized view; with no attribution service wired in
+    // this unit test, 3E strips it.
   });
 
   it('forwards bare props (no enrichment) when enrichTrack is false', () => {
@@ -148,10 +150,13 @@ describe('ppLib.mixpanel.track facade', () => {
     const NESTED_KEYS = ['page', 'userProperties', 'eventProperties', 'attribution'];
     // Representative flat fields that MUST appear at the top level in
     // flat/dual modes and MUST be absent in nested mode.
+    // Only fields that ALWAYS have non-empty values in jsdom — under 3E
+    // empty-string fields like `browser`/`device_type`/`Country` are
+    // stripped when blank, so we don't assert their presence in a unit
+    // test where the environment can't populate them.
     const FLAT_FIELDS = [
-      'pp_user_id', 'pp_patient_id', 'pp_session_id', 'device_id', 'logged_in',
-      'platform', 'browser', 'device', 'device_type', 'Country', 'utm_source',
-      'utm_source [first touch]', 'utm_source [last touch]', 'marketing_attribution',
+      'pp_session_id', 'device_id', 'logged_in', 'platform',
+      'utm_source', 'utm_source [first touch]', 'utm_source [last touch]',
     ];
 
     it('defaults to "flat" mode per Analytics events spec', () => {

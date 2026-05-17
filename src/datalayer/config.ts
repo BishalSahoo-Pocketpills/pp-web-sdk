@@ -46,6 +46,10 @@ export function createDataLayerConfig(): DataLayerConfig {
     navigationDelay: 200,
     initDelay: 1500,
     autoViewItem: true,
+    // 3E: by default strip null/undefined/'' from the property bags before
+    // pushing to dataLayer — mirrors Mixpanel's behavior so dashboards on
+    // either side don't disagree on "(empty)" segmentation.
+    preserveEmptyProperties: false,
     allowedRedirectHosts: ['pocketpills.com']
   };
 }

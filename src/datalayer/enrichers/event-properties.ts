@@ -8,6 +8,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { DataLayerConfig } from '@src/types/datalayer.types';
+import { stripEmptyProps } from '@src/common/event-properties-builder';
 
 type PushFn = (...args: unknown[]) => number;
 
@@ -62,10 +63,19 @@ export function createEventPropertiesEnricher(
           /*! v8 ignore stop */
 
           const bundle = builder.build();
-          arg.userProperties = bundle.userProperties;
-          arg.eventProperties = bundle.eventProperties;
-          arg.page = bundle.page;
-          arg.attribution = bundle.attribution;
+          // 3E: strip null/undefined/'' so dataLayer mirrors Mixpanel's
+          // behavior. Opt out via `preserveEmptyProperties: true`.
+          if (CONFIG.preserveEmptyProperties) {
+            arg.userProperties = bundle.userProperties;
+            arg.eventProperties = bundle.eventProperties;
+            arg.page = bundle.page;
+            arg.attribution = bundle.attribution;
+          } else {
+            arg.userProperties = stripEmptyProps(bundle.userProperties as unknown as Record<string, unknown>);
+            arg.eventProperties = stripEmptyProps(bundle.eventProperties as unknown as Record<string, unknown>);
+            arg.page = stripEmptyProps(bundle.page as unknown as Record<string, unknown>);
+            arg.attribution = stripEmptyProps(bundle.attribution as unknown as Record<string, unknown>);
+          }
         }
       }
       return pushFn.apply(null, args);

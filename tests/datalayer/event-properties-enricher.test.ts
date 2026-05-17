@@ -44,6 +44,19 @@ function makeConfig() {
   return {
     cookieNames: { userId: 'userId', patientId: 'patientId', appAuth: 'app_is_authenticated', country: 'country' },
     defaults: { platform: 'web' },
+    // Existing shape-contract tests verify presence of fields whose values
+    // are empty under jsdom (browser, device_type, pp_session_id). Stripping
+    // is tested separately below. This file's other assertions don't depend
+    // on stripping behavior.
+    preserveEmptyProperties: true,
+  } as any;
+}
+
+function makeStripConfig() {
+  return {
+    cookieNames: { userId: 'userId', patientId: 'patientId', appAuth: 'app_is_authenticated', country: 'country' },
+    defaults: { platform: 'web' },
+    preserveEmptyProperties: false,
   } as any;
 }
 
@@ -240,6 +253,42 @@ describe('createEventPropertiesEnricher', () => {
     const browser = mockPush.mock.calls[0][0].eventProperties.browser;
     // jsdom UA includes "jsdom" but our parser checks for Chrome, Firefox, etc.
     expect(typeof browser).toBe('string');
+  });
+
+  it('3E: strips null / undefined / empty-string from event + user properties by default', () => {
+    const ppLib = makePPLib();
+    const enricher = createEventPropertiesEnricher(window, ppLib, makeStripConfig());
+    const mockPush = vi.fn(() => 1);
+
+    const wrapped = enricher(mockPush);
+    wrapped({ event: 'test' });
+
+    const arg = mockPush.mock.calls[0][0];
+    // jsdom UA does not match any browser parser branch → browser is '' in
+    // the bundle. With stripping enabled (the default), it disappears.
+    expect(arg.eventProperties.browser).toBeUndefined();
+    // device_type IS populated by the UA parser ('desktop' default), so
+    // it survives. Country is empty (no cookie) → stripped.
+    expect(arg.eventProperties.Country).toBeUndefined();
+    // pp_session_id is non-empty here (session mocked), so it survives.
+    expect(arg.eventProperties.pp_session_id).toBe('test-session-id');
+    // Non-empty values always pass through.
+    expect(arg.eventProperties['utm_source [last touch]']).toBe('$direct');
+  });
+
+  it('3E: opt-out via preserveEmptyProperties=true keeps empty strings present', () => {
+    const ppLib = makePPLib();
+    const enricher = createEventPropertiesEnricher(window, ppLib, makeConfig());
+    const mockPush = vi.fn(() => 1);
+
+    const wrapped = enricher(mockPush);
+    wrapped({ event: 'test' });
+
+    const arg = mockPush.mock.calls[0][0];
+    // With opt-out the empty strings remain — useful for GTM consumers that
+    // expect a fixed schema shape with explicit '' for "not set".
+    expect(typeof arg.eventProperties.browser).toBe('string');
+    expect(typeof arg.eventProperties.device_type).toBe('string');
   });
 
   it('detects device type from user agent', () => {

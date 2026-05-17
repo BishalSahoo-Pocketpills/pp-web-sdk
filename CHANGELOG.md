@@ -157,6 +157,21 @@ been published behind a version tag. Breaking changes are flagged
 
 ### Changed
 
+- **Property stripping: null / undefined / empty-string removed from
+  user + event property bags before dispatch.**
+  - `buildFlat()` and `buildNested()` on the event-properties builder
+    now strip null / undefined / empty values from the returned bundle.
+    Mixpanel ingests empty strings as legitimate "(empty)" segments,
+    which pollutes funnels and breaks BigQuery exports; the SDK now
+    omits them at the builder boundary.
+  - DataLayer enricher applies the same stripping by default. New
+    `DataLayerConfig.preserveEmptyProperties` flag (default `false`)
+    can be flipped to `true` to opt out — useful for GTM consumers
+    that depend on a fixed schema shape with explicit nulls.
+  - Exposed `stripEmptyProps(record)` from
+    `@src/common/event-properties-builder` for callers that build
+    custom payloads and want the same semantics.
+
 - **Mixpanel default `emitMode: 'flat'` + flat ecommerce keys.**
   - The Mixpanel module's `emitMode` default is now `'flat'` (was
     `'dual'`). Per the Analytics events spec, Mixpanel receives a

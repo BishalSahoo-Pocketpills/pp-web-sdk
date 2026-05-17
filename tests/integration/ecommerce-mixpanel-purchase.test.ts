@@ -83,8 +83,8 @@ describe('Integration: ecommerce → mixpanel + dataLayer', () => {
     expect(typeof propsObj.device_id).toBe('string');
     expect((propsObj.device_id as string).length).toBeGreaterThan(0);
     expect(typeof propsObj.pp_distinct_id).toBe('string');
-    expect(typeof propsObj.browser).toBe('string');
-    expect(typeof propsObj.device_type).toBe('string');
+    // 3E strips empty-string fields like browser/device_type when jsdom's
+    // UA doesn't match any parser branch — only assert non-empty fields.
     expect(typeof propsObj.current_url).toBe('string');
     expect(propsObj.logged_in).toBeDefined();
 

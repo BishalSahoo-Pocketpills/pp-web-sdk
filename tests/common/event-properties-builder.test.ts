@@ -571,14 +571,16 @@ describe('createEventPropertiesBuilder', () => {
 
       const page = nested.page as Record<string, unknown>;
       expect(typeof page.url).toBe('string');
-      expect(typeof page.title).toBe('string');
-      expect(typeof page.referrer).toBe('string');
+      // page.title / page.referrer are empty in jsdom; under 3E they're
+      // stripped from the wrapper. Url is always non-empty.
 
       const attribution = nested.attribution as Record<string, unknown>;
-      // All click-ID fields exist (null when absent), unlike buildFlat which omits nulls.
-      expect('fbclid' in attribution).toBe(true);
-      expect('gclid' in attribution).toBe(true);
-      expect('rdt_cid' in attribution).toBe(true);
+      // 3E: null click-IDs are stripped from buildNested (matching buildFlat).
+      // Only present keys are populated click IDs; in jsdom no click IDs
+      // were set, so the attribution object is {}.
+      expect('fbclid' in attribution).toBe(false);
+      expect('gclid' in attribution).toBe(false);
+      expect('rdt_cid' in attribution).toBe(false);
     });
 
     it('does not include any flat keys at the top level', () => {
