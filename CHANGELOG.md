@@ -157,6 +157,17 @@ been published behind a version tag. Breaking changes are flagged
 
 ### Changed
 
+- **First-touch UTM lock — Mixpanel `register_once` / `people.set_once`.**
+  The Mixpanel module now registers `utm_* [first touch]` super-
+  properties via `register_once` (instead of `register`) and writes
+  the people-profile copy via `people.set_once` (instead of
+  `people.set`). The SDK already locks first-touch on the persistence
+  side (`getFirstTouchUtm` only writes when no first-touch is stored);
+  the Mixpanel-side `_once` calls add defense-in-depth so a user
+  whose cookies were cleared cannot have their original profile
+  first-touch values overwritten on a subsequent visit. Last-touch
+  registration is unchanged (`register` / `people.set`).
+
 - **UTM last-touch resolution per Analytics spec (5-step resolver).**
   The `eventPropertiesBuilder` now resolves `utm_*` values via the
   spec'd cascade on first-ever capture: (1) explicit URL params win;

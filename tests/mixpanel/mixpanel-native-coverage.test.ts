@@ -1257,11 +1257,11 @@ describe('Mixpanel native coverage', () => {
         })
       );
 
-      // First-touch super-properties are now registered with `register`
-      // (not `register_once`) because the attribution service owns the
-      // first-touch lock semantics — getFirstTouch() returns null until
-      // the first attributed visit, then the locked value forever after.
-      expect(mp.register).toHaveBeenCalledWith(
+      // 3C: first-touch super-properties go through `register_once` and
+      // `people.set_once` so the snapshot is locked Mixpanel-side. Defense
+      // in depth — the SDK already locks first-touch on the persistence
+      // side; this prevents reseeding even if cookies are cleared.
+      expect(mp.register_once).toHaveBeenCalledWith(
         expect.objectContaining({
           'utm_source [first touch]': 'google',
           'utm_medium [first touch]': 'cpc',
@@ -1272,7 +1272,7 @@ describe('Mixpanel native coverage', () => {
         expect.objectContaining({ 'utm_source [last touch]': 'google' })
       );
 
-      expect(mp.people.set).toHaveBeenCalledWith(
+      expect(mp.people.set_once).toHaveBeenCalledWith(
         expect.objectContaining({ 'utm_source [first touch]': 'google' })
       );
     });
@@ -1321,7 +1321,7 @@ describe('Mixpanel native coverage', () => {
           'utm_term [last touch]': '$direct',
         })
       );
-      expect(mp.register).toHaveBeenCalledWith(
+      expect(mp.register_once).toHaveBeenCalledWith(
         expect.objectContaining({
           'utm_source [first touch]': '$direct',
           'utm_medium [first touch]': '$direct',

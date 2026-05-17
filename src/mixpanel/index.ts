@@ -379,9 +379,15 @@ import { bootstrapModule } from '@src/common/bootstrap';
 
     const m = mp();
     m.people.set(lastParams);
-    m.people.set(firstParams);
     m.register(lastParams);
-    m.register(firstParams);
+    // 3C: first-touch is a snapshot taken at the first-ever capture and
+    // locked thereafter. The builder enforces this on the SDK side via
+    // its persistence layer; Mixpanel's `register_once` / `set_once`
+    // adds defense-in-depth so even a reseeded builder (cookie cleared,
+    // module re-initialized) cannot overwrite the first-touch values
+    // already on a Mixpanel profile.
+    m.people.set_once(firstParams);
+    m.register_once(firstParams);
   }
 
   // =====================================================

@@ -773,7 +773,7 @@ describe('Campaign / UTM Attribution', () => {
           'utm_term [last touch]': '$direct',
         })
       );
-      expect(mp.register).toHaveBeenCalledWith(
+      expect(mp.register_once).toHaveBeenCalledWith(
         expect.objectContaining({
           'utm_source [first touch]': '$direct',
           'utm_medium [first touch]': '$direct',
@@ -815,11 +815,11 @@ describe('Campaign / UTM Attribution', () => {
         })
       );
 
-      // First-touch super-properties are now registered with `register`
-      // (not `register_once`) because the attribution service owns the
-      // first-touch lock semantics — getFirstTouch() returns null until
-      // the first attributed visit, then the locked value forever after.
-      expect(mp.register).toHaveBeenCalledWith(
+      // 3C: first-touch super-properties are registered with `register_once`
+      // and `people.set_once` so the snapshot is locked Mixpanel-side. Even
+      // if the SDK cookie is cleared and the builder re-seeds first-touch,
+      // Mixpanel will keep the original profile values.
+      expect(mp.register_once).toHaveBeenCalledWith(
         expect.objectContaining({
           'utm_source [first touch]': 'google',
           'utm_medium [first touch]': 'cpc',
@@ -830,7 +830,7 @@ describe('Campaign / UTM Attribution', () => {
         expect.objectContaining({ 'utm_source [last touch]': 'google' })
       );
 
-      expect(mp.people.set).toHaveBeenCalledWith(
+      expect(mp.people.set_once).toHaveBeenCalledWith(
         expect.objectContaining({ 'utm_source [first touch]': 'google' })
       );
 
