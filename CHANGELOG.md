@@ -157,6 +157,25 @@ been published behind a version tag. Breaking changes are flagged
 
 ### Changed
 
+- **Mixpanel default `emitMode: 'flat'` + flat ecommerce keys.**
+  - The Mixpanel module's `emitMode` default is now `'flat'` (was
+    `'dual'`). Per the Analytics events spec, Mixpanel receives a
+    flat key shape — no `page` / `userProperties` / `eventProperties`
+    / `attribution` nested wrappers on the per-event payload. Callers
+    that want the dual shape can still opt in via
+    `configure({ emitMode: 'dual' })`.
+  - **Ecommerce → Mixpanel now flat-shaped.** The ecommerce dispatcher
+    flattens `{ value, currency, items: [...] }` to flat keys for
+    Mixpanel only: `ecommerce_value`, `ecommerce_currency`,
+    `ecommerce_item_count`, `item_ids[]`, `item_names[]`,
+    `item_brands[]`, `item_categories[]`, `item_prices[]` (numbers;
+    unparseable prices fall through to `0` so NaN never reaches the
+    wire), `item_quantities[]`. **dataLayer / GTM is unchanged** —
+    keeps the nested GA4 shape (`ecommerce: { value, currency,
+    items: [...] }`). Reports that key off `value` / `currency` /
+    `items` on the Mixpanel side need to be updated to read the new
+    flat keys.
+
 - **First-touch UTM lock — Mixpanel `register_once` / `people.set_once`.**
   The Mixpanel module now registers `utm_* [first touch]` super-
   properties via `register_once` (instead of `register`) and writes

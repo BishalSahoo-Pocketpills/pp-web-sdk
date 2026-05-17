@@ -210,6 +210,46 @@ import { bootstrapModule } from '@src/common/bootstrap';
   // EVENT DISPATCHERS
   // =====================================================
 
+  // Per the Analytics events spec, Mixpanel receives ecommerce data as
+  // FLAT keys — `ecommerce_value`, `ecommerce_currency`, `item_ids[]`,
+  // etc. dataLayer / GTM keeps the nested GA4 shape. Numeric prices on
+  // items come in as strings (the DOM scrape preserves the raw string);
+  // we surface both `item_prices` (number[]) for math and the raw
+  // `item_prices_str` for forensic audit.
+  function flattenEcommerceForMixpanel(ecommerceData: EcommerceData): Record<string, unknown> {
+    const items = ecommerceData.items;
+    const flat: Record<string, unknown> = {
+      ecommerce_value: ecommerceData.value,
+      ecommerce_currency: ecommerceData.currency,
+      ecommerce_item_count: items.length,
+    };
+
+    const ids: string[] = [];
+    const names: string[] = [];
+    const brands: string[] = [];
+    const categories: string[] = [];
+    const prices: number[] = [];
+    const quantities: number[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      ids.push(it.item_id);
+      names.push(it.item_name);
+      brands.push(it.item_brand);
+      categories.push(it.item_category);
+      const p = parseFloat(it.price);
+      prices.push(isNaN(p) ? 0 : p);
+      quantities.push(it.quantity || 1);
+    }
+    flat['item_ids'] = ids;
+    flat['item_names'] = names;
+    flat['item_brands'] = brands;
+    flat['item_categories'] = categories;
+    flat['item_prices'] = prices;
+    flat['item_quantities'] = quantities;
+
+    return flat;
+  }
+
   function sendToGTM(eventName: string, ecommerceData: EcommerceData): void {
     try {
       /*! v8 ignore start */
@@ -258,10 +298,13 @@ import { bootstrapModule } from '@src/common/bootstrap';
 
       // Route through the SDK facade so canonical event-properties context
       // (UTM touch, device, session, login, click IDs) is merged in.
+      // Mixpanel gets the FLAT shape per the Analytics events spec —
+      // `ecommerce_value`, `item_ids[]`, etc. dataLayer/GTM keeps nested.
+      const flatPayload = flattenEcommerceForMixpanel(ecommerceData);
       if (ppLib.mixpanel && ppLib.mixpanel.track) {
-        ppLib.mixpanel.track(eventName, ecommerceData as unknown as Record<string, unknown>);
+        ppLib.mixpanel.track(eventName, flatPayload);
       } else {
-        win.mixpanel.track(eventName, ecommerceData);
+        win.mixpanel.track(eventName, flatPayload);
       }
       ppLib.log('info', '[ppEcommerce] Mixpanel → ' + eventName, ppLib.safeLogPayload(ecommerceData));
     } catch (e) {

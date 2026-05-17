@@ -154,10 +154,10 @@ describe('ppLib.mixpanel.track facade', () => {
       'utm_source [first touch]', 'utm_source [last touch]', 'marketing_attribution',
     ];
 
-    it('defaults to "dual" mode', () => {
+    it('defaults to "flat" mode per Analytics events spec', () => {
       loadWithCommon('mixpanel');
       const cfg = (window as any).ppLib.mixpanel.configure();
-      expect(cfg.emitMode).toBe('dual');
+      expect(cfg.emitMode).toBe('flat');
     });
 
     it('"flat" mode emits ONLY flat keys — no nested wrappers at top level', () => {

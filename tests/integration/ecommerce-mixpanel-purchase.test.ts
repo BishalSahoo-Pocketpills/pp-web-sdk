@@ -76,7 +76,7 @@ describe('Integration: ecommerce → mixpanel + dataLayer', () => {
 
     // Canonical event-properties context merged in by the facade —
     // these fields come from ppLib.eventPropertiesBuilder (in the configured
-    // emitMode, default 'dual') and must reach Mixpanel via the facade's
+    // emitMode, default 'flat') and must reach Mixpanel via the facade's
     // enrichTrack path. If the facade stops calling the builder, OR the
     // builder drops a field, this fails.
     const propsObj = props as Record<string, unknown>;
@@ -88,9 +88,11 @@ describe('Integration: ecommerce → mixpanel + dataLayer', () => {
     expect(typeof propsObj.current_url).toBe('string');
     expect(propsObj.logged_in).toBeDefined();
 
-    // Caller's ecommerce data still flows through.
-    expect(propsObj.currency).toEqual(expect.any(String));
-    expect((propsObj.items as unknown[])).toHaveLength(1);
+    // 3D — Mixpanel receives the flat ecommerce shape; dataLayer keeps nested.
+    expect(propsObj.ecommerce_currency).toEqual(expect.any(String));
+    expect(propsObj.ecommerce_value).toEqual(expect.any(Number));
+    expect(propsObj.item_ids).toEqual(['prod_abc']);
+    expect((propsObj.item_quantities as number[])).toHaveLength(1);
   });
 
   it('drops both Mixpanel and dataLayer events when consent is revoked', () => {

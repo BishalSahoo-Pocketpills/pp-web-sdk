@@ -911,7 +911,7 @@ describe('sendToMixpanel()', () => {
     loadWithCommon('ecommerce');
   });
 
-  it('calls mixpanel.track with event name and ecommerce data', () => {
+  it('calls mixpanel.track with the flat ecommerce key shape (3D)', () => {
     createMockDataLayer();
     const mp = createMockMixpanel();
     window.mixpanel = mp;
@@ -922,14 +922,69 @@ describe('sendToMixpanel()', () => {
       price: 30,
     });
 
+    // Per 3D / Analytics events spec, Mixpanel receives flat keys —
+    // ecommerce_value / ecommerce_currency / item_ids[] / item_prices[]
+    // / item_quantities[]. The nested {value, currency, items[]} shape
+    // is dataLayer-only.
     expect(mp.track).toHaveBeenCalledWith(
       'add_to_cart',
       expect.objectContaining({
-        value: 30,
-        currency: 'CAD',
-        items: expect.any(Array),
+        ecommerce_value: 30,
+        ecommerce_currency: 'CAD',
+        ecommerce_item_count: 1,
+        item_ids: ['mp-test'],
+        item_names: ['MP Test'],
+        item_prices: [30],
+        item_quantities: [1],
       })
     );
+  });
+
+  it('flat shape tolerates unparseable prices — falls through to 0, not NaN', () => {
+    createMockDataLayer();
+    const mp = createMockMixpanel();
+    window.mixpanel = mp;
+
+    window.ppLib.ecommerce.trackItem({
+      item_id: 'b',
+      item_name: 'B',
+      item_brand: 'BrandB',
+      item_category: 'cat2',
+      // Unparseable price — flatten must fall through to 0, not leak NaN.
+      price: 'not-a-number',
+      quantity: 3,
+    });
+
+    const props = mp.track.mock.calls[mp.track.mock.calls.length - 1][1];
+    expect(props.item_ids).toEqual(['b']);
+    expect(props.item_names).toEqual(['B']);
+    expect(props.item_brands).toEqual(['BrandB']);
+    expect(props.item_categories).toEqual(['cat2']);
+    expect(props.item_prices).toEqual([0]);
+    expect(props.item_quantities).toEqual([3]);
+    expect(props.ecommerce_item_count).toBe(1);
+  });
+
+  it('dataLayer keeps the nested ecommerce shape — flat keys go ONLY to Mixpanel', () => {
+    const dataLayer = createMockDataLayer();
+    const mp = createMockMixpanel();
+    window.mixpanel = mp;
+
+    window.ppLib.ecommerce.trackItem({
+      item_id: 'sku-1',
+      item_name: 'Widget',
+      price: 9.99,
+    });
+
+    const addToCartPush = dataLayer.find(d => d.event === 'add_to_cart') as Record<string, unknown>;
+    expect(addToCartPush).toBeDefined();
+    // dataLayer / GTM: nested GA4 shape.
+    expect(addToCartPush.ecommerce).toBeDefined();
+    expect((addToCartPush.ecommerce as { value: number }).value).toBe(9.99);
+    expect((addToCartPush.ecommerce as { items: unknown[] }).items).toHaveLength(1);
+    // Crucially, the flat keys MUST NOT leak into dataLayer.
+    expect(addToCartPush.ecommerce_value).toBeUndefined();
+    expect(addToCartPush.item_ids).toBeUndefined();
   });
 
   it('does not call mixpanel.track when mixpanel platform is disabled', () => {

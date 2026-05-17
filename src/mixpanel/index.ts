@@ -34,10 +34,12 @@ import { bootstrapModule } from '@src/common/bootstrap';
       experiments: 'exp'
     },
     enrichTrack: true,
-    // 'dual' default — emits BOTH flat + nested-wrapper keys on every
-    // Mixpanel event so downstream reports / BigQuery queries can migrate
-    // from flat → nested at their own pace. See MixpanelConfig.emitMode docs.
-    emitMode: 'dual'
+    // 'flat' default — per the Analytics events spec, Mixpanel receives a
+    // flat key shape (no nested page/userProperties/eventProperties/
+    // attribution wrappers). dataLayer / GTM still gets the nested GA4
+    // shape via its own enricher. Callers that want both can override
+    // to 'dual'. See MixpanelConfig.emitMode docs.
+    emitMode: 'flat'
   };
 
   // =====================================================
