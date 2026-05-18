@@ -13,6 +13,9 @@ export function createMockMixpanel() {
         if (!(k in properties)) properties[k] = props[k];
       }
     }),
+    unregister: vi.fn((prop) => {
+      delete properties[prop];
+    }),
     init: vi.fn(),
     get_property: vi.fn((key) => properties[key]),
     opt_in_tracking: vi.fn(),

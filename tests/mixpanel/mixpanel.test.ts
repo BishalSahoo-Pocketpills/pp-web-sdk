@@ -1253,6 +1253,25 @@ describe('loaded callback', () => {
     );
   });
 
+  it('unregisters legacy plain utm_* super-properties at init', () => {
+    // Visitors with `mp_<token>_mixpanel` cookies from before
+    // `track_marketing: false` was applied still carry persisted
+    // `utm_source` / `utm_medium` / `utm_campaign` / `utm_content` /
+    // `utm_term` / `utm_id` super-properties that stamp every event.
+    // The init flow must explicitly unregister those so the canonical
+    // bracketed `utm_* [first/last touch]` super-properties stay
+    // authoritative without legacy noise.
+    const loadedCallback = initAndGetLoadedCallback();
+    const mp = createMockMixpanel();
+    invokeLoadedCallback(loadedCallback, mp);
+
+    const unregisteredKeys = mp.unregister.mock.calls.map((c) => c[0]);
+    expect(unregisteredKeys).toEqual(expect.arrayContaining([
+      'utm_source', 'utm_medium', 'utm_campaign',
+      'utm_content', 'utm_term', 'utm_id'
+    ]));
+  });
+
   it('does not register pp_user_id when userId cookie is absent', () => {
     const loadedCallback = initAndGetLoadedCallback();
     const mp = createMockMixpanel();

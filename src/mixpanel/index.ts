@@ -555,6 +555,27 @@ import { bootstrapModule } from '@src/common/bootstrap';
           ppLib.log('warn', '[ppMixpanel] distinct_id unification failed', e);
         }
 
+        // Purge legacy plain-form utm_* super-properties from the
+        // `mp_<token>_mixpanel` cookie. These were persisted by Mixpanel's
+        // built-in `track_marketing` auto-capture before we set it to
+        // `false`; without an explicit `unregister` they keep stamping
+        // every event with stale values ("UTM Content: Poc-Sta-57-2",
+        // etc.). Idempotent — `unregister` is a no-op for keys that
+        // aren't registered, so this is safe to run on every init.
+        // The canonical attribution lives in the bracketed
+        // `utm_* [first touch]` / `utm_* [last touch]` super-properties.
+        try {
+          const legacyUtmSuperProps = [
+            'utm_source', 'utm_medium', 'utm_campaign',
+            'utm_content', 'utm_term', 'utm_id'
+          ];
+          for (let i = 0; i < legacyUtmSuperProps.length; i++) {
+            mp.unregister(legacyUtmSuperProps[i]);
+          }
+        } catch (e) {
+          ppLib.log('warn', '[ppMixpanel] legacy utm_* unregister failed', e);
+        }
+
         // Update session timeout from config
         SessionManager.timeout = CONFIG.sessionTimeout;
 

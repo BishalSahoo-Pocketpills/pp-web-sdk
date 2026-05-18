@@ -527,7 +527,7 @@ describe('createEventPropertiesBuilder', () => {
       expect(flat.marketing_attribution).toEqual({ source: 'google', medium: 'cpc', campaign: 'spring' });
     });
 
-    it('keeps the current (non-touch) UTM keys, sourced from URL', () => {
+    it('strips plain utm_source / utm_medium / utm_campaign from the flat (Mixpanel) payload, keeps them in build() for dataLayer', () => {
       const originalURL = document.URL;
       Object.defineProperty(document, 'URL', {
         value: 'http://localhost/test?utm_source=google&utm_medium=cpc&utm_campaign=spring',
@@ -537,11 +537,27 @@ describe('createEventPropertiesBuilder', () => {
       window.localStorage.clear();
 
       const ppLib = makePPLib();
-      const flat = createEventPropertiesBuilder(window, ppLib).buildFlat();
+      const builder = createEventPropertiesBuilder(window, ppLib);
+      const bundle = builder.build();
+      const flat = builder.buildFlat();
 
-      expect(flat.utm_source).toBe('google');
-      expect(flat.utm_medium).toBe('cpc');
-      expect(flat.utm_campaign).toBe('spring');
+      // dataLayer (build()) keeps the plain utm_* keys — GA4's canonical
+      // UTM schema uses the plain form.
+      expect(bundle.eventProperties.utm_source).toBe('google');
+      expect(bundle.eventProperties.utm_medium).toBe('cpc');
+      expect(bundle.eventProperties.utm_campaign).toBe('spring');
+
+      // Mixpanel (buildFlat) strips them — they duplicate the canonical
+      // bracketed `utm_* [first touch]` / `[last touch]` keys and Mixpanel
+      // surfaces the plain form as "UTM Source" / "UTM Medium" / etc.,
+      // which clutters the property panel.
+      expect(Object.prototype.hasOwnProperty.call(flat, 'utm_source')).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(flat, 'utm_medium')).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(flat, 'utm_campaign')).toBe(false);
+
+      // Bracketed forms still ride per-event on Mixpanel.
+      expect(flat['utm_source [first touch]']).toBe('google');
+      expect(flat['utm_source [last touch]']).toBe('google');
 
       Object.defineProperty(document, 'URL', {
         value: originalURL,
@@ -550,7 +566,7 @@ describe('createEventPropertiesBuilder', () => {
       });
     });
 
-    it('strips Mixpanel-duplicate snake_case keys (browser, device_id, current_url, referrer, initial_referrer) from the flat (Mixpanel) payload', async () => {
+    it('strips Mixpanel-duplicate snake_case keys (browser, device_id, current_url, referrer, initial_referrer, utm_source/medium/campaign) from the flat (Mixpanel) payload', async () => {
       // These fields are present in build() (dataLayer-bound) but stripped
       // from buildFlat() (Mixpanel-bound). Mixpanel auto-collects the
       // same dimensions under its own $-prefixed keys ("Browser",
@@ -584,6 +600,13 @@ describe('createEventPropertiesBuilder', () => {
       expect(MIXPANEL_DUPLICATE_KEYS.has('device')).toBe(false);
       expect(MIXPANEL_DUPLICATE_KEYS.has('device_type')).toBe(false);
       expect(MIXPANEL_DUPLICATE_KEYS.has('device_id')).toBe(true);
+      // Plain (non-bracket) utm_* are in the set — they duplicate the
+      // bracketed `utm_* [first/last touch]` canonical keys and Mixpanel
+      // shows the plain form as "UTM Source" / "UTM Medium" / "UTM
+      // Campaign". Stripped from Mixpanel only; build() keeps them.
+      expect(MIXPANEL_DUPLICATE_KEYS.has('utm_source')).toBe(true);
+      expect(MIXPANEL_DUPLICATE_KEYS.has('utm_medium')).toBe(true);
+      expect(MIXPANEL_DUPLICATE_KEYS.has('utm_campaign')).toBe(true);
 
       // pp_* prefixed and other non-duplicate snake_case keys remain.
       expect(flat).toHaveProperty('pp_session_id');
