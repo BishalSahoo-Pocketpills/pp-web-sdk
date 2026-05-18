@@ -533,7 +533,7 @@ describe('createEventPropertiesBuilder', () => {
       });
     });
 
-    it('strips Mixpanel-duplicate snake_case keys (browser, device, current_url, etc.) from the flat (Mixpanel) payload', () => {
+    it('strips Mixpanel-duplicate snake_case keys (browser, device_id, current_url, referrer, initial_referrer) from the flat (Mixpanel) payload', async () => {
       // These fields are present in build() (dataLayer-bound) but stripped
       // from buildFlat() (Mixpanel-bound). Mixpanel auto-collects the
       // same dimensions under its own $-prefixed keys ("Browser",
@@ -553,12 +553,20 @@ describe('createEventPropertiesBuilder', () => {
 
       // Mixpanel-bound flat shape: each duplicate is absent.
       expect(Object.prototype.hasOwnProperty.call(flat, 'browser')).toBe(false);
-      expect(Object.prototype.hasOwnProperty.call(flat, 'device')).toBe(false);
-      expect(Object.prototype.hasOwnProperty.call(flat, 'device_type')).toBe(false);
       expect(Object.prototype.hasOwnProperty.call(flat, 'device_id')).toBe(false);
       expect(Object.prototype.hasOwnProperty.call(flat, 'current_url')).toBe(false);
       expect(Object.prototype.hasOwnProperty.call(flat, 'referrer')).toBe(false);
       expect(Object.prototype.hasOwnProperty.call(flat, 'initial_referrer')).toBe(false);
+
+      // `device` and `device_type` are intentionally KEPT: Mixpanel's
+      // $device fills only on mobile (no desktop coverage), and
+      // device_type has no Mixpanel equivalent. Asserted via the set
+      // directly because jsdom's UA produces empty strings that 3E
+      // strips before MIXPANEL_DUPLICATE_KEYS would even see them.
+      const { MIXPANEL_DUPLICATE_KEYS } = await import('@src/common/event-properties-builder');
+      expect(MIXPANEL_DUPLICATE_KEYS.has('device')).toBe(false);
+      expect(MIXPANEL_DUPLICATE_KEYS.has('device_type')).toBe(false);
+      expect(MIXPANEL_DUPLICATE_KEYS.has('device_id')).toBe(true);
 
       // pp_* prefixed and other non-duplicate snake_case keys remain.
       expect(flat).toHaveProperty('pp_session_id');

@@ -162,17 +162,27 @@ export function stripEmptyProps(input: Record<string, unknown>): Record<string, 
 // Mixpanel event-property panels. `buildFlat()` (Mixpanel) strips them;
 // `build()` (dataLayer) keeps them.
 export const MIXPANEL_DUPLICATE_KEYS: ReadonlySet<string> = new Set([
+  // browser — Mixpanel auto: $browser ("Browser") provides the same value.
   'browser',
-  'device',
-  'device_type',
-  'device_id',       // Mixpanel auto: $device_id / "Device ID". The
-                     // cross-subdomain pp_device_id value still rides
-                     // as `pp_distinct_id` and Mixpanel's "Distinct ID
-                     // Before Identity", so dropping it from the
-                     // Mixpanel payload doesn't lose data.
+  // device_id — Mixpanel auto: $device_id ("Device ID") is Mixpanel's
+  // anonymous tracking UUID. Different VALUE from our pp_device_id but
+  // user asked to dedupe the column. The pp_device_id value still rides
+  // as pp_distinct_id and surfaces as "Distinct ID Before Identity".
+  'device_id',
+  // current_url — Mixpanel auto: $current_url ("Current URL") shows the
+  // full URL. Ours is path-only, but visually duplicates the column.
+  // The path-only view is still available under page_path.
   'current_url',
+  // referrer — Mixpanel auto: $referrer / $referring_domain ("Initial
+  // Referrer" / "Initial Referring Domain") cover the per-event referrer.
   'referrer',
   'initial_referrer',
+  // NOTE intentionally NOT stripped:
+  //   - `device`: Mixpanel's $device only fills on mobile (device model
+  //     like "iPhone"/"Android"); on desktop it's empty. Our `device`
+  //     fills both ("MacBook" / "Android") so it covers the gap.
+  //   - `device_type`: no Mixpanel equivalent — "desktop"/"mobile"/
+  //     "tablet" is unique to our SDK.
 ]);
 
 const DEVICE_ID_KEY = 'pp_device_id';
