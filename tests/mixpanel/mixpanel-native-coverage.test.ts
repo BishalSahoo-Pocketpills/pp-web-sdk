@@ -625,7 +625,10 @@ describe('Mixpanel native coverage', () => {
       expect(initArgs[1].api_transport).toBe('sendBeacon');
       expect(initArgs[1].track_pageview).toBe(false);
       expect(initArgs[1].track_marketing).toBe(false);
-      expect(initArgs[1].property_blacklist).toBeUndefined();
+      expect(initArgs[1].property_blacklist).toEqual([
+        'utm_source', 'utm_medium', 'utm_campaign',
+        'utm_content', 'utm_term', 'utm_id'
+      ]);
       expect(typeof initArgs[1].loaded).toBe('function');
     });
   });

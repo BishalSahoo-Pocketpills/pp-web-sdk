@@ -1156,9 +1156,15 @@ describe('initMixpanel()', () => {
     // Disables Mixpanel's auto-capture of utm_* / gclid / fbclid.
     expect(initArgs[1].track_marketing).toBe(false);
     // Mixpanel's own $-prefixed auto-properties are kept (data team's
-    // reference event shape). De-duplication happens on the SDK side
-    // via MIXPANEL_DUPLICATE_KEYS — see event-properties-builder tests.
-    expect(initArgs[1].property_blacklist).toBeUndefined();
+    // reference event shape). De-duplication of OUR snake_case
+    // duplicates happens on the SDK side via MIXPANEL_DUPLICATE_KEYS.
+    // property_blacklist is used ONLY for plain utm_* keys because
+    // Mixpanel re-injects them from the URL on every track() call,
+    // bypassing our builder's strip list — see comment in src.
+    expect(initArgs[1].property_blacklist).toEqual([
+      'utm_source', 'utm_medium', 'utm_campaign',
+      'utm_content', 'utm_term', 'utm_id'
+    ]);
     expect(typeof initArgs[1].loaded).toBe('function');
   });
 });

@@ -499,6 +499,20 @@ import { bootstrapModule } from '@src/common/bootstrap';
       // the Mixpanel UI as "UTM Source", "UTM Medium", "Last Touch
       // Source", etc.) that duplicate ours.
       track_marketing: false,
+      // Belt-and-suspenders for `track_marketing: false`. Modern Mixpanel
+      // SDK builds re-extract URL utm_* on every track() call and merge
+      // them into the outgoing event payload, BYPASSING our event-
+      // properties builder's strip list. `property_blacklist` filters at
+      // the transport boundary — after super-property merge, after URL
+      // capture, before sendBeacon — so the listed keys are guaranteed
+      // never to appear on any event regardless of where they originated
+      // (URL params, persisted super-props, ours, third-party).
+      // Canonical attribution lives in `utm_* [first touch]` / `[last
+      // touch]` bracketed super-properties; the plain form is redundant.
+      property_blacklist: [
+        'utm_source', 'utm_medium', 'utm_campaign',
+        'utm_content', 'utm_term', 'utm_id'
+      ],
       // Mixpanel's $-prefixed auto-properties ($browser, $current_url,
       // $device, $initial_referrer, etc.) display in the Mixpanel UI as
       // title-case ("Browser", "Current URL", "Device", "Initial
