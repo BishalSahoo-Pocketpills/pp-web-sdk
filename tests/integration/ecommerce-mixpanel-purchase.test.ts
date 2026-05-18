@@ -83,9 +83,11 @@ describe('Integration: ecommerce → mixpanel + dataLayer', () => {
     expect(typeof propsObj.device_id).toBe('string');
     expect((propsObj.device_id as string).length).toBeGreaterThan(0);
     expect(typeof propsObj.pp_distinct_id).toBe('string');
-    // 3E strips empty-string fields like browser/device_type when jsdom's
-    // UA doesn't match any parser branch — only assert non-empty fields.
-    expect(typeof propsObj.current_url).toBe('string');
+    // 3E strips empty-string fields when jsdom's UA doesn't match any
+    // parser branch. v3.0.3 additionally strips Mixpanel-duplicate keys
+    // (browser, device, current_url, etc.) from the Mixpanel payload —
+    // the full URL still rides as `url`.
+    expect(typeof propsObj.url).toBe('string');
     expect(propsObj.logged_in).toBeDefined();
 
     // 3D — Mixpanel receives the flat ecommerce shape; dataLayer keeps nested.

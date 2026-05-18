@@ -153,6 +153,23 @@ export function stripEmptyProps(input: Record<string, unknown>): Record<string, 
   return out;
 }
 
+// Per the data team's reference event shape, Mixpanel's own auto-collected
+// `$`-prefixed properties are the canonical source for these dimensions
+// (displayed in the Mixpanel UI as "Browser", "Current URL", "Device",
+// "Initial Referrer", etc.). The SDK still emits the snake_case
+// equivalents for dataLayer / GTM consumers — but they are stripped from
+// the Mixpanel-bound payload to avoid two columns per dimension in
+// Mixpanel event-property panels. `buildFlat()` (Mixpanel) strips them;
+// `build()` (dataLayer) keeps them.
+export const MIXPANEL_DUPLICATE_KEYS: ReadonlySet<string> = new Set([
+  'browser',
+  'device',
+  'device_type',
+  'current_url',
+  'referrer',
+  'initial_referrer',
+]);
+
 const DEVICE_ID_KEY = 'pp_device_id';
 const UTM_FIRST_TOUCH_KEY = 'pp_utm_first_touch';
 const UTM_LAST_TOUCH_KEY = 'pp_utm_last_touch';
@@ -812,6 +829,19 @@ export function createEventPropertiesBuilder(
       const ak = attrKeys[n];
       const av = attrObj[ak];
       if (av !== null && av !== undefined) flat[ak] = av;
+    }
+
+    // Strip the snake_case fields that duplicate Mixpanel's own auto-
+    // collected `$`-prefixed properties. The Mixpanel UI surfaces those
+    // auto-properties under title-case display names ("Browser", "Current
+    // URL", "Device", "Initial Referrer", etc.) — keeping our snake_case
+    // copies alongside produces two columns per dimension in event-
+    // property panels and confuses reports. dataLayer / GTM consumers
+    // still receive them via `build()`; only the Mixpanel-bound payload
+    // (this `buildFlat` output) is pruned.
+    const dupKeys = Array.from(MIXPANEL_DUPLICATE_KEYS);
+    for (let m = 0; m < dupKeys.length; m++) {
+      delete flat[dupKeys[m]];
     }
 
     // 3E: strip null / undefined / empty-string before sending to Mixpanel.

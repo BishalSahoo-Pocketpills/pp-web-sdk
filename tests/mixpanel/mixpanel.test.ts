@@ -1155,12 +1155,10 @@ describe('initMixpanel()', () => {
     // SDK owns all UTM attribution via the event-properties builder.
     // Disables Mixpanel's auto-capture of utm_* / gclid / fbclid.
     expect(initArgs[1].track_marketing).toBe(false);
-    // Blacklist Mixpanel's $-prefixed auto-properties that duplicate our
-    // snake_case fields (browser, current_url, device, initial_referrer, etc.).
-    expect(initArgs[1].property_blacklist).toEqual(expect.arrayContaining([
-      '$browser', '$current_url', '$device',
-      '$initial_referrer', '$initial_referring_domain', '$os',
-    ]));
+    // Mixpanel's own $-prefixed auto-properties are kept (data team's
+    // reference event shape). De-duplication happens on the SDK side
+    // via MIXPANEL_DUPLICATE_KEYS — see event-properties-builder tests.
+    expect(initArgs[1].property_blacklist).toBeUndefined();
     expect(typeof initArgs[1].loaded).toBe('function');
   });
 });

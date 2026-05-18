@@ -80,16 +80,20 @@ describe('ppLib.mixpanel.track facade', () => {
     expect(mergedProps.pp_patient_id).toBe('99');
     expect(mergedProps.logged_in).toBe('true');
     expect(typeof mergedProps.device_id).toBe('string');
-    expect(typeof mergedProps.current_url).toBe('string');
+    // current_url is stripped from Mixpanel payload (duplicates Mixpanel's
+    // auto $current_url / "Current URL"). The full URL still rides as `url`.
+    expect(typeof mergedProps.url).toBe('string');
     expect(typeof mergedProps.pp_timestamp).toBe('number');
   });
 
-  it('caller props win on key collision', () => {
+  it('caller props win on key collision (override stays even for stripped keys)', () => {
     loadWithCommon('mixpanel');
     (window as any).ppLib.mixpanel.configure({ token: 'tok' });
     (window as any).mixpanel = createMockMixpanel();
 
-    // current_url is a builder-emitted field; caller override should stick.
+    // The Mixpanel-duplicate strip happens on the BUILDER side. A caller
+    // explicitly passing a duplicate key still wins, since the
+    // caller-merge layer in trackFacade runs after the builder.
     (window as any).ppLib.mixpanel.track('custom', { current_url: '/override' });
 
     const [, mergedProps] = (window as any).mixpanel.track.mock.calls[0];
