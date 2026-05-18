@@ -735,8 +735,12 @@ export function createEventPropertiesBuilder(
       url: win.location.href,
       current_url: win.location.pathname || '/',
       device_id: stable.device_id,
-      pp_user_id: userId,
-      pp_patient_id: patientId,
+      // Anonymous visitors get the '-1' sentinel (matches the convention
+      // used by `isLoggedIn` above and the main app's cookie format) so
+      // these fields survive 3E's empty-string strip and remain queryable
+      // / filterable in Mixpanel for anonymous segments.
+      pp_user_id: userId || '-1',
+      pp_patient_id: patientId || '-1',
       pp_session_id: ppLib.session ? ppLib.session.getOrCreateSessionId() : '',
       pp_timestamp: Date.now(),
       platform: defaultPlatform,

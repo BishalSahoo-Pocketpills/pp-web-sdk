@@ -200,6 +200,23 @@ describe('createEventPropertiesBuilder', () => {
       expect(bundle.userProperties.pp_distinct_id).toBe(bundle.eventProperties.device_id);
     });
 
+    it('falls back to "-1" sentinel for pp_user_id / pp_patient_id when cookies are absent', () => {
+      // Anonymous visitors (no userId/patientId cookies) get the '-1'
+      // sentinel rather than '' so the fields survive 3E's empty-string
+      // strip and remain queryable / filterable in Mixpanel.
+      const ppLib = makePPLib({ cookies: {} });
+      const bundle = createEventPropertiesBuilder(window, ppLib).build();
+
+      expect(bundle.eventProperties.pp_user_id).toBe('-1');
+      expect(bundle.eventProperties.pp_patient_id).toBe('-1');
+      expect(bundle.eventProperties.logged_in).toBe('false');
+
+      // Verify the flat (Mixpanel) payload preserves '-1' through stripping.
+      const flat = createEventPropertiesBuilder(window, ppLib).buildFlat();
+      expect(flat.pp_user_id).toBe('-1');
+      expect(flat.pp_patient_id).toBe('-1');
+    });
+
     it('falls back gracefully when ppLib.attribution is missing', () => {
       const ppLib = makePPLib({ attribution: null });
       const bundle = createEventPropertiesBuilder(window, ppLib).build();

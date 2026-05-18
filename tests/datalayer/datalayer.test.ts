@@ -201,7 +201,10 @@ describe('User Object', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user.pp_user_id).toBe('');
+    // Anonymous visitors get the '-1' sentinel (rather than '') so the
+    // field survives downstream empty-string stripping and remains
+    // queryable / filterable for anonymous segments.
+    expect(event.user.pp_user_id).toBe('-1');
     expect(event.user.logged_in).toBe('false');
   });
 
