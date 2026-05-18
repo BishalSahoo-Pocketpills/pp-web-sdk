@@ -165,6 +165,11 @@ export const MIXPANEL_DUPLICATE_KEYS: ReadonlySet<string> = new Set([
   'browser',
   'device',
   'device_type',
+  'device_id',       // Mixpanel auto: $device_id / "Device ID". The
+                     // cross-subdomain pp_device_id value still rides
+                     // as `pp_distinct_id` and Mixpanel's "Distinct ID
+                     // Before Identity", so dropping it from the
+                     // Mixpanel payload doesn't lose data.
   'current_url',
   'referrer',
   'initial_referrer',

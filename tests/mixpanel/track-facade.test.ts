@@ -79,9 +79,11 @@ describe('ppLib.mixpanel.track facade', () => {
     expect(mergedProps.pp_user_id).toBe('42');
     expect(mergedProps.pp_patient_id).toBe('99');
     expect(mergedProps.logged_in).toBe('true');
-    expect(typeof mergedProps.device_id).toBe('string');
-    // current_url is stripped from Mixpanel payload (duplicates Mixpanel's
-    // auto $current_url / "Current URL"). The full URL still rides as `url`.
+    // device_id and current_url are stripped from the Mixpanel payload
+    // (duplicates of Mixpanel's auto $device_id / $current_url). The
+    // pp_device_id value still rides as `pp_distinct_id`, and the full
+    // URL still rides as `url`.
+    expect(typeof mergedProps.pp_distinct_id).toBe('string');
     expect(typeof mergedProps.url).toBe('string');
     expect(typeof mergedProps.pp_timestamp).toBe('number');
   });
@@ -146,8 +148,9 @@ describe('ppLib.mixpanel.track facade', () => {
     expect(result).toBe(true);
     const [eventName, mergedProps] = (window as any).mixpanel.track.mock.calls[0];
     expect(eventName).toBe('pageview');
-    // Builder context still attached
-    expect(typeof mergedProps.device_id).toBe('string');
+    // Builder context still attached — device_id is stripped, but
+    // pp_distinct_id carries the same pp_device_id value.
+    expect(typeof mergedProps.pp_distinct_id).toBe('string');
   });
 
   describe('emitMode dispatch', () => {
@@ -159,7 +162,7 @@ describe('ppLib.mixpanel.track facade', () => {
     // stripped when blank, so we don't assert their presence in a unit
     // test where the environment can't populate them.
     const FLAT_FIELDS = [
-      'pp_session_id', 'device_id', 'logged_in', 'platform',
+      'pp_session_id', 'pp_distinct_id', 'logged_in', 'platform',
       'utm_source', 'utm_source [first touch]', 'utm_source [last touch]',
     ];
 

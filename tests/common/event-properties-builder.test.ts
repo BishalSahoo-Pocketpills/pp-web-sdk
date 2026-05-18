@@ -459,7 +459,10 @@ describe('createEventPropertiesBuilder', () => {
       // eventProperties present
       expect(flat.pp_user_id).toBe('42');
       expect(flat.logged_in).toBe('true');
-      expect(typeof flat.device_id).toBe('string');
+      // device_id is in MIXPANEL_DUPLICATE_KEYS — Mixpanel auto-collects
+      // it as $device_id / "Device ID". The cross-subdomain pp_device_id
+      // value still rides as `pp_distinct_id` (asserted above).
+      expect(flat.device_id).toBeUndefined();
       // current_url is in MIXPANEL_DUPLICATE_KEYS — Mixpanel auto-collects
       // it as $current_url. The flat (Mixpanel) shape strips it. The full
       // URL is still available under `url`.
@@ -545,12 +548,14 @@ describe('createEventPropertiesBuilder', () => {
       expect(bundle.eventProperties).toHaveProperty('browser');
       expect(bundle.eventProperties).toHaveProperty('device');
       expect(bundle.eventProperties).toHaveProperty('device_type');
+      expect(bundle.eventProperties).toHaveProperty('device_id');
       expect(bundle.eventProperties).toHaveProperty('current_url');
 
       // Mixpanel-bound flat shape: each duplicate is absent.
       expect(Object.prototype.hasOwnProperty.call(flat, 'browser')).toBe(false);
       expect(Object.prototype.hasOwnProperty.call(flat, 'device')).toBe(false);
       expect(Object.prototype.hasOwnProperty.call(flat, 'device_type')).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(flat, 'device_id')).toBe(false);
       expect(Object.prototype.hasOwnProperty.call(flat, 'current_url')).toBe(false);
       expect(Object.prototype.hasOwnProperty.call(flat, 'referrer')).toBe(false);
       expect(Object.prototype.hasOwnProperty.call(flat, 'initial_referrer')).toBe(false);

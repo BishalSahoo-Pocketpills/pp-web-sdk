@@ -80,9 +80,10 @@ describe('Integration: ecommerce → mixpanel + dataLayer', () => {
     // enrichTrack path. If the facade stops calling the builder, OR the
     // builder drops a field, this fails.
     const propsObj = props as Record<string, unknown>;
-    expect(typeof propsObj.device_id).toBe('string');
-    expect((propsObj.device_id as string).length).toBeGreaterThan(0);
+    // pp_device_id rides via pp_distinct_id; the snake_case `device_id`
+    // duplicate is stripped from the Mixpanel payload.
     expect(typeof propsObj.pp_distinct_id).toBe('string');
+    expect((propsObj.pp_distinct_id as string).length).toBeGreaterThan(0);
     // 3E strips empty-string fields when jsdom's UA doesn't match any
     // parser branch. v3.0.3 additionally strips Mixpanel-duplicate keys
     // (browser, device, current_url, etc.) from the Mixpanel payload —
