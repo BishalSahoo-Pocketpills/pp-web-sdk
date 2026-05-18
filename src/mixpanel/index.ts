@@ -483,6 +483,14 @@ import { bootstrapModule } from '@src/common/bootstrap';
       cross_subdomain_cookie: CONFIG.crossSubdomainCookie,
       opt_out_tracking_by_default: CONFIG.optOutByDefault,
       api_transport: 'sendBeacon',
+      // Suppress Mixpanel's built-in autotrack "Page View" event. The SDK
+      // already fires its own `pageview` event through the analytics
+      // module (with our enriched property bag), so leaving Mixpanel's
+      // autotrack on would produce two pageviews per visit — one with
+      // canonical context and one without. The autotrack also bypasses
+      // our 3E stripping, leaking empty-string super-properties into the
+      // event payload. Default-off matches Mixpanel's pre-2024 behavior.
+      track_pageview: false,
       loaded: function(mp: MixpanelGlobal) {
         mixpanel = mp;
         if (!CONFIG.optOutByDefault) {

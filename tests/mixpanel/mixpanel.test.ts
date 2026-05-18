@@ -1148,6 +1148,10 @@ describe('initMixpanel()', () => {
     expect(initArgs[1].cross_subdomain_cookie).toBe(true);
     expect(initArgs[1].opt_out_tracking_by_default).toBe(true);
     expect(initArgs[1].api_transport).toBe('sendBeacon');
+    // Suppress Mixpanel's built-in autotrack — the analytics module fires
+    // its own enriched 'pageview' event. Leaving autotrack on produces a
+    // duplicate 'Page View' event without our enrichment / 3E stripping.
+    expect(initArgs[1].track_pageview).toBe(false);
     expect(typeof initArgs[1].loaded).toBe('function');
   });
 });

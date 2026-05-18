@@ -623,6 +623,7 @@ describe('Mixpanel native coverage', () => {
       expect(initArgs[1].cross_subdomain_cookie).toBe(true);
       expect(initArgs[1].opt_out_tracking_by_default).toBe(true);
       expect(initArgs[1].api_transport).toBe('sendBeacon');
+      expect(initArgs[1].track_pageview).toBe(false);
       expect(typeof initArgs[1].loaded).toBe('function');
     });
   });
