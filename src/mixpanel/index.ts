@@ -491,6 +491,37 @@ import { bootstrapModule } from '@src/common/bootstrap';
       // our 3E stripping, leaking empty-string super-properties into the
       // event payload. Default-off matches Mixpanel's pre-2024 behavior.
       track_pageview: false,
+      // Disable Mixpanel's auto-capture of marketing parameters (utm_*,
+      // gclid, fbclid, etc.). The SDK manages all attribution via the
+      // event-properties builder — `utm_* [first touch]` / `utm_* [last
+      // touch]` super-properties plus the current-visit `utm_*` fields
+      // on each event. Leaving auto-capture on registers a parallel set
+      // of no-bracket `utm_*` super-properties (shown in the Mixpanel
+      // UI as "UTM Source", "UTM Medium", etc.) that duplicate ours.
+      track_marketing: false,
+      // Mixpanel's auto-collected `$`-prefixed properties duplicate the
+      // snake_case fields the SDK already emits via the event-properties
+      // builder — `$browser`/"Browser" ↔ `browser`, `$current_url`/
+      // "Current URL" ↔ `current_url`, `$device`/"Device" ↔ `device`,
+      // `$initial_referrer`/"Initial Referrer" ↔ `initial_referrer`,
+      // etc. Blacklist them so each dimension has one canonical
+      // snake_case key. NOTE: `$device_id` is intentionally NOT
+      // blacklisted — Mixpanel uses it internally to assign anonymous
+      // distinct IDs (`$device:xxx`). Our `device_id` (pp_device_id)
+      // is the cross-subdomain analogue and lives alongside it.
+      property_blacklist: [
+        '$browser',
+        '$browser_version',
+        '$current_url',
+        '$device',
+        '$initial_referrer',
+        '$initial_referring_domain',
+        '$os',
+        '$referrer',
+        '$referring_domain',
+        '$screen_height',
+        '$screen_width',
+      ],
       loaded: function(mp: MixpanelGlobal) {
         mixpanel = mp;
         if (!CONFIG.optOutByDefault) {

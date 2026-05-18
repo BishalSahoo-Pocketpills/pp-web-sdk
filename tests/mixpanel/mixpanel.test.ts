@@ -1152,6 +1152,15 @@ describe('initMixpanel()', () => {
     // its own enriched 'pageview' event. Leaving autotrack on produces a
     // duplicate 'Page View' event without our enrichment / 3E stripping.
     expect(initArgs[1].track_pageview).toBe(false);
+    // SDK owns all UTM attribution via the event-properties builder.
+    // Disables Mixpanel's auto-capture of utm_* / gclid / fbclid.
+    expect(initArgs[1].track_marketing).toBe(false);
+    // Blacklist Mixpanel's $-prefixed auto-properties that duplicate our
+    // snake_case fields (browser, current_url, device, initial_referrer, etc.).
+    expect(initArgs[1].property_blacklist).toEqual(expect.arrayContaining([
+      '$browser', '$current_url', '$device',
+      '$initial_referrer', '$initial_referring_domain', '$os',
+    ]));
     expect(typeof initArgs[1].loaded).toBe('function');
   });
 });
