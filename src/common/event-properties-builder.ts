@@ -177,17 +177,14 @@ export const MIXPANEL_DUPLICATE_KEYS: ReadonlySet<string> = new Set([
   // Referrer" / "Initial Referring Domain") cover the per-event referrer.
   'referrer',
   'initial_referrer',
-  // Plain (non-bracket) utm_* fields — these duplicate the canonical
-  // `utm_source [first touch]` / `utm_source [last touch]` keys that the
-  // attribution spec uses, and surface in Mixpanel as "UTM Source" /
-  // "UTM Medium" / etc. (the same columns Mixpanel's built-in
-  // `track_marketing` would create). Strip from the Mixpanel payload
-  // to keep only the bracketed forms there; dataLayer / GA4 still
-  // receives the plain form (GA4's canonical UTM schema).
-  'utm_source',
-  'utm_medium',
-  'utm_campaign',
   // NOTE intentionally NOT stripped:
+  //   - Plain (non-bracket) `utm_source` / `utm_medium` / `utm_campaign`:
+  //     Mixpanel's built-in `track_marketing` already auto-captures these
+  //     from the URL as the "UTM Source" / "UTM Medium" / "UTM Campaign"
+  //     columns; our SDK ALSO sends them in `eventProperties` (with a
+  //     `$direct` fallback for direct visits) for cross-tool parity with
+  //     dataLayer / GA4. Same key, same value — Mixpanel merges without
+  //     duplication.
   //   - `device`: Mixpanel's $device only fills on mobile (device model
   //     like "iPhone"/"Android"); on desktop it's empty. Our `device`
   //     fills both ("MacBook" / "Android") so it covers the gap.

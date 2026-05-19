@@ -491,28 +491,16 @@ import { bootstrapModule } from '@src/common/bootstrap';
       // our 3E stripping, leaking empty-string super-properties into the
       // event payload. Default-off matches Mixpanel's pre-2024 behavior.
       track_pageview: false,
-      // Disable Mixpanel's auto-capture of marketing parameters (utm_*,
-      // gclid, fbclid, etc.). The SDK manages all attribution via the
-      // event-properties builder — `utm_* [first touch]` / `utm_* [last
-      // touch]` super-properties. Leaving auto-capture on registers a
-      // parallel set of no-bracket `utm_*` super-properties (shown in
-      // the Mixpanel UI as "UTM Source", "UTM Medium", "Last Touch
-      // Source", etc.) that duplicate ours.
-      track_marketing: false,
-      // Belt-and-suspenders for `track_marketing: false`. Modern Mixpanel
-      // SDK builds re-extract URL utm_* on every track() call and merge
-      // them into the outgoing event payload, BYPASSING our event-
-      // properties builder's strip list. `property_blacklist` filters at
-      // the transport boundary — after super-property merge, after URL
-      // capture, before sendBeacon — so the listed keys are guaranteed
-      // never to appear on any event regardless of where they originated
-      // (URL params, persisted super-props, ours, third-party).
-      // Canonical attribution lives in `utm_* [first touch]` / `[last
-      // touch]` bracketed super-properties; the plain form is redundant.
-      property_blacklist: [
-        'utm_source', 'utm_medium', 'utm_campaign',
-        'utm_content', 'utm_term', 'utm_id'
-      ],
+      // Mixpanel's built-in marketing attribution stays enabled (default
+      // behavior). It auto-captures utm_* (source, medium, campaign,
+      // content, term, id) and click IDs (gclid, fbclid, etc.) from the
+      // current URL and surfaces them as event properties — visible in
+      // the Mixpanel UI as "UTM Source", "UTM Medium", "UTM Campaign",
+      // "UTM Content", "UTM Term", "UTM ID". The SDK additionally
+      // registers `utm_* [first touch]` / `utm_* [last touch]` as
+      // bracketed super-properties via campaignParams() for canonical
+      // attribution analysis; the plain Mixpanel-auto columns coexist
+      // for ad-hoc filtering / segment exploration.
       // Mixpanel's $-prefixed auto-properties ($browser, $current_url,
       // $device, $initial_referrer, etc.) display in the Mixpanel UI as
       // title-case ("Browser", "Current URL", "Device", "Initial
@@ -567,27 +555,6 @@ import { bootstrapModule } from '@src/common/bootstrap';
           }
         } catch (e) {
           ppLib.log('warn', '[ppMixpanel] distinct_id unification failed', e);
-        }
-
-        // Purge legacy plain-form utm_* super-properties from the
-        // `mp_<token>_mixpanel` cookie. These were persisted by Mixpanel's
-        // built-in `track_marketing` auto-capture before we set it to
-        // `false`; without an explicit `unregister` they keep stamping
-        // every event with stale values ("UTM Content: Poc-Sta-57-2",
-        // etc.). Idempotent — `unregister` is a no-op for keys that
-        // aren't registered, so this is safe to run on every init.
-        // The canonical attribution lives in the bracketed
-        // `utm_* [first touch]` / `utm_* [last touch]` super-properties.
-        try {
-          const legacyUtmSuperProps = [
-            'utm_source', 'utm_medium', 'utm_campaign',
-            'utm_content', 'utm_term', 'utm_id'
-          ];
-          for (let i = 0; i < legacyUtmSuperProps.length; i++) {
-            mp.unregister(legacyUtmSuperProps[i]);
-          }
-        } catch (e) {
-          ppLib.log('warn', '[ppMixpanel] legacy utm_* unregister failed', e);
         }
 
         // Update session timeout from config

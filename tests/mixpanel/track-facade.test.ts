@@ -161,13 +161,13 @@ describe('ppLib.mixpanel.track facade', () => {
     // empty-string fields like `browser`/`device_type`/`Country` are
     // stripped when blank, so we don't assert their presence in a unit
     // test where the environment can't populate them.
-    // Only fields that ALWAYS have non-empty values in jsdom — and that are
-    // NOT in MIXPANEL_DUPLICATE_KEYS. Plain `utm_source` is stripped from
-    // the flat (Mixpanel) payload; the bracketed forms are the canonical
-    // attribution keys and remain.
+    // Only fields that ALWAYS have non-empty values in jsdom — under 3E
+    // empty-string fields like `browser`/`device_type`/`Country` are
+    // stripped when blank, so we don't assert their presence in a unit
+    // test where the environment can't populate them.
     const FLAT_FIELDS = [
       'pp_session_id', 'pp_distinct_id', 'logged_in', 'platform',
-      'utm_source [first touch]', 'utm_source [last touch]',
+      'utm_source', 'utm_source [first touch]', 'utm_source [last touch]',
     ];
 
     it('defaults to "flat" mode per Analytics events spec', () => {

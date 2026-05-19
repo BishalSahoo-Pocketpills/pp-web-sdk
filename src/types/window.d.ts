@@ -19,7 +19,6 @@ export interface MixpanelGlobal {
   track: (event: string, properties?: Record<string, unknown>) => void;
   register: (props: Record<string, unknown>) => void;
   register_once: (props: Record<string, unknown>) => void;
-  unregister: (property: string) => void;
   identify: (id: string) => void;
   alias: (id: string) => void;
   reset: () => void;

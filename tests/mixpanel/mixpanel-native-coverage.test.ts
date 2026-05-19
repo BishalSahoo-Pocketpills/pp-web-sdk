@@ -624,11 +624,10 @@ describe('Mixpanel native coverage', () => {
       expect(initArgs[1].opt_out_tracking_by_default).toBe(true);
       expect(initArgs[1].api_transport).toBe('sendBeacon');
       expect(initArgs[1].track_pageview).toBe(false);
-      expect(initArgs[1].track_marketing).toBe(false);
-      expect(initArgs[1].property_blacklist).toEqual([
-        'utm_source', 'utm_medium', 'utm_campaign',
-        'utm_content', 'utm_term', 'utm_id'
-      ]);
+      // Mixpanel's built-in marketing attribution stays at its default —
+      // auto-captures utm_* + click IDs from the URL.
+      expect(initArgs[1].track_marketing).toBeUndefined();
+      expect(initArgs[1].property_blacklist).toBeUndefined();
       expect(typeof initArgs[1].loaded).toBe('function');
     });
   });

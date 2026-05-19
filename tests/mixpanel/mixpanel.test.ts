@@ -1152,19 +1152,17 @@ describe('initMixpanel()', () => {
     // its own enriched 'pageview' event. Leaving autotrack on produces a
     // duplicate 'Page View' event without our enrichment / 3E stripping.
     expect(initArgs[1].track_pageview).toBe(false);
-    // SDK owns all UTM attribution via the event-properties builder.
-    // Disables Mixpanel's auto-capture of utm_* / gclid / fbclid.
-    expect(initArgs[1].track_marketing).toBe(false);
-    // Mixpanel's own $-prefixed auto-properties are kept (data team's
-    // reference event shape). De-duplication of OUR snake_case
-    // duplicates happens on the SDK side via MIXPANEL_DUPLICATE_KEYS.
-    // property_blacklist is used ONLY for plain utm_* keys because
-    // Mixpanel re-injects them from the URL on every track() call,
-    // bypassing our builder's strip list — see comment in src.
-    expect(initArgs[1].property_blacklist).toEqual([
-      'utm_source', 'utm_medium', 'utm_campaign',
-      'utm_content', 'utm_term', 'utm_id'
-    ]);
+    // Mixpanel's built-in marketing attribution stays at its default
+    // (enabled). It auto-captures utm_* + click IDs from the URL and
+    // surfaces them as "UTM Source" / "UTM Medium" / etc.; the SDK
+    // additionally provides bracketed `utm_* [first/last touch]`
+    // super-properties via campaignParams().
+    expect(initArgs[1].track_marketing).toBeUndefined();
+    // No property_blacklist — Mixpanel's own $-prefixed and utm_*
+    // auto-properties flow through unchanged. De-duplication of OUR
+    // snake_case duplicates (browser, device_id, current_url, etc.)
+    // happens on the SDK side via MIXPANEL_DUPLICATE_KEYS.
+    expect(initArgs[1].property_blacklist).toBeUndefined();
     expect(typeof initArgs[1].loaded).toBe('function');
   });
 });
@@ -1259,24 +1257,6 @@ describe('loaded callback', () => {
     );
   });
 
-  it('unregisters legacy plain utm_* super-properties at init', () => {
-    // Visitors with `mp_<token>_mixpanel` cookies from before
-    // `track_marketing: false` was applied still carry persisted
-    // `utm_source` / `utm_medium` / `utm_campaign` / `utm_content` /
-    // `utm_term` / `utm_id` super-properties that stamp every event.
-    // The init flow must explicitly unregister those so the canonical
-    // bracketed `utm_* [first/last touch]` super-properties stay
-    // authoritative without legacy noise.
-    const loadedCallback = initAndGetLoadedCallback();
-    const mp = createMockMixpanel();
-    invokeLoadedCallback(loadedCallback, mp);
-
-    const unregisteredKeys = mp.unregister.mock.calls.map((c) => c[0]);
-    expect(unregisteredKeys).toEqual(expect.arrayContaining([
-      'utm_source', 'utm_medium', 'utm_campaign',
-      'utm_content', 'utm_term', 'utm_id'
-    ]));
-  });
 
   it('does not register pp_user_id when userId cookie is absent', () => {
     const loadedCallback = initAndGetLoadedCallback();
