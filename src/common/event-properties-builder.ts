@@ -115,20 +115,21 @@ export type RawUtmTouch = {
 };
 
 /**
- * Extended UTM touch — the cookie shape that replaces the old literal-only
- * `RawUtmTouch` and the separate `pp_mktg_*_touch` cookies. Each persisted
- * touch carries three slices:
+ * Extended UTM touch — the consolidated cookie shape for marketing
+ * attribution. Each persisted touch carries three slices:
  *
- *   1. utm_* — literal URL params (RawUtmTouch contract; unchanged).
+ *   1. utm_* — literal URL params (RawUtmTouch contract).
  *   2. Normalized — source/medium/campaign with alias resolution, plus
  *      platform / clickId derived from click IDs, utm_source, and the
- *      referrer. This is the slice that previously lived in pp_mktg_*.
+ *      referrer.
  *   3. Visit metadata — referrer / referrerDomain / landingPage / timestamp
  *      captured at touch time.
  *
- * Phase 1 only writes the literal slice; the normalized + visit-metadata
- * fields default to '' so the new shape round-trips through cookies but
- * doesn't yet alter behaviour. Phase 3 wires up population.
+ * The two non-literal slices (normalized + visit metadata) replace the
+ * separate pp_mktg_*_touch cookies that the legacy attribution service
+ * managed. The slices rotate independently in captureUtmTouches so the
+ * cookie can carry a literal capture from one visit and a normalized
+ * capture from another.
  */
 export type ExtendedUtmTouch = RawUtmTouch & {
   source: string;
@@ -322,17 +323,15 @@ const UTM_LAST_TOUCH_MAX_AGE_SECONDS = 2592000;
 // Session marker — 30 minutes. Gates rotation of the pp_utm_*_touch
 // normalized slice (see captureUtmTouches): last-touch only refreshes when
 // (a) new traffic params on the URL, or (b) the session has expired AND the
-// referrer isn't self-referral. Replaces the legacy pp_mktg_session cookie;
-// attribution.ts still manages its own pp_mktg_session during the Phase 3
-// window but it no longer feeds builder logic.
+// referrer isn't self-referral.
 const UTM_SESSION_KEY = 'pp_utm_session';
 const UTM_SESSION_MAX_AGE_SECONDS = 1800;
 
-// Legacy pp_mktg_* cookies — read-and-fold migration source during the
-// consolidation window. Phase 3 copies their normalized + visit-metadata
-// data into the corresponding pp_utm_*_touch cookies (when those normalized
-// slices are still empty); Phase 5 deletes the legacy cookies after
-// attribution.ts is removed.
+// Legacy pp_mktg_* cookies — read-and-fold migration source for visitors
+// who arrived before the consolidation. The mktg migration shim folds
+// their normalized + visit-metadata data into the corresponding
+// pp_utm_*_touch cookies (only when those normalized slices are still
+// empty), then deletes the legacy cookies so they don't linger.
 const LEGACY_MKTG_FIRST_KEY = 'pp_mktg_first_touch';
 const LEGACY_MKTG_LAST_KEY = 'pp_mktg_last_touch';
 
@@ -382,10 +381,11 @@ function parseUtmTouch(raw: string): ExtendedUtmTouch | null {
  * Parse a legacy `pp_mktg_*_touch` cookie. The pre-consolidation
  * attribution service serialised these as JSON with the 9 normalized +
  * visit-metadata fields (no utm_* literal slice — that lived in the
- * separate pp_utm_*_touch cookies). Used by the Phase 3 migration to fold
- * mktg data into the consolidated extended cookie. Returns null when the
- * input isn't an object with all 9 string fields — strict so partial /
- * pre-1C entries fall through and the migration treats the visitor as new.
+ * separate pp_utm_*_touch cookies). Used by the mktg migration shim to
+ * fold legacy data into the consolidated extended cookie. Returns null
+ * when the input isn't an object with all 9 string fields — strict so
+ * partial / pre-1C entries fall through and the migration treats the
+ * visitor as new.
  */
 function parseLegacyMktgTouch(raw: string): NormalizedTouch | null {
   if (!raw) return null;
@@ -454,18 +454,15 @@ function defaultCookieNames(): EventPropertiesBuilderCookieNames {
 }
 
 // ---------------------------------------------------------------------------
-// Normalized touch helpers — formerly in src/common/attribution.ts, moved
-// here so the builder can populate the `pp_utm_*` cookie's normalized slice
-// directly (Phase 3). All helpers are pure / parameterized so attribution.ts
-// can still call them during the consolidation window without instantiating
-// the builder. Phase 5 will delete attribution.ts entirely.
+// Normalized touch helpers — populate the `pp_utm_*` cookie's normalized
+// slice directly. All helpers are pure / parameterized so they can be
+// composed without instantiating the builder factory.
 // ---------------------------------------------------------------------------
 
 /**
- * Normalized + visit-metadata slice of an ExtendedUtmTouch — the shape
- * formerly known as `TouchAttribution` in attribution.ts. Kept as its own
- * type so callers that don't care about the literal utm_* slice can pass
- * just this around.
+ * Normalized + visit-metadata slice of an ExtendedUtmTouch. Kept as its
+ * own type so callers that don't care about the literal utm_* slice can
+ * pass just this around.
  */
 export type NormalizedTouch = {
   source: string;
@@ -687,8 +684,9 @@ export function resolveParam(params: Record<string, string>, primary: string, al
 
 /**
  * Detect whether the current visit carries any marketing-relevant params —
- * UTM keys, click IDs, or custom aliases. Used by Phase 3's init() to decide
- * whether to rotate last-touch regardless of session / self-referral state.
+ * UTM keys, click IDs, or custom aliases. Used by captureUtmTouches to
+ * decide whether to rotate last-touch regardless of session / self-referral
+ * state — a fresh marketing param beats the self-referral veto.
  */
 export function hasNewTrafficParams(params: Record<string, string>): boolean {
   for (let i = 0; i < MARKETING_PARAM_KEYS.length; i++) {
@@ -698,11 +696,9 @@ export function hasNewTrafficParams(params: Record<string, string>): boolean {
 }
 
 /**
- * Build the normalized + visit-metadata slice for the current visit. Mirrors
- * the former `attribution.ts#buildTouch` exactly — same field set, same
- * normalization, same fragment-stripping invariant. Returned shape is
- * structurally identical to the legacy `TouchAttribution` so attribution.ts
- * can keep using it during the consolidation window.
+ * Build the normalized + visit-metadata slice for the current visit.
+ * Same field set as the legacy TouchAttribution shape, same normalization
+ * cascade, same fragment-stripping invariant for the landing URL.
  */
 export function buildNormalizedTouch(
   win: Window & typeof globalThis,
@@ -944,11 +940,9 @@ export function createEventPropertiesBuilder(
     }
   }
 
-  // Projection helper — strips the extended slices back down to the
-  // literal-only shape consumed by callers that haven't been migrated yet
-  // (the `RawUtmTouch` half of build() and the public getFirstTouchUtm /
-  // getLastTouchUtm getters). Phase 4 will widen the public API to return
-  // ExtendedUtmTouch directly and delete this.
+  // Projection helper — strips the extended slices down to the literal-only
+  // shape returned by the public getFirstTouchUtm / getLastTouchUtm getters
+  // and used by build()'s utm_* [first/last touch] keys.
   function projectToRaw(touch: ExtendedUtmTouch): RawUtmTouch {
     return {
       utm_source: touch.utm_source,
@@ -1103,7 +1097,7 @@ export function createEventPropertiesBuilder(
   // Legacy pp_mktg_* migration shim.
   //
   // Pre-consolidation, normalized attribution lived in pp_mktg_first_touch /
-  // pp_mktg_last_touch (managed by the now-deleted attribution.ts). The shim
+  // pp_mktg_last_touch (managed by the legacy attribution service). The shim
   // folds those cookies' data into the pp_utm_*_touch cookies' normalized
   // slice on first builder use, then DELETES the legacy cookies + the
   // pp_mktg_session marker so they don't linger on visitors' browsers for
@@ -1232,7 +1226,7 @@ export function createEventPropertiesBuilder(
     const existingFirstExt = readStoredExtended(UTM_FIRST_TOUCH_KEY);
     const firstEver = isFirstEverCapture(projectToRaw(existingLastExt));
 
-    // === Literal utm_* slice — 5-step resolver, unchanged from Phase 1 ===
+    // === Literal utm_* slice — 5-step resolver (Analytics UTM spec) ===
     let resolvedUtm: RawUtmTouch;
     if (firstEver) {
       // First-ever capture — run rules 1–4. ALWAYS persists, even on direct
@@ -1279,7 +1273,7 @@ export function createEventPropertiesBuilder(
     // === First-touch immutability — load-bearing, per-slice ===
     // First touch is written exactly ONCE per cookie horizon (2 years) and
     // never overwritten. The guards are load-bearing; do not remove without
-    // data-team sign-off. Mirrors the legacy attribution.ts contract.
+    // data-team sign-off.
     //
     // Per-SLICE immutability: the literal utm_* slice and the normalized
     // slice can be filled at different times (legacy localStorage migrated

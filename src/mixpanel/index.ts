@@ -634,13 +634,11 @@ import { bootstrapModule } from '@src/common/bootstrap';
         // UTM attribution
         campaignParams();
 
-        // marketingAttribution super-property — formerly registered by the
-        // attribution service's pollUntil(register_once) inside init().
-        // Phase 4 moves it here: we're already inside `loaded`, so mp is
-        // guaranteed live and the polling dependency is gone. Reads the
-        // resolved normalized last-touch from the shared builder, which
-        // applies the session-veto + self-referral rules established by
-        // the legacy attribution service.
+        // marketingAttribution super-property registration. We're inside
+        // `loaded`, so mp is guaranteed live — no polling needed. Reads
+        // the resolved normalized last-touch from the shared builder,
+        // which has already applied the session-veto + self-referral
+        // rules in captureUtmTouches.
         try {
           if (ppLib.eventPropertiesBuilder) {
             const marketingAttribution = ppLib.eventPropertiesBuilder.getMarketingAttribution();
