@@ -165,7 +165,7 @@ export interface EventPropertiesBuilder {
    * platform/clickId + visit metadata) for the current touch. Replaces
    * `ppLib.attribution.get()`. Returns null before any capture has run.
    */
-  getMarketingAttribution: () => Record<string, string> | null;
+  getMarketingAttribution: () => NormalizedTouch | null;
 }
 
 // Per Analytics events spec (3E): strip null / undefined / '' values from
@@ -1319,13 +1319,12 @@ export function createEventPropertiesBuilder(
    * Build the `marketing_attribution` super-property / event-property value
    * from a resolved extended last-touch cookie. Returns null when the
    * normalized slice is empty (canary: `platform`), which happens before
-   * captureUtmTouches has run on the current builder instance. Replaces the
-   * pre-Phase-4 path through `ppLib.attribution.get()`. The shape mirrors
-   * the legacy MarketingAttribution flat surface — no `firstTouch` /
-   * `lastTouch` nested objects (those were always-off in production and
-   * the only configure() callers never enabled them).
+   * captureUtmTouches has run on the current builder instance. Mirrors the
+   * legacy MarketingAttribution flat surface — no `firstTouch` / `lastTouch`
+   * nested objects (those were always-off in production and the only
+   * configure() callers never enabled them).
    */
-  function buildMarketingAttributionFromExt(ext: ExtendedUtmTouch): Record<string, string> | null {
+  function buildMarketingAttributionFromExt(ext: ExtendedUtmTouch): NormalizedTouch | null {
     if (!ext.platform) return null;
     return {
       source: ext.source,
@@ -1347,7 +1346,7 @@ export function createEventPropertiesBuilder(
    * polling needed). Triggers captureUtmTouches so the cookie is resolved
    * on demand — order-independent with build().
    */
-  function getMarketingAttribution(): Record<string, string> | null {
+  function getMarketingAttribution(): NormalizedTouch | null {
     captureUtmTouches();
     return buildMarketingAttributionFromExt(readStoredExtended(UTM_LAST_TOUCH_KEY));
   }
