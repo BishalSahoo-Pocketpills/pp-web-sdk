@@ -401,11 +401,14 @@ describe('createEventPropertiesBuilder', () => {
       expect(bundle.eventProperties['utm_source [last touch]']).toBe('google');
       expect(bundle.eventProperties['utm_medium [last touch]']).toBe('cpc');
 
-      // Cookies seeded with JSON payloads (URL-encoded)
+      // Cookies seeded with JSON payloads (URL-encoded). The cookie carries
+      // the new ExtendedUtmTouch shape — literal utm_* fields from the legacy
+      // entry plus empty normalized + visit-metadata slices that Phase 3 fills.
       expect(document.cookie).toContain('pp_utm_first_touch=');
       expect(document.cookie).toContain('pp_utm_last_touch=');
       const decodedFirst = decodeURIComponent((document.cookie.match(/pp_utm_first_touch=([^;]+)/) as RegExpMatchArray)[1]);
-      expect(JSON.parse(decodedFirst)).toEqual(legacyFirst);
+      expect(JSON.parse(decodedFirst)).toMatchObject(legacyFirst);
+      expect(JSON.parse(decodedFirst)).toMatchObject({ source: '', medium: '', platform: '', referrer: '', timestamp: '' });
 
       // Legacy localStorage entries purged
       expect(window.localStorage.getItem('pp_utm_first_touch')).toBeNull();

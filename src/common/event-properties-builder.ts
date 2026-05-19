@@ -114,6 +114,34 @@ export type RawUtmTouch = {
   utm_term: string;
 };
 
+/**
+ * Extended UTM touch — the cookie shape that replaces the old literal-only
+ * `RawUtmTouch` and the separate `pp_mktg_*_touch` cookies. Each persisted
+ * touch carries three slices:
+ *
+ *   1. utm_* — literal URL params (RawUtmTouch contract; unchanged).
+ *   2. Normalized — source/medium/campaign with alias resolution, plus
+ *      platform / clickId derived from click IDs, utm_source, and the
+ *      referrer. This is the slice that previously lived in pp_mktg_*.
+ *   3. Visit metadata — referrer / referrerDomain / landingPage / timestamp
+ *      captured at touch time.
+ *
+ * Phase 1 only writes the literal slice; the normalized + visit-metadata
+ * fields default to '' so the new shape round-trips through cookies but
+ * doesn't yet alter behaviour. Phase 3 wires up population.
+ */
+export type ExtendedUtmTouch = RawUtmTouch & {
+  source: string;
+  medium: string;
+  campaign: string;
+  platform: string;
+  clickId: string;
+  referrer: string;
+  referrerDomain: string;
+  landingPage: string;
+  timestamp: string;
+};
+
 export interface EventPropertiesBuilder {
   configure: (next: EventPropertiesBuilderOpts) => void;
   build: () => BuiltEventBundle;
@@ -286,17 +314,41 @@ const UTM_FIRST_TOUCH_MAX_AGE_SECONDS = 63072000;
 // attribution window so analytics tools agree on which campaign gets credit.
 const UTM_LAST_TOUCH_MAX_AGE_SECONDS = 2592000;
 
-function parseUtmTouch(raw: string): RawUtmTouch | null {
+// Keys of the normalized + visit-metadata slices of `ExtendedUtmTouch`.
+// Centralised so parseUtmTouch / emptyExtended / projection helpers stay
+// in lockstep when the schema grows.
+const EXTENDED_TOUCH_EXTRA_KEYS: ReadonlyArray<keyof ExtendedUtmTouch> = [
+  'source', 'medium', 'campaign', 'platform', 'clickId',
+  'referrer', 'referrerDomain', 'landingPage', 'timestamp',
+];
+
+/**
+ * Deserialize a `pp_utm_*_touch` cookie value. Accepts both the legacy
+ * literal-only shape (`RawUtmTouch`) and the new `ExtendedUtmTouch`;
+ * missing fields default to '' so pre-existing cookies self-upgrade on
+ * the next write without going through a null/regenerate cycle.
+ *
+ * Returns null only when the input isn't a JSON object — any object with
+ * at least string-typed UTM keys passes. The empty-string fill makes the
+ * `ExtendedUtmTouch` contract uniform: callers never need to distinguish
+ * "field missing" from "field empty".
+ */
+function parseUtmTouch(raw: string): ExtendedUtmTouch | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return null;
-    const out: RawUtmTouch = { utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '' };
-    const keys: ReadonlyArray<keyof RawUtmTouch> = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
-    for (let i = 0; i < keys.length; i++) {
-      const k = keys[i];
-      const v = (parsed as Record<string, unknown>)[k];
+    const obj = parsed as Record<string, unknown>;
+    const out: ExtendedUtmTouch = emptyExtended();
+    for (let i = 0; i < UTM_KEYS.length; i++) {
+      const k = UTM_KEYS[i];
+      const v = obj[k];
       out[k] = typeof v === 'string' ? v : '';
+    }
+    for (let i = 0; i < EXTENDED_TOUCH_EXTRA_KEYS.length; i++) {
+      const k = EXTENDED_TOUCH_EXTRA_KEYS[i];
+      const v = obj[k];
+      (out as Record<string, string>)[k] = typeof v === 'string' ? v : '';
     }
     return out;
   } catch (e) {
@@ -322,6 +374,14 @@ function generateDeviceUuid(win: Window & typeof globalThis): string {
 
 function emptyUtm(): RawUtmTouch {
   return { utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '' };
+}
+
+function emptyExtended(): ExtendedUtmTouch {
+  return {
+    utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '',
+    source: '', medium: '', campaign: '', platform: '', clickId: '',
+    referrer: '', referrerDomain: '', landingPage: '', timestamp: '',
+  };
 }
 
 function defaultCookieNames(): EventPropertiesBuilderCookieNames {
@@ -509,7 +569,7 @@ export function createEventPropertiesBuilder(
   // so the persisted source/medium/campaign matches the visit that actually
   // attributed the conversion. Read-first: if a cookie exists, it wins; the
   // legacy localStorage JSON is migrated on first access and purged.
-  const utmFirstTouchStore = createPersistentValue<RawUtmTouch>(win, ppLib, {
+  const utmFirstTouchStore = createPersistentValue<ExtendedUtmTouch>(win, ppLib, {
     cookieName: UTM_FIRST_TOUCH_KEY,
     maxAgeSeconds: UTM_FIRST_TOUCH_MAX_AGE_SECONDS,
     serialize: (v) => JSON.stringify(v),
@@ -517,7 +577,7 @@ export function createEventPropertiesBuilder(
     legacyLocalStorageKey: UTM_FIRST_TOUCH_KEY
   });
 
-  const utmLastTouchStore = createPersistentValue<RawUtmTouch>(win, ppLib, {
+  const utmLastTouchStore = createPersistentValue<ExtendedUtmTouch>(win, ppLib, {
     cookieName: UTM_LAST_TOUCH_KEY,
     maxAgeSeconds: UTM_LAST_TOUCH_MAX_AGE_SECONDS,
     serialize: (v) => JSON.stringify(v),
@@ -529,15 +589,34 @@ export function createEventPropertiesBuilder(
     return storageKey === UTM_FIRST_TOUCH_KEY ? utmFirstTouchStore : utmLastTouchStore;
   }
 
-  function readStoredUtm(storageKey: string): RawUtmTouch {
+  function readStoredExtended(storageKey: string): ExtendedUtmTouch {
     try {
-      return storeForKey(storageKey).read() || emptyUtm();
+      return storeForKey(storageKey).read() || emptyExtended();
     } catch (e) {
-      return emptyUtm();
+      return emptyExtended();
     }
   }
 
-  function persistUtm(storageKey: string, value: RawUtmTouch): void {
+  // Projection helper — strips the extended slices back down to the
+  // literal-only shape consumed by callers that haven't been migrated yet
+  // (the `RawUtmTouch` half of build() and the public getFirstTouchUtm /
+  // getLastTouchUtm getters). Phase 4 will widen the public API to return
+  // ExtendedUtmTouch directly and delete this.
+  function projectToRaw(touch: ExtendedUtmTouch): RawUtmTouch {
+    return {
+      utm_source: touch.utm_source,
+      utm_medium: touch.utm_medium,
+      utm_campaign: touch.utm_campaign,
+      utm_content: touch.utm_content,
+      utm_term: touch.utm_term,
+    };
+  }
+
+  function readStoredUtm(storageKey: string): RawUtmTouch {
+    return projectToRaw(readStoredExtended(storageKey));
+  }
+
+  function persistExtended(storageKey: string, value: ExtendedUtmTouch): void {
     try {
       storeForKey(storageKey).write(value);
     } catch (e) {
@@ -634,38 +713,52 @@ export function createEventPropertiesBuilder(
     utmCaptured = true;
 
     const urlUtm = readUtmFromUrl();
-    const existingLast = readStoredUtm(UTM_LAST_TOUCH_KEY);
-    const firstEver = isFirstEverCapture(existingLast);
+    const existingLastExt = readStoredExtended(UTM_LAST_TOUCH_KEY);
+    const firstEver = isFirstEverCapture(projectToRaw(existingLastExt));
 
-    let resolved: RawUtmTouch;
+    let resolvedUtm: RawUtmTouch;
     if (firstEver) {
       // First-ever capture — run rules 1–4. ALWAYS persists, even on direct
       // visits, so the "have we ever captured?" signal is durable.
-      resolved = resolveFirstCapture(urlUtm);
+      resolvedUtm = resolveFirstCapture(urlUtm);
     } else {
       // Subsequent capture — URL params overwrite per-key; everything else
       // carries forward. Session rotation does NOT trigger referrer fallbacks.
-      resolved = {
-        utm_source: existingLast.utm_source,
-        utm_medium: existingLast.utm_medium,
-        utm_campaign: existingLast.utm_campaign,
-        utm_content: existingLast.utm_content,
-        utm_term: existingLast.utm_term,
-      };
+      resolvedUtm = projectToRaw(existingLastExt);
       for (let i = 0; i < UTM_KEYS.length; i++) {
         const k = UTM_KEYS[i];
-        if (urlUtm[k]) resolved[k] = urlUtm[k];
+        if (urlUtm[k]) resolvedUtm[k] = urlUtm[k];
       }
     }
-    persistUtm(UTM_LAST_TOUCH_KEY, resolved);
+
+    // Compose into the extended shape — preserve any normalized / visit
+    // fields that were already on the cookie (Phase 3 will populate them
+    // here; Phase 1 just round-trips whatever's there).
+    const resolvedExt: ExtendedUtmTouch = {
+      utm_source: resolvedUtm.utm_source,
+      utm_medium: resolvedUtm.utm_medium,
+      utm_campaign: resolvedUtm.utm_campaign,
+      utm_content: resolvedUtm.utm_content,
+      utm_term: resolvedUtm.utm_term,
+      source: existingLastExt.source,
+      medium: existingLastExt.medium,
+      campaign: existingLastExt.campaign,
+      platform: existingLastExt.platform,
+      clickId: existingLastExt.clickId,
+      referrer: existingLastExt.referrer,
+      referrerDomain: existingLastExt.referrerDomain,
+      landingPage: existingLastExt.landingPage,
+      timestamp: existingLastExt.timestamp,
+    };
+    persistExtended(UTM_LAST_TOUCH_KEY, resolvedExt);
 
     // First-touch: set once from the resolved last-touch value. Locked
     // thereafter — 3C hardens this on the Mixpanel side via register_once /
     // set_once so cross-session reseeding is impossible even if a cookie
     // somehow gets cleared.
-    const existingFirst = readStoredUtm(UTM_FIRST_TOUCH_KEY);
-    if (isFirstEverCapture(existingFirst)) {
-      persistUtm(UTM_FIRST_TOUCH_KEY, resolved);
+    const existingFirstExt = readStoredExtended(UTM_FIRST_TOUCH_KEY);
+    if (isFirstEverCapture(projectToRaw(existingFirstExt))) {
+      persistExtended(UTM_FIRST_TOUCH_KEY, resolvedExt);
     }
   }
 
