@@ -94,6 +94,10 @@ function makePPLib(opts?: {
     setCookie: createSetCookie(document, window, log),
     deleteCookie: createDeleteCookie(document, window, log),
     getQueryParam: createGetQueryParam(),
+    // Phase 4 routed marketing attribution through the builder, which calls
+    // ppLib.Security.sanitize on every URL param before normalization.
+    // Tests use a pass-through stub so utm_source=google stays 'google'.
+    Security: { sanitize: (v: string) => v },
     log
   };
   if (session) {
@@ -724,6 +728,251 @@ describe('createEventPropertiesBuilder', () => {
       expect('utm_source' in nested).toBe(false);
       expect('utm_source [first touch]' in nested).toBe(false);
       expect('marketing_attribution' in nested).toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Marketing attribution semantics — ported from the now-deleted
+  // tests/common/attribution.test.ts. These exercise behaviours that used to
+  // live in createAttributionService and now live in the builder's
+  // captureUtmTouches / buildNormalizedTouch / resolveNormalizedSlice path.
+  // ---------------------------------------------------------------------------
+  describe('marketing attribution semantics', () => {
+    // Replace window.location wholesale — the builder reads location.href,
+    // hostname, search, pathname plus document.URL. Tests need all of these
+    // aligned so captureUtmTouches sees a coherent visit.
+    function setHref(href: string): void {
+      const url = new URL(href);
+      Object.defineProperty(window, 'location', {
+        value: {
+          href: href,
+          hostname: url.hostname,
+          pathname: url.pathname,
+          search: url.search,
+        },
+        writable: true,
+        configurable: true,
+      });
+      Object.defineProperty(document, 'URL', {
+        value: href, writable: true, configurable: true,
+      });
+    }
+
+    function setReferrer(value: string): void {
+      Object.defineProperty(document, 'referrer', {
+        value: value, writable: true, configurable: true,
+      });
+    }
+
+    function expireUtmSession(): void {
+      document.cookie = 'pp_utm_session=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+    }
+
+    beforeEach(() => {
+      setHref('http://localhost/landing');
+      setReferrer('');
+    });
+
+    describe('normalized touch schema', () => {
+      it('stores the FULL referrer URL in marketing_attribution, not a classifier label', () => {
+        setReferrer('https://www.google.com/search?q=pocketpills');
+        setHref('http://localhost/lp/x?utm_source=google&utm_medium=cpc');
+
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+
+        expect(ma).not.toBeNull();
+        expect(ma!.referrer).toBe('https://www.google.com/search?q=pocketpills');
+        expect(ma!.referrerDomain).toBe('www.google.com');
+      });
+
+      it('uses empty string for both referrer fields on direct visits', () => {
+        setReferrer('');
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+        expect(ma!.referrer).toBe('');
+        expect(ma!.referrerDomain).toBe('');
+      });
+
+      it('returns empty referrerDomain on unparseable referrer (defensive)', () => {
+        setReferrer('not a url');
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+        expect(ma!.referrer).toBe('not a url');
+        expect(ma!.referrerDomain).toBe('');
+      });
+
+      it('stores the full landing URL (href with query), not just pathname', () => {
+        setHref('http://localhost/lp/spring?utm_source=fb&utm_medium=social&promo=abc');
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+        expect(ma!.landingPage).toBe('http://localhost/lp/spring?utm_source=fb&utm_medium=social&promo=abc');
+      });
+
+      it('strips URL fragment from landing page (OAuth token leak defense)', () => {
+        // OAuth implicit-flow callbacks land with the access token in the
+        // hash. Persisting that for 2 years in a cookie is a credential
+        // leak — buildNormalizedTouch must strip the fragment.
+        setHref('http://localhost/oauth/callback?utm_source=email#access_token=secret-abc-xyz&token_type=Bearer');
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+        expect(ma!.landingPage).toBe('http://localhost/oauth/callback?utm_source=email');
+        expect(ma!.landingPage.indexOf('access_token')).toBe(-1);
+        expect(ma!.landingPage.indexOf('#')).toBe(-1);
+      });
+    });
+
+    describe('self-referral filter on last-touch (audit 3.b + 3.c)', () => {
+      // Pattern: seed an initial last-touch with a real touch, expire the
+      // session, simulate a second visit with a controlled referrer, assert
+      // whether last-touch was rewritten.
+      function seedInitialLastTouch(): void {
+        setHref('http://localhost/lp?utm_source=google&utm_medium=cpc&utm_campaign=spring');
+        setReferrer('https://www.google.com/');
+        createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+        expireUtmSession();
+      }
+
+      it('same-host referral, no new UTM, session expired → last-touch NOT updated', () => {
+        // localhost → localhost: user mid-funnel pressed refresh on signup.
+        // Without the self-referral filter, last-touch would flip to "localhost".
+        seedInitialLastTouch();
+
+        setHref('http://localhost/signup');
+        setReferrer('http://localhost/cart');
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+
+        expect(ma!.source).toBe('google');
+        expect(ma!.campaign).toBe('spring');
+      });
+
+      it('cross-subdomain referral via cookieDomain → last-touch NOT updated', () => {
+        // www.pocketpills.com → try.pocketpills.com: different hostnames
+        // but both under .pocketpills.com — the cookieDomain rule covers it.
+        seedInitialLastTouch();
+
+        setHref('https://try.pocketpills.com/checkout');
+        setReferrer('https://www.pocketpills.com/cart');
+
+        const ppLib = makePPLib({ attribution: null });
+        (ppLib as any).config.cookieDomain = '.pocketpills.com';
+        const ma = createEventPropertiesBuilder(window, ppLib).getMarketingAttribution();
+        expect(ma!.source).toBe('google');
+      });
+
+      it('external referral, no new UTM, session expired → last-touch IS updated', () => {
+        // bing.com → localhost: a real new touch via an external referrer.
+        seedInitialLastTouch();
+
+        setHref('http://localhost/lp');
+        setReferrer('https://www.bing.com/search?q=pocketpills');
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+
+        expect(ma!.platform).toBe('organic_search');
+        expect(ma!.source).not.toBe('google');
+      });
+
+      it('same-host referral WITH new UTM params → last-touch IS updated (UTM beats veto)', () => {
+        seedInitialLastTouch();
+
+        setHref('http://localhost/lp?utm_source=facebook&utm_medium=social&utm_campaign=relaunch');
+        setReferrer('http://localhost/home');
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+
+        expect(ma!.source).toBe('facebook');
+        expect(ma!.campaign).toBe('relaunch');
+      });
+    });
+
+    describe('first-touch immutability (audit T9)', () => {
+      it('does not overwrite first-touch normalized slice on a re-visit with new UTMs', () => {
+        // Initial visit: google/cpc.
+        setHref('http://localhost/lp?utm_source=google&utm_medium=cpc&utm_campaign=spring');
+        setReferrer('https://www.google.com/');
+        createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+
+        const bundleA = createEventPropertiesBuilder(window, makePPLib({ attribution: null })).build();
+        expect(bundleA.eventProperties['referrer_domain [first touch]']).toBe('www.google.com');
+
+        // Second visit (fresh builder): facebook. First-touch must NOT change.
+        setHref('http://localhost/lp?utm_source=facebook&utm_medium=social&utm_campaign=relaunch');
+        setReferrer('https://www.facebook.com/');
+        const bundleB = createEventPropertiesBuilder(window, makePPLib({ attribution: null })).build();
+
+        // Normalized first-touch is locked to the original google visit.
+        expect(bundleB.eventProperties['referrer_domain [first touch]']).toBe('www.google.com');
+        // Last-touch follows the new visit.
+        expect(bundleB.eventProperties['referrer_domain [last touch]']).toBe('www.facebook.com');
+      });
+    });
+
+    describe('platform classifier (organic search / social / direct)', () => {
+      it('detects organic_search via google referrer hostname', () => {
+        setReferrer('https://www.google.com/search?q=foo');
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+        expect(ma!.platform).toBe('organic_search');
+      });
+
+      it('detects organic_social via facebook referrer', () => {
+        setReferrer('https://www.facebook.com/');
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+        expect(ma!.platform).toBe('organic_social');
+      });
+
+      it('classifies same-origin referrer as direct (not "internal" leakage)', () => {
+        setHref('http://localhost/page');
+        setReferrer('http://localhost/other');
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+        // Internal referrers don't hit any organic-domain branch and have no
+        // UTM, so platform falls through to 'direct'.
+        expect(ma!.platform).toBe('direct');
+      });
+
+      it('falls back to direct when document.referrer is empty', () => {
+        setReferrer('');
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+        expect(ma!.platform).toBe('direct');
+      });
+    });
+
+    describe('legacy pp_mktg_* migration shim', () => {
+      it('folds pp_mktg_first_touch / pp_mktg_last_touch normalized data into pp_utm_*_touch and deletes the legacy cookies', () => {
+        const mktgFirst = {
+          source: 'facebook', medium: 'social', campaign: 'launch', platform: 'organic_social',
+          clickId: '', landingPage: 'http://localhost/first',
+          referrer: 'https://www.facebook.com/', referrerDomain: 'www.facebook.com',
+          timestamp: '2024-01-01T00:00:00.000Z',
+        };
+        const mktgLast = {
+          source: 'google', medium: 'cpc', campaign: 'spring', platform: 'google_ads',
+          clickId: 'abc', landingPage: 'http://localhost/last',
+          referrer: 'https://www.google.com/', referrerDomain: 'www.google.com',
+          timestamp: '2024-06-01T00:00:00.000Z',
+        };
+        document.cookie = 'pp_mktg_first_touch=' + encodeURIComponent(JSON.stringify(mktgFirst)) + ';path=/';
+        document.cookie = 'pp_mktg_last_touch=' + encodeURIComponent(JSON.stringify(mktgLast)) + ';path=/';
+        document.cookie = 'pp_mktg_session=' + encodeURIComponent(JSON.stringify({ ts: Date.now() })) + ';path=/';
+
+        const bundle = createEventPropertiesBuilder(window, makePPLib({ attribution: null })).build();
+
+        // First-touch normalized fields inherited from the legacy mktg cookie.
+        expect(bundle.eventProperties['referrer_domain [first touch]']).toBe('www.facebook.com');
+        expect(bundle.eventProperties['landing_page_url [first touch]']).toBe('http://localhost/first');
+
+        // Legacy cookies cleared so they don't linger for up to 2 years.
+        expect(document.cookie).not.toMatch(/pp_mktg_first_touch=[^;]+/);
+        expect(document.cookie).not.toMatch(/pp_mktg_last_touch=[^;]+/);
+        expect(document.cookie).not.toMatch(/pp_mktg_session=[^;]+/);
+      });
     });
   });
 });

@@ -1103,18 +1103,16 @@ export function createEventPropertiesBuilder(
   // Legacy pp_mktg_* migration shim.
   //
   // Pre-consolidation, normalized attribution lived in pp_mktg_first_touch /
-  // pp_mktg_last_touch (managed by attribution.ts). Phase 3 consolidates that
-  // data into the pp_utm_*_touch cookies' normalized slice. The shim runs at
-  // most once per builder instance, ONLY folds when the pp_utm_* normalized
-  // slice is still empty (so we don't trample data populated by a more recent
-  // visit), and does NOT delete the legacy cookies — attribution.ts still
-  // reads them through Phase 4. Phase 5 deletes them when attribution.ts is
-  // removed.
+  // pp_mktg_last_touch (managed by the now-deleted attribution.ts). The shim
+  // folds those cookies' data into the pp_utm_*_touch cookies' normalized
+  // slice on first builder use, then DELETES the legacy cookies + the
+  // pp_mktg_session marker so they don't linger on visitors' browsers for
+  // up to 2 years.
   //
-  // Canary field for "normalized slice is empty": `platform`. Always set by
-  // buildNormalizedTouch (even direct visits get 'direct'), so an empty
-  // platform reliably signals "this cookie has never been written by
-  // captureUtmTouches".
+  // Runs at most once per builder instance. Only folds when the pp_utm_*
+  // normalized slice is still empty (canary: `platform`, always non-empty
+  // after a real write), so a visitor mid-migration with both cookies
+  // populated keeps the fresher pp_utm_* data.
   // ---------------------------------------------------------------------------
   let mktgMigrated = false;
   function migrateLegacyMktgCookiesOnce(): void {
@@ -1152,6 +1150,25 @@ export function createEventPropertiesBuilder(
 
     foldInto(UTM_FIRST_TOUCH_KEY, LEGACY_MKTG_FIRST_KEY);
     foldInto(UTM_LAST_TOUCH_KEY, LEGACY_MKTG_LAST_KEY);
+
+    // Best-effort deletion of the legacy cookies + the pp_mktg_session
+    // marker. Uses Max-Age=0 with the configured cookieDomain since the
+    // browser only matches deletes against the same Domain attribute the
+    // cookie was originally written with; ppLib.deleteCookie covers the
+    // host-scoped legacy form for visitors who predate the domain rollout.
+    const legacyNames = [LEGACY_MKTG_FIRST_KEY, LEGACY_MKTG_LAST_KEY, 'pp_mktg_session'];
+    for (let i = 0; i < legacyNames.length; i++) {
+      const name = legacyNames[i];
+      try {
+        ppLib.setCookie(name, '', {
+          domain: ppLib.config.cookieDomain,
+          path: '/',
+          maxAgeSeconds: 0,
+          sameSite: 'Lax',
+        });
+      } catch (e) { /* best-effort */ }
+      try { ppLib.deleteCookie(name); } catch (e) { /* best-effort */ }
+    }
   }
 
   /**

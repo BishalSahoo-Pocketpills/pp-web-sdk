@@ -55,6 +55,9 @@ function makePPLib(cookies?: Record<string, string>): PPLib {
       getOrCreateSessionId: vi.fn(() => 'test-session-id'),
       clearSession: vi.fn(),
     },
+    // Phase 4 routed marketing attribution through the builder, which calls
+    // ppLib.Security.sanitize on every URL param before normalization.
+    Security: { sanitize: (v: string) => v },
     log,
   } as unknown as PPLib;
   // Wire up the shared builder the same way common module does in production.
