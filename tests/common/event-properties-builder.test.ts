@@ -889,25 +889,103 @@ describe('createEventPropertiesBuilder', () => {
     });
 
     describe('first-touch immutability (audit T9)', () => {
-      it('does not overwrite first-touch normalized slice on a re-visit with new UTMs', () => {
-        // Initial visit: google/cpc.
+      it('does not overwrite first-touch on a re-visit with new UTMs (both slices locked)', () => {
+        // Initial visit: google/cpc lands the FULL extended shape — both
+        // literal utm_* and normalized slices populated.
         setHref('http://localhost/lp?utm_source=google&utm_medium=cpc&utm_campaign=spring');
         setReferrer('https://www.google.com/');
         createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
           .getMarketingAttribution();
 
         const bundleA = createEventPropertiesBuilder(window, makePPLib({ attribution: null })).build();
+        expect(bundleA.eventProperties['utm_source [first touch]']).toBe('google');
+        expect(bundleA.eventProperties['utm_medium [first touch]']).toBe('cpc');
+        expect(bundleA.eventProperties['utm_campaign [first touch]']).toBe('spring');
         expect(bundleA.eventProperties['referrer_domain [first touch]']).toBe('www.google.com');
+        const originalLanding = bundleA.eventProperties['landing_page_url [first touch]'];
+        expect(originalLanding).toContain('utm_source=google');
 
-        // Second visit (fresh builder): facebook. First-touch must NOT change.
+        // Second visit (fresh builder): facebook UTM. First-touch must NOT
+        // change on EITHER slice — both literal and normalized are populated,
+        // so the per-slice immutability locks both.
         setHref('http://localhost/lp?utm_source=facebook&utm_medium=social&utm_campaign=relaunch');
         setReferrer('https://www.facebook.com/');
         const bundleB = createEventPropertiesBuilder(window, makePPLib({ attribution: null })).build();
 
-        // Normalized first-touch is locked to the original google visit.
+        // Literal first-touch slice is locked.
+        expect(bundleB.eventProperties['utm_source [first touch]']).toBe('google');
+        expect(bundleB.eventProperties['utm_medium [first touch]']).toBe('cpc');
+        expect(bundleB.eventProperties['utm_campaign [first touch]']).toBe('spring');
+        // Normalized first-touch slice is locked.
         expect(bundleB.eventProperties['referrer_domain [first touch]']).toBe('www.google.com');
-        // Last-touch follows the new visit.
+        expect(bundleB.eventProperties['landing_page_url [first touch]']).toBe(originalLanding);
+        // Last-touch DOES follow the new visit (the literal slice rotates
+        // per-key on URL params, the normalized slice rotates on hasNewParams).
+        expect(bundleB.eventProperties['utm_source [last touch]']).toBe('facebook');
+        expect(bundleB.eventProperties['utm_medium [last touch]']).toBe('social');
         expect(bundleB.eventProperties['referrer_domain [last touch]']).toBe('www.facebook.com');
+      });
+
+      it('per-slice asymmetric immutability: locked literal slice allows normalized to fill, and vice versa', () => {
+        // SCENARIO A: visitor arrived via the legacy localStorage path —
+        // pp_utm_first_touch has utm_* literal data but the normalized slice
+        // is empty (the localStorage shape predates the consolidation).
+        // On the next visit, the normalized slice should fill from the
+        // current capture WHILE the literal slice stays locked.
+        const partialFirstUtmOnly = {
+          utm_source: 'twitter', utm_medium: 'social', utm_campaign: 'launch',
+          utm_content: '', utm_term: '',
+          // Normalized slice empty — canary `platform` is the empty-marker.
+          source: '', medium: '', campaign: '', platform: '', clickId: '',
+          referrer: '', referrerDomain: '', landingPage: '', timestamp: '',
+        };
+        document.cookie = 'pp_utm_first_touch=' +
+          encodeURIComponent(JSON.stringify(partialFirstUtmOnly)) + ';path=/';
+
+        // Current visit: bing organic search. No URL utm_*, so the literal
+        // first-touch slice has nothing new to add anyway — but the empty
+        // normalized slice should pick up the current visit's data.
+        setHref('http://localhost/lp');
+        setReferrer('https://www.bing.com/search?q=foo');
+        const bundleA = createEventPropertiesBuilder(window, makePPLib({ attribution: null })).build();
+
+        // Literal slice is LOCKED: keeps the legacy utm_*=twitter data.
+        expect(bundleA.eventProperties['utm_source [first touch]']).toBe('twitter');
+        expect(bundleA.eventProperties['utm_medium [first touch]']).toBe('social');
+        expect(bundleA.eventProperties['utm_campaign [first touch]']).toBe('launch');
+        // Normalized slice was empty → filled from the current bing visit.
+        expect(bundleA.eventProperties['referrer_domain [first touch]']).toBe('www.bing.com');
+
+        // SCENARIO B: visitor arrived via the legacy pp_mktg_* path —
+        // pp_utm_first_touch has normalized data but the literal slice is
+        // empty (the mktg cookies never carried utm_* literals). On the
+        // next visit with URL utm params, the literal slice should fill
+        // WHILE the normalized slice stays locked.
+        document.cookie.split(';').forEach(c => {
+          const name = c.split('=')[0].trim();
+          if (name) document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+        });
+        const partialFirstNormalizedOnly = {
+          utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '',
+          source: 'pinterest', medium: 'social', campaign: 'mktg-era',
+          platform: 'organic_social', clickId: '',
+          referrer: 'https://www.pinterest.com/', referrerDomain: 'www.pinterest.com',
+          landingPage: 'http://localhost/old-lp', timestamp: '2024-01-01T00:00:00.000Z',
+        };
+        document.cookie = 'pp_utm_first_touch=' +
+          encodeURIComponent(JSON.stringify(partialFirstNormalizedOnly)) + ';path=/';
+
+        setHref('http://localhost/lp?utm_source=newcampaign&utm_medium=email&utm_campaign=q2');
+        setReferrer('');
+        const bundleB = createEventPropertiesBuilder(window, makePPLib({ attribution: null })).build();
+
+        // Literal slice was empty → filled from current URL params.
+        expect(bundleB.eventProperties['utm_source [first touch]']).toBe('newcampaign');
+        expect(bundleB.eventProperties['utm_medium [first touch]']).toBe('email');
+        expect(bundleB.eventProperties['utm_campaign [first touch]']).toBe('q2');
+        // Normalized slice is LOCKED: keeps the mktg-era pinterest data.
+        expect(bundleB.eventProperties['referrer_domain [first touch]']).toBe('www.pinterest.com');
+        expect(bundleB.eventProperties['landing_page_url [first touch]']).toBe('http://localhost/old-lp');
       });
     });
 
