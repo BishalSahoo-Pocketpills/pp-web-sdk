@@ -644,7 +644,13 @@ import { bootstrapModule } from '@src/common/bootstrap';
             const marketingAttribution = ppLib.eventPropertiesBuilder.getMarketingAttribution();
             if (marketingAttribution) {
               mp.register({ marketingAttribution: marketingAttribution });
-              if (typeof mp.people.set === 'function') {
+              // Guard against a Mixpanel build that doesn't expose `people`
+              // (older stubs, partial mocks, vendor regressions). The legacy
+              // attribution service had the same null-check; restoring it
+              // here avoids a TypeError that the outer catch would swallow
+              // into a noisy warn log even though super-prop registration
+              // succeeded on the mp.register side.
+              if (mp.people && typeof mp.people.set === 'function') {
                 mp.people.set({ marketingAttribution: marketingAttribution });
               }
               ppLib.log('info', '[ppMixpanel] Registered marketingAttribution super-property');
