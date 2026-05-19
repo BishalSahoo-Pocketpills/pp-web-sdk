@@ -313,6 +313,22 @@ const UTM_FIRST_TOUCH_MAX_AGE_SECONDS = 63072000;
 // Last touch UTM — 30 days. Matches the standard Mixpanel/GA "last touch"
 // attribution window so analytics tools agree on which campaign gets credit.
 const UTM_LAST_TOUCH_MAX_AGE_SECONDS = 2592000;
+// Session marker — 30 minutes. Gates rotation of the pp_utm_*_touch
+// normalized slice (see captureUtmTouches): last-touch only refreshes when
+// (a) new traffic params on the URL, or (b) the session has expired AND the
+// referrer isn't self-referral. Replaces the legacy pp_mktg_session cookie;
+// attribution.ts still manages its own pp_mktg_session during the Phase 3
+// window but it no longer feeds builder logic.
+const UTM_SESSION_KEY = 'pp_utm_session';
+const UTM_SESSION_MAX_AGE_SECONDS = 1800;
+
+// Legacy pp_mktg_* cookies — read-and-fold migration source during the
+// consolidation window. Phase 3 copies their normalized + visit-metadata
+// data into the corresponding pp_utm_*_touch cookies (when those normalized
+// slices are still empty); Phase 5 deletes the legacy cookies after
+// attribution.ts is removed.
+const LEGACY_MKTG_FIRST_KEY = 'pp_mktg_first_touch';
+const LEGACY_MKTG_LAST_KEY = 'pp_mktg_last_touch';
 
 // Keys of the normalized + visit-metadata slices of `ExtendedUtmTouch`.
 // Centralised so parseUtmTouch / emptyExtended / projection helpers stay
@@ -351,6 +367,44 @@ function parseUtmTouch(raw: string): ExtendedUtmTouch | null {
       (out as Record<string, string>)[k] = typeof v === 'string' ? v : '';
     }
     return out;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Parse a legacy `pp_mktg_*_touch` cookie. The pre-consolidation
+ * attribution service serialised these as JSON with the 9 normalized +
+ * visit-metadata fields (no utm_* literal slice — that lived in the
+ * separate pp_utm_*_touch cookies). Used by the Phase 3 migration to fold
+ * mktg data into the consolidated extended cookie. Returns null when the
+ * input isn't an object with all 9 string fields — strict so partial /
+ * pre-1C entries fall through and the migration treats the visitor as new.
+ */
+function parseLegacyMktgTouch(raw: string): NormalizedTouch | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const o = parsed as Record<string, unknown>;
+    const required: ReadonlyArray<keyof NormalizedTouch> = [
+      'source', 'medium', 'campaign', 'platform', 'clickId',
+      'landingPage', 'referrer', 'referrerDomain', 'timestamp',
+    ];
+    for (let i = 0; i < required.length; i++) {
+      if (typeof o[required[i] as string] !== 'string') return null;
+    }
+    return {
+      source: o.source as string,
+      medium: o.medium as string,
+      campaign: o.campaign as string,
+      platform: o.platform as string,
+      clickId: o.clickId as string,
+      landingPage: o.landingPage as string,
+      referrer: o.referrer as string,
+      referrerDomain: o.referrerDomain as string,
+      timestamp: o.timestamp as string,
+    };
   } catch (e) {
     return null;
   }
@@ -994,39 +1048,133 @@ export function createEventPropertiesBuilder(
     return true;
   }
 
-  let utmCaptured = false;
-  function captureUtmTouches(): void {
-    if (utmCaptured) return;
-    utmCaptured = true;
+  // ---------------------------------------------------------------------------
+  // Session marker for normalized-slice rotation (pp_utm_session, 30 min).
+  // Distinct from the analytics session_id managed by ppLib.session — this
+  // cookie ONLY gates pp_utm_*_touch normalized rotation. Replaces the
+  // legacy pp_mktg_session. Deserializer accepts shape {ts: number}; any
+  // other input is treated as absent so the next visit rotates last-touch.
+  // ---------------------------------------------------------------------------
+  const utmSessionStore = createPersistentValue<{ ts: number }>(win, ppLib, {
+    cookieName: UTM_SESSION_KEY,
+    maxAgeSeconds: UTM_SESSION_MAX_AGE_SECONDS,
+    serialize: (v) => JSON.stringify(v),
+    deserialize: (raw) => {
+      if (!raw) return null;
+      try {
+        const p = JSON.parse(raw);
+        if (!p || typeof p !== 'object') return null;
+        const ts = (p as Record<string, unknown>).ts;
+        return typeof ts === 'number' ? { ts: ts } : null;
+      } catch (e) { return null; }
+    },
+  });
 
-    const urlUtm = readUtmFromUrl();
-    const existingLastExt = readStoredExtended(UTM_LAST_TOUCH_KEY);
-    const firstEver = isFirstEverCapture(projectToRaw(existingLastExt));
+  function isUtmSessionActive(): boolean {
+    const s = utmSessionStore.read();
+    if (!s || typeof s.ts !== 'number') return false;
+    return (Date.now() - s.ts) < UTM_SESSION_MAX_AGE_SECONDS * 1000;
+  }
 
-    let resolvedUtm: RawUtmTouch;
-    if (firstEver) {
-      // First-ever capture — run rules 1–4. ALWAYS persists, even on direct
-      // visits, so the "have we ever captured?" signal is durable.
-      resolvedUtm = resolveFirstCapture(urlUtm);
-    } else {
-      // Subsequent capture — URL params overwrite per-key; everything else
-      // carries forward. Session rotation does NOT trigger referrer fallbacks.
-      resolvedUtm = projectToRaw(existingLastExt);
-      for (let i = 0; i < UTM_KEYS.length; i++) {
-        const k = UTM_KEYS[i];
-        if (urlUtm[k]) resolvedUtm[k] = urlUtm[k];
-      }
+  function touchUtmSession(): void {
+    utmSessionStore.write({ ts: Date.now() });
+  }
+
+  /**
+   * Self-referral check on a raw referrer URL. Wraps the hostname-based
+   * `isSelfReferralRef` after a `new URL(...)` parse. Conservative: empty /
+   * unparseable input is treated as NOT self-referral (so the caller's
+   * normal rotation logic runs).
+   */
+  function isSelfReferralFromUrl(referrerUrl: string): boolean {
+    if (!referrerUrl) return false;
+    let refHost = '';
+    try { refHost = new URL(referrerUrl).hostname; } catch (e) { return false; }
+    return isSelfReferralRef(refHost);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Legacy pp_mktg_* migration shim.
+  //
+  // Pre-consolidation, normalized attribution lived in pp_mktg_first_touch /
+  // pp_mktg_last_touch (managed by attribution.ts). Phase 3 consolidates that
+  // data into the pp_utm_*_touch cookies' normalized slice. The shim runs at
+  // most once per builder instance, ONLY folds when the pp_utm_* normalized
+  // slice is still empty (so we don't trample data populated by a more recent
+  // visit), and does NOT delete the legacy cookies — attribution.ts still
+  // reads them through Phase 4. Phase 5 deletes them when attribution.ts is
+  // removed.
+  //
+  // Canary field for "normalized slice is empty": `platform`. Always set by
+  // buildNormalizedTouch (even direct visits get 'direct'), so an empty
+  // platform reliably signals "this cookie has never been written by
+  // captureUtmTouches".
+  // ---------------------------------------------------------------------------
+  let mktgMigrated = false;
+  function migrateLegacyMktgCookiesOnce(): void {
+    if (mktgMigrated) return;
+    mktgMigrated = true;
+
+    const foldInto = (storageKey: string, legacyCookieName: string): void => {
+      const ext = readStoredExtended(storageKey);
+      if (ext.platform) return; // already populated — skip
+      let raw: string | null;
+      try { raw = ppLib.getCookie(legacyCookieName); } catch (e) { return; }
+      if (!raw) return;
+      const mktg = parseLegacyMktgTouch(raw);
+      if (!mktg) return;
+      // Merge legacy normalized data into the extended cookie; keep the
+      // utm_* literal slice from whatever the extended cookie already had
+      // (so a parallel 5-step capture isn't overwritten).
+      persistExtended(storageKey, {
+        utm_source: ext.utm_source,
+        utm_medium: ext.utm_medium,
+        utm_campaign: ext.utm_campaign,
+        utm_content: ext.utm_content,
+        utm_term: ext.utm_term,
+        source: mktg.source,
+        medium: mktg.medium,
+        campaign: mktg.campaign,
+        platform: mktg.platform,
+        clickId: mktg.clickId,
+        referrer: mktg.referrer,
+        referrerDomain: mktg.referrerDomain,
+        landingPage: mktg.landingPage,
+        timestamp: mktg.timestamp,
+      });
+    };
+
+    foldInto(UTM_FIRST_TOUCH_KEY, LEGACY_MKTG_FIRST_KEY);
+    foldInto(UTM_LAST_TOUCH_KEY, LEGACY_MKTG_LAST_KEY);
+  }
+
+  /**
+   * Apply the pp_mktg-era session veto + first-touch immutability rules to
+   * the normalized + visit-metadata slice of an extended touch. Two callers:
+   *  - last-touch rotation in captureUtmTouches
+   *  - downstream first-touch seeding
+   *
+   * Returns the slice to PERSIST for last-touch. Rotates when:
+   *   - First-ever capture (cookie empty), OR
+   *   - New marketing params on this visit, OR
+   *   - Session expired AND referrer is NOT self-referral (refresh of a
+   *     same-domain page leaves document.referrer pointing at our own host,
+   *     which would otherwise flip last-touch attribution to "pocketpills.com"
+   *     once the 30-min session expired — audit issues 3.b + 3.c).
+   * Otherwise carries the prior normalized slice forward unchanged.
+   */
+  function resolveNormalizedSlice(
+    existingLastExt: ExtendedUtmTouch,
+    firstEver: boolean,
+    currentTouch: NormalizedTouch,
+    hasNewParams: boolean,
+  ): NormalizedTouch {
+    const sessionActive = isUtmSessionActive();
+    const selfReferral = isSelfReferralFromUrl(currentTouch.referrer);
+    if (firstEver || hasNewParams || (!sessionActive && !selfReferral)) {
+      return currentTouch;
     }
-
-    // Compose into the extended shape — preserve any normalized / visit
-    // fields that were already on the cookie (Phase 3 will populate them
-    // here; Phase 1 just round-trips whatever's there).
-    const resolvedExt: ExtendedUtmTouch = {
-      utm_source: resolvedUtm.utm_source,
-      utm_medium: resolvedUtm.utm_medium,
-      utm_campaign: resolvedUtm.utm_campaign,
-      utm_content: resolvedUtm.utm_content,
-      utm_term: resolvedUtm.utm_term,
+    return {
       source: existingLastExt.source,
       medium: existingLastExt.medium,
       campaign: existingLastExt.campaign,
@@ -1037,16 +1185,82 @@ export function createEventPropertiesBuilder(
       landingPage: existingLastExt.landingPage,
       timestamp: existingLastExt.timestamp,
     };
-    persistExtended(UTM_LAST_TOUCH_KEY, resolvedExt);
+  }
 
-    // First-touch: set once from the resolved last-touch value. Locked
-    // thereafter — 3C hardens this on the Mixpanel side via register_once /
-    // set_once so cross-session reseeding is impossible even if a cookie
-    // somehow gets cleared.
+  let utmCaptured = false;
+  function captureUtmTouches(): void {
+    if (utmCaptured) return;
+    utmCaptured = true;
+
+    // Step 0: fold any pre-consolidation pp_mktg_* data into the
+    // pp_utm_*_touch normalized slice. Idempotent — only fires when the
+    // normalized slice is empty. Must run BEFORE we read existingLastExt
+    // so a freshly-migrated cookie informs the firstEver check below.
+    migrateLegacyMktgCookiesOnce();
+
+    const urlUtm = readUtmFromUrl();
+    const existingLastExt = readStoredExtended(UTM_LAST_TOUCH_KEY);
     const existingFirstExt = readStoredExtended(UTM_FIRST_TOUCH_KEY);
-    if (isFirstEverCapture(projectToRaw(existingFirstExt))) {
-      persistExtended(UTM_FIRST_TOUCH_KEY, resolvedExt);
+    const firstEver = isFirstEverCapture(projectToRaw(existingLastExt));
+
+    // === Literal utm_* slice — 5-step resolver, unchanged from Phase 1 ===
+    let resolvedUtm: RawUtmTouch;
+    if (firstEver) {
+      // First-ever capture — run rules 1–4. ALWAYS persists, even on direct
+      // visits, so the "have we ever captured?" signal is durable.
+      resolvedUtm = resolveFirstCapture(urlUtm);
+    } else {
+      // Subsequent capture — URL params overwrite per-key; everything else
+      // carries forward. Session rotation does NOT trigger referrer fallbacks
+      // here (those only apply on first-ever capture).
+      resolvedUtm = projectToRaw(existingLastExt);
+      for (let i = 0; i < UTM_KEYS.length; i++) {
+        const k = UTM_KEYS[i];
+        if (urlUtm[k]) resolvedUtm[k] = urlUtm[k];
+      }
     }
+
+    // === Normalized + visit-metadata slice — pp_mktg-era session veto ===
+    const params = extractParams(win, ppLib);
+    const currentTouch = buildNormalizedTouch(win, params);
+    const hasNewParams = hasNewTrafficParams(params);
+    const resolvedNormalized = resolveNormalizedSlice(
+      existingLastExt, firstEver, currentTouch, hasNewParams,
+    );
+
+    // === Combine and persist last-touch ===
+    const resolvedLastExt: ExtendedUtmTouch = {
+      utm_source: resolvedUtm.utm_source,
+      utm_medium: resolvedUtm.utm_medium,
+      utm_campaign: resolvedUtm.utm_campaign,
+      utm_content: resolvedUtm.utm_content,
+      utm_term: resolvedUtm.utm_term,
+      source: resolvedNormalized.source,
+      medium: resolvedNormalized.medium,
+      campaign: resolvedNormalized.campaign,
+      platform: resolvedNormalized.platform,
+      clickId: resolvedNormalized.clickId,
+      referrer: resolvedNormalized.referrer,
+      referrerDomain: resolvedNormalized.referrerDomain,
+      landingPage: resolvedNormalized.landingPage,
+      timestamp: resolvedNormalized.timestamp,
+    };
+    persistExtended(UTM_LAST_TOUCH_KEY, resolvedLastExt);
+
+    // === First-touch immutability — load-bearing ===
+    // First touch is written exactly ONCE per cookie horizon (2 years) and
+    // never overwritten. The `if (!existing)` guard is the load-bearing line;
+    // do not remove without data-team sign-off. Mirrors the legacy
+    // attribution.ts contract. Seed FROM the resolved last-touch so the
+    // first-touch and last-touch agree on the first visit's attribution.
+    if (isFirstEverCapture(projectToRaw(existingFirstExt))) {
+      persistExtended(UTM_FIRST_TOUCH_KEY, resolvedLastExt);
+    }
+
+    // === Touch session ===
+    // Re-anchors the 30-min window so subsequent same-session captures see
+    // sessionActive=true and skip the normalized-slice rotation.
+    touchUtmSession();
   }
 
   // Each getter triggers captureUtmTouches() so the persistence runs on the
