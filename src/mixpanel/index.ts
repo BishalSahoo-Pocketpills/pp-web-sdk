@@ -634,8 +634,27 @@ import { bootstrapModule } from '@src/common/bootstrap';
         // UTM attribution
         campaignParams();
 
-        // marketingAttribution is auto-injected by the global mixpanel.track
-        // patch in the attribution service — no per-module registration needed.
+        // marketingAttribution super-property — formerly registered by the
+        // attribution service's pollUntil(register_once) inside init().
+        // Phase 4 moves it here: we're already inside `loaded`, so mp is
+        // guaranteed live and the polling dependency is gone. Reads the
+        // resolved normalized last-touch from the shared builder, which
+        // applies the session-veto + self-referral rules established by
+        // the legacy attribution service.
+        try {
+          if (ppLib.eventPropertiesBuilder) {
+            const marketingAttribution = ppLib.eventPropertiesBuilder.getMarketingAttribution();
+            if (marketingAttribution) {
+              mp.register({ marketingAttribution: marketingAttribution });
+              if (typeof mp.people.set === 'function') {
+                mp.people.set({ marketingAttribution: marketingAttribution });
+              }
+              ppLib.log('info', '[ppMixpanel] Registered marketingAttribution super-property');
+            }
+          }
+        } catch (e) {
+          ppLib.log('warn', '[ppMixpanel] Failed to register marketingAttribution super-property', e);
+        }
 
         // VWO experiment properties — register as super properties so they
         // appear on every subsequent event (page view, add to cart, purchase).

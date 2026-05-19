@@ -13,7 +13,6 @@ import { createGetQueryParam } from '@src/common/url';
 import { createSecurity } from '@src/common/security';
 import { createStorage } from '@src/common/storage';
 import { createExtend } from '@src/common/utils';
-import { createAttributionService } from '@src/common/attribution';
 import { createConsentService } from '@src/common/consent';
 import { createSessionService } from '@src/common/session';
 import { createDataLayerEnricher } from '@src/common/datalayer-enricher';
@@ -130,13 +129,6 @@ import { safeLogPayload, safeLogError } from '@src/common/log-sanitize';
   // =====================================================
 
   ppLib.extend = createExtend(ppLib.log);
-
-  // =====================================================
-  // MARKETING ATTRIBUTION SERVICE
-  // Shared across all modules — single extraction, unified enrichment
-  // =====================================================
-
-  ppLib.attribution = createAttributionService(win, ppLib);
 
   // =====================================================
   // CONSENT GATE

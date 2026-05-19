@@ -783,14 +783,14 @@ type MixpanelQueueData = {
 
         Utils.log('info', 'Initializing tracker v' + CONFIG.version);
 
-        // Initialize shared marketing attribution service (extracts params once)
-        if (ppLib.attribution) {
-          ppLib.attribution.configure({
-            persistFirstTouch: SafeUtils.get(CONFIG, 'attribution.persistAcrossSessions', false),
-            sessionTimeoutMs: SafeUtils.get(CONFIG, 'attribution.sessionTimeout', 30) * 60 * 1000,
-          });
-          ppLib.attribution.init();
-        }
+        // Phase 4 removed the standalone attribution service — marketing
+        // attribution capture now lives inside the shared event-properties
+        // builder (via captureUtmTouches). The builder is created by the
+        // common module and runs on first build() / getMarketingAttribution
+        // call, so no explicit init() is needed here. attribution.* config
+        // keys (persistAcrossSessions, sessionTimeout) are now no-ops in
+        // this code path; analytics-level attribution toggles below still
+        // gate dispatch.
 
         let currentParams: TrackedParams | null = null;
 

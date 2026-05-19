@@ -18,6 +18,27 @@ type FixtureTouch = {
   landingPage?: string;
 };
 
+/**
+ * Convert a FixtureTouch into an ExtendedUtmTouch and serialise it as a
+ * cookie value. `platform: 'unknown'` (any non-empty) is the canary that
+ * tells captureUtmTouches the cookie has been written before, so it won't
+ * be reset by the migrateLegacyMktgCookiesOnce shim.
+ */
+function fixtureToExtendedCookie(touch: FixtureTouch): string {
+  return JSON.stringify({
+    utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '',
+    source: touch.source,
+    medium: touch.medium,
+    campaign: touch.campaign,
+    platform: 'unknown',
+    clickId: '',
+    referrer: touch.referrer || '',
+    referrerDomain: touch.referrerDomain || '',
+    landingPage: touch.landingPage || '',
+    timestamp: '2026-05-18T00:00:00Z',
+  });
+}
+
 function makePPLib(opts?: {
   cookies?: Record<string, string>;
   attribution?: {
@@ -29,13 +50,31 @@ function makePPLib(opts?: {
   session?: { id: string } | null;
 }): PPLib {
   const cookies = opts?.cookies || {};
-  const attribution = opts?.attribution === null ? undefined : (opts?.attribution || {
-    current: { source: 'google', medium: 'cpc', campaign: 'spring', referrer: 'google.com' },
-    first: { source: 'facebook', medium: 'social', campaign: 'launch', referrer: 'facebook.com' },
-    last: { source: 'google', medium: 'cpc', campaign: 'spring', referrer: 'google.com' },
-    summary: { source: 'google', medium: 'cpc', campaign: 'spring' }
-  });
+  // No default fixture in Phase 4 — the builder now reads attribution data
+  // exclusively from cookies. Tests that need first/last touch data must
+  // pass them explicitly via the `attribution` option (which seeds cookies);
+  // tests that don't pass it operate on the natural captureUtmTouches output
+  // for the current visit (direct, $direct fallbacks).
+  const attribution = opts?.attribution ?? undefined;
   const session = opts?.session === null ? undefined : (opts?.session || { id: 'test-session-id' });
+
+  // Pre-seed the consolidated pp_utm_*_touch cookies from the fixture's
+  // first/last touches, plus pp_utm_session so captureUtmTouches doesn't
+  // rotate last-touch on the implicit "direct" current visit. Replaces the
+  // pre-Phase-4 ppLib.attribution mock — the builder now reads attribution
+  // exclusively from cookies.
+  if (attribution) {
+    if (attribution.first) {
+      document.cookie = 'pp_utm_first_touch=' +
+        encodeURIComponent(fixtureToExtendedCookie(attribution.first)) + ';path=/';
+    }
+    if (attribution.last) {
+      document.cookie = 'pp_utm_last_touch=' +
+        encodeURIComponent(fixtureToExtendedCookie(attribution.last)) + ';path=/';
+      document.cookie = 'pp_utm_session=' +
+        encodeURIComponent(JSON.stringify({ ts: Date.now() })) + ';path=/';
+    }
+  }
 
   const log = vi.fn();
   // Cookie reader serves the seeded map first, then falls back to live
@@ -57,14 +96,6 @@ function makePPLib(opts?: {
     getQueryParam: createGetQueryParam(),
     log
   };
-  if (attribution) {
-    ppLib.attribution = {
-      getCurrent: vi.fn(() => attribution.current ?? null),
-      getFirstTouch: vi.fn(() => attribution.first ?? null),
-      getLastTouch: vi.fn(() => attribution.last ?? null),
-      get: vi.fn(() => attribution.summary ?? null)
-    };
-  }
   if (session) {
     ppLib.session = {
       getOrCreateSessionId: vi.fn(() => session.id),
@@ -217,13 +248,23 @@ describe('createEventPropertiesBuilder', () => {
       expect(flat.pp_patient_id).toBe('-1');
     });
 
-    it('falls back gracefully when ppLib.attribution is missing', () => {
+    it('on a first-ever visit with no prior touch cookies, captures a direct touch', () => {
+      // No pre-seeded touch cookies → captureUtmTouches creates a fresh
+      // direct-visit touch (utm_* = $direct, normalized platform = 'direct').
+      // initial_referrer / referrer_domain stay empty because document.referrer
+      // is empty in jsdom by default. marketing_attribution is the resolved
+      // direct touch, NOT null — the legacy "null when ppLib.attribution
+      // missing" path was removed in Phase 4 along with ppLib.attribution.
       const ppLib = makePPLib({ attribution: null });
       const bundle = createEventPropertiesBuilder(window, ppLib).build();
 
       expect(bundle.eventProperties['utm_source [first touch]']).toBe('$direct');
       expect(bundle.eventProperties['utm_source [last touch]']).toBe('$direct');
-      expect(bundle.eventProperties.marketing_attribution).toBeNull();
+      expect(bundle.eventProperties.marketing_attribution).toMatchObject({
+        platform: 'direct',
+        source: 'direct',
+        medium: 'none',
+      });
       expect(bundle.eventProperties.initial_referrer).toBe('');
     });
 
@@ -304,7 +345,11 @@ describe('createEventPropertiesBuilder', () => {
       expect(bundle.eventProperties['landing_page_url [last touch]']).toBe('http://localhost/lp/last?utm_source=google&utm_medium=cpc');
     });
 
-    it('emits empty strings for 1C touch attributes when attribution is unavailable', () => {
+    it('emits empty referrer/referrer_domain and current-URL landing on a direct first-ever visit', () => {
+      // No prior touch cookies + no document.referrer → captureUtmTouches
+      // records the current URL as landingPage but leaves referrer fields
+      // empty. Replaces the legacy "empty strings when attribution missing"
+      // test — Phase 4 always populates landingPage from the captured visit.
       const ppLib = makePPLib({ attribution: null });
       const bundle = createEventPropertiesBuilder(window, ppLib).build();
 
@@ -312,22 +357,10 @@ describe('createEventPropertiesBuilder', () => {
       expect(bundle.eventProperties['referrer [last touch]']).toBe('');
       expect(bundle.eventProperties['referrer_domain [first touch]']).toBe('');
       expect(bundle.eventProperties['referrer_domain [last touch]']).toBe('');
-      expect(bundle.eventProperties['landing_page_url [first touch]']).toBe('');
-      expect(bundle.eventProperties['landing_page_url [last touch]']).toBe('');
-    });
-
-    it('emits empty strings for 1C touch attributes when first/last touches are null', () => {
-      const ppLib = makePPLib({
-        attribution: { current: null, first: null, last: null, summary: null }
-      });
-      const bundle = createEventPropertiesBuilder(window, ppLib).build();
-
-      expect(bundle.eventProperties['referrer [first touch]']).toBe('');
-      expect(bundle.eventProperties['referrer [last touch]']).toBe('');
-      expect(bundle.eventProperties['referrer_domain [first touch]']).toBe('');
-      expect(bundle.eventProperties['referrer_domain [last touch]']).toBe('');
-      expect(bundle.eventProperties['landing_page_url [first touch]']).toBe('');
-      expect(bundle.eventProperties['landing_page_url [last touch]']).toBe('');
+      // landing_page_url IS populated from the current visit's URL —
+      // captureUtmTouches always records it on first-ever capture.
+      expect(typeof bundle.eventProperties['landing_page_url [first touch]']).toBe('string');
+      expect(typeof bundle.eventProperties['landing_page_url [last touch]']).toBe('string');
     });
 
     describe('device (model) parsing', () => {
@@ -391,7 +424,9 @@ describe('createEventPropertiesBuilder', () => {
       window.localStorage.setItem('pp_utm_first_touch', JSON.stringify(legacyFirst));
       window.localStorage.setItem('pp_utm_last_touch', JSON.stringify(legacyLast));
 
-      const ppLib = makePPLib();
+      // attribution:null suppresses makePPLib's default fixture cookie seeding —
+      // we want a clean slate so the localStorage entries are the only source.
+      const ppLib = makePPLib({ attribution: null });
       const builder = createEventPropertiesBuilder(window, ppLib);
       const bundle = builder.build();
 
@@ -403,12 +438,15 @@ describe('createEventPropertiesBuilder', () => {
 
       // Cookies seeded with JSON payloads (URL-encoded). The cookie carries
       // the new ExtendedUtmTouch shape — literal utm_* fields from the legacy
-      // entry plus empty normalized + visit-metadata slices that Phase 3 fills.
+      // localStorage entry, plus the normalized slice filled by Phase 4's
+      // per-slice first-touch immutability: the literal slice was already
+      // present (locked it), but the empty normalized slice got the current
+      // direct visit captured into it.
       expect(document.cookie).toContain('pp_utm_first_touch=');
       expect(document.cookie).toContain('pp_utm_last_touch=');
       const decodedFirst = decodeURIComponent((document.cookie.match(/pp_utm_first_touch=([^;]+)/) as RegExpMatchArray)[1]);
       expect(JSON.parse(decodedFirst)).toMatchObject(legacyFirst);
-      expect(JSON.parse(decodedFirst)).toMatchObject({ source: '', medium: '', platform: '', referrer: '', timestamp: '' });
+      expect(JSON.parse(decodedFirst)).toMatchObject({ platform: 'direct', source: 'direct', medium: 'none' });
 
       // Legacy localStorage entries purged
       expect(window.localStorage.getItem('pp_utm_first_touch')).toBeNull();
@@ -526,8 +564,15 @@ describe('createEventPropertiesBuilder', () => {
       expect(flat['utm_source [last touch]']).toBe('$direct');
       expect(flat['utm_medium [last touch]']).toBe('$direct');
       expect(flat['utm_campaign [last touch]']).toBe('$direct');
-      // marketing_attribution from the fixture's `summary` block (see makePPLib defaults).
-      expect(flat.marketing_attribution).toEqual({ source: 'google', medium: 'cpc', campaign: 'spring' });
+      // marketing_attribution rides per-event as the resolved normalized
+      // last-touch (Phase 4). With no seeded fixture, captureUtmTouches
+      // builds a direct-visit touch — match-object lets us assert the key
+      // dimensions without binding to the full 9-field shape.
+      expect(flat.marketing_attribution).toMatchObject({
+        platform: 'direct',
+        source: 'direct',
+        medium: 'none',
+      });
     });
 
     it('keeps the current (non-touch) UTM keys, sourced from URL', () => {

@@ -856,19 +856,23 @@ describe('Campaign / UTM Attribution', () => {
 
       const loadedCallback = initAndGetLoadedCallback();
 
-      // Even with attribution returning a normalized "febpt" touch, the
-      // mixpanel super-property must remain $direct because there is no
-      // literal utm_source param in the URL.
-      window.ppLib.attribution.getLastTouch = vi.fn(() => ({
-        source: 'febpt',
-        medium: 'organic',
-        campaign: '',
-        platform: 'organic_search',
-        clickId: '',
-        landingPage: '/lp/',
+      // Even with the builder's normalized last-touch resolving "febpt" via
+      // the source= alias (captured by buildNormalizedTouch in the Phase 4
+      // consolidation), the mixpanel utm_*[last touch] super-properties must
+      // remain $direct because there is no literal utm_source param in the
+      // URL. Seeding the extended cookie with normalized-only data exercises
+      // exactly this separation.
+      document.cookie = 'pp_utm_last_touch=' + encodeURIComponent(JSON.stringify({
+        utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '',
+        source: 'febpt', medium: 'organic', campaign: '',
+        platform: 'organic_search', clickId: '',
         referrer: 'tagassistant.google.com',
+        referrerDomain: 'tagassistant.google.com',
+        landingPage: '/lp/',
         timestamp: '2026-05-05T00:00:00Z',
-      }));
+      })) + ';path=/';
+      document.cookie = 'pp_utm_session=' +
+        encodeURIComponent(JSON.stringify({ ts: Date.now() })) + ';path=/';
 
       const mp = createMockMixpanel();
       invokeLoadedCallback(loadedCallback, mp);

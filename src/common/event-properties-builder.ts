@@ -160,6 +160,12 @@ export interface EventPropertiesBuilder {
   getFirstTouchUtm: () => RawUtmTouch;
   /** Persisted last-touch utm_* — overwritten on every visit that has utm_* params. */
   getLastTouchUtm: () => RawUtmTouch;
+  /**
+   * Resolved marketing attribution (normalized source/medium/campaign/
+   * platform/clickId + visit metadata) for the current touch. Replaces
+   * `ppLib.attribution.get()`. Returns null before any capture has run.
+   */
+  getMarketingAttribution: () => Record<string, string> | null;
 }
 
 // Per Analytics events spec (3E): strip null / undefined / '' values from
@@ -1165,13 +1171,19 @@ export function createEventPropertiesBuilder(
    */
   function resolveNormalizedSlice(
     existingLastExt: ExtendedUtmTouch,
-    firstEver: boolean,
     currentTouch: NormalizedTouch,
     hasNewParams: boolean,
   ): NormalizedTouch {
+    // "first-ever" for the normalized slice keys off `platform` (always
+    // non-empty after a real write — even direct visits get 'direct'). The
+    // literal utm_* slice has its own first-ever check via isFirstEverCapture;
+    // the two slices rotate independently because the consolidated cookie
+    // can be in mixed states (e.g. legacy localStorage migration seeds only
+    // utm_*; pp_mktg_* migration seeds only normalized).
+    const normalizedFirstEver = !existingLastExt.platform;
     const sessionActive = isUtmSessionActive();
     const selfReferral = isSelfReferralFromUrl(currentTouch.referrer);
-    if (firstEver || hasNewParams || (!sessionActive && !selfReferral)) {
+    if (normalizedFirstEver || hasNewParams || (!sessionActive && !selfReferral)) {
       return currentTouch;
     }
     return {
@@ -1225,7 +1237,7 @@ export function createEventPropertiesBuilder(
     const currentTouch = buildNormalizedTouch(win, params);
     const hasNewParams = hasNewTrafficParams(params);
     const resolvedNormalized = resolveNormalizedSlice(
-      existingLastExt, firstEver, currentTouch, hasNewParams,
+      existingLastExt, currentTouch, hasNewParams,
     );
 
     // === Combine and persist last-touch ===
@@ -1247,20 +1259,80 @@ export function createEventPropertiesBuilder(
     };
     persistExtended(UTM_LAST_TOUCH_KEY, resolvedLastExt);
 
-    // === First-touch immutability — load-bearing ===
+    // === First-touch immutability — load-bearing, per-slice ===
     // First touch is written exactly ONCE per cookie horizon (2 years) and
-    // never overwritten. The `if (!existing)` guard is the load-bearing line;
-    // do not remove without data-team sign-off. Mirrors the legacy
-    // attribution.ts contract. Seed FROM the resolved last-touch so the
-    // first-touch and last-touch agree on the first visit's attribution.
-    if (isFirstEverCapture(projectToRaw(existingFirstExt))) {
-      persistExtended(UTM_FIRST_TOUCH_KEY, resolvedLastExt);
+    // never overwritten. The guards are load-bearing; do not remove without
+    // data-team sign-off. Mirrors the legacy attribution.ts contract.
+    //
+    // Per-SLICE immutability: the literal utm_* slice and the normalized
+    // slice can be filled at different times (legacy localStorage migrated
+    // only utm_*; pp_mktg_* migration only fills normalized). Each slice
+    // stays locked once it has data, but an empty slice on first-touch
+    // still accepts the current capture. This mirrors the pre-consolidation
+    // shape where pp_utm_first_touch and pp_mktg_first_touch were
+    // independently immutable.
+    const literalSliceEmpty = isFirstEverCapture(projectToRaw(existingFirstExt));
+    const normalizedSliceEmpty = !existingFirstExt.platform;
+    if (literalSliceEmpty || normalizedSliceEmpty) {
+      persistExtended(UTM_FIRST_TOUCH_KEY, {
+        utm_source: literalSliceEmpty ? resolvedLastExt.utm_source : existingFirstExt.utm_source,
+        utm_medium: literalSliceEmpty ? resolvedLastExt.utm_medium : existingFirstExt.utm_medium,
+        utm_campaign: literalSliceEmpty ? resolvedLastExt.utm_campaign : existingFirstExt.utm_campaign,
+        utm_content: literalSliceEmpty ? resolvedLastExt.utm_content : existingFirstExt.utm_content,
+        utm_term: literalSliceEmpty ? resolvedLastExt.utm_term : existingFirstExt.utm_term,
+        source: normalizedSliceEmpty ? resolvedLastExt.source : existingFirstExt.source,
+        medium: normalizedSliceEmpty ? resolvedLastExt.medium : existingFirstExt.medium,
+        campaign: normalizedSliceEmpty ? resolvedLastExt.campaign : existingFirstExt.campaign,
+        platform: normalizedSliceEmpty ? resolvedLastExt.platform : existingFirstExt.platform,
+        clickId: normalizedSliceEmpty ? resolvedLastExt.clickId : existingFirstExt.clickId,
+        referrer: normalizedSliceEmpty ? resolvedLastExt.referrer : existingFirstExt.referrer,
+        referrerDomain: normalizedSliceEmpty ? resolvedLastExt.referrerDomain : existingFirstExt.referrerDomain,
+        landingPage: normalizedSliceEmpty ? resolvedLastExt.landingPage : existingFirstExt.landingPage,
+        timestamp: normalizedSliceEmpty ? resolvedLastExt.timestamp : existingFirstExt.timestamp,
+      });
     }
 
     // === Touch session ===
     // Re-anchors the 30-min window so subsequent same-session captures see
     // sessionActive=true and skip the normalized-slice rotation.
     touchUtmSession();
+  }
+
+  /**
+   * Build the `marketing_attribution` super-property / event-property value
+   * from a resolved extended last-touch cookie. Returns null when the
+   * normalized slice is empty (canary: `platform`), which happens before
+   * captureUtmTouches has run on the current builder instance. Replaces the
+   * pre-Phase-4 path through `ppLib.attribution.get()`. The shape mirrors
+   * the legacy MarketingAttribution flat surface — no `firstTouch` /
+   * `lastTouch` nested objects (those were always-off in production and
+   * the only configure() callers never enabled them).
+   */
+  function buildMarketingAttributionFromExt(ext: ExtendedUtmTouch): Record<string, string> | null {
+    if (!ext.platform) return null;
+    return {
+      source: ext.source,
+      medium: ext.medium,
+      campaign: ext.campaign,
+      platform: ext.platform,
+      clickId: ext.clickId,
+      landingPage: ext.landingPage,
+      referrer: ext.referrer,
+      referrerDomain: ext.referrerDomain,
+      timestamp: ext.timestamp,
+    };
+  }
+
+  /**
+   * Public accessor for the resolved marketing attribution. Used by the
+   * mixpanel module to register `marketingAttribution` as a super-property
+   * inside the `loaded` callback (where mp is guaranteed live, so no
+   * polling needed). Triggers captureUtmTouches so the cookie is resolved
+   * on demand — order-independent with build().
+   */
+  function getMarketingAttribution(): Record<string, string> | null {
+    captureUtmTouches();
+    return buildMarketingAttributionFromExt(readStoredExtended(UTM_LAST_TOUCH_KEY));
   }
 
   // Each getter triggers captureUtmTouches() so the persistence runs on the
@@ -1310,16 +1382,15 @@ export function createEventPropertiesBuilder(
     const appAuth = ppLib.getCookie(cookieNames.appAuth) || '';
     const isLoggedIn = appAuth === 'true' || (!!userId && userId !== '-1' && !!patientId);
 
-    // Literal utm_* params — intentionally NOT routed through the attribution
-    // service's normalization, so e.g. `?source=febpt` does NOT populate
-    // utm_source. The attribution service still normalizes for
-    // marketing_attribution below.
+    // Literal utm_* params — intentionally NOT routed through the normalized
+    // resolver, so e.g. `?source=febpt` does NOT populate utm_source. The
+    // normalized slice of the same extended cookie carries the alias-resolved
+    // view for marketing_attribution / referrer / landing_page bracket props.
     const currentUtm = readUtmFromUrl();
-    const firstUtm = readStoredUtm(UTM_FIRST_TOUCH_KEY);
-    const lastUtm = readStoredUtm(UTM_LAST_TOUCH_KEY);
-
-    const firstTouchAttr = ppLib.attribution ? ppLib.attribution.getFirstTouch() : null;
-    const lastTouchAttr = ppLib.attribution ? ppLib.attribution.getLastTouch() : null;
+    const firstExt = readStoredExtended(UTM_FIRST_TOUCH_KEY);
+    const lastExt = readStoredExtended(UTM_LAST_TOUCH_KEY);
+    const firstUtm = projectToRaw(firstExt);
+    const lastUtm = projectToRaw(lastExt);
 
     const userProperties: BuiltUserProperties = {
       userId: userId,
@@ -1376,23 +1447,26 @@ export function createEventPropertiesBuilder(
       device_type: stable.device_type,
       device: stable.device,
       referrer: extractDomain(win.document.referrer),
-      // initial_referrer still comes from the attribution service's first-touch
-      // (referrer is not a UTM concept).
-      initial_referrer: firstTouchAttr ? firstTouchAttr.referrer : '',
+      // initial_referrer comes from the first-touch cookie's normalized slice
+      // (referrer is not a UTM concept). Empty string when first-touch hasn't
+      // been captured yet (i.e. build() called before captureUtmTouches).
+      initial_referrer: firstExt.referrer,
 
       // Marketing attribution — the normalized view (handles source=, gclid, …).
-      [MARKETING_ATTRIBUTION_KEY]: ppLib.attribution ? ppLib.attribution.get() : null,
+      // Built inline from the resolved last-touch cookie; session-veto +
+      // self-referral logic has already been applied by captureUtmTouches.
+      [MARKETING_ATTRIBUTION_KEY]: buildMarketingAttributionFromExt(lastExt),
 
       // 1C touch attributes (data-team contract). Distinct from utm_*: the
-      // attribution service captures these once per touch (first + last),
+      // normalized slice captures these once per touch (first + last),
       // including the full referring URL, its hostname, and the full
       // landing-page URL. Mirrors the bracket convention used for utm_*.
-      'referrer [first touch]': firstTouchAttr ? firstTouchAttr.referrer : '',
-      'referrer [last touch]': lastTouchAttr ? lastTouchAttr.referrer : '',
-      'referrer_domain [first touch]': firstTouchAttr ? firstTouchAttr.referrerDomain : '',
-      'referrer_domain [last touch]': lastTouchAttr ? lastTouchAttr.referrerDomain : '',
-      'landing_page_url [first touch]': firstTouchAttr ? firstTouchAttr.landingPage : '',
-      'landing_page_url [last touch]': lastTouchAttr ? lastTouchAttr.landingPage : '',
+      'referrer [first touch]': firstExt.referrer,
+      'referrer [last touch]': lastExt.referrer,
+      'referrer_domain [first touch]': firstExt.referrerDomain,
+      'referrer_domain [last touch]': lastExt.referrerDomain,
+      'landing_page_url [first touch]': firstExt.landingPage,
+      'landing_page_url [last touch]': lastExt.landingPage,
     };
 
     const page: BuiltPage = {
@@ -1493,6 +1567,7 @@ export function createEventPropertiesBuilder(
     buildNested: buildNested,
     getCurrentUtm: getCurrentUtm,
     getFirstTouchUtm: getFirstTouchUtm,
-    getLastTouchUtm: getLastTouchUtm
+    getLastTouchUtm: getLastTouchUtm,
+    getMarketingAttribution: getMarketingAttribution,
   };
 }

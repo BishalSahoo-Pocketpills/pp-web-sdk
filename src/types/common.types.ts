@@ -112,7 +112,6 @@ export interface PPLib {
   safeLogError: (err: unknown) => import('../common/log-sanitize').SafeLogErrorResult;
   extend: <T extends object, U>(target: T, source: U) => T & U;
   ready: (callback: (ppLib: PPLib) => void) => void;
-  attribution: import('../common/attribution').AttributionService;
   // Unified consent gate. Dispatch sites (mixpanel.track facade, ecommerce
   // pushes, event-source dispatches) call `consent.isGranted()` before
   // sending. Default mode is opt-out — flip to 'opt-in' for GDPR regions.

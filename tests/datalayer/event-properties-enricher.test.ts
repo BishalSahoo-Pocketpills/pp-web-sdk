@@ -4,11 +4,39 @@ import { createGetQueryParam } from '../../src/common/url';
 import { createSetCookie, createDeleteCookie } from '../../src/common/cookies';
 import type { PPLib } from '../../src/types/common.types';
 
+/**
+ * Seed a pp_utm_first_touch / pp_utm_last_touch cookie with given normalized
+ * data so tests can reproduce the pre-Phase-4 ppLib.attribution fixture
+ * behaviour. `platform: 'unknown'` is a non-empty canary that flags the
+ * cookie as already-written (suppresses the mktg migration shim and lets
+ * the session veto carry the data forward when pp_utm_session is active).
+ */
+function seedTouchCookie(cookieName: string, data: { source: string; medium: string; campaign: string; referrer: string; referrerDomain?: string; landingPage?: string }): void {
+  const payload = {
+    utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '',
+    source: data.source,
+    medium: data.medium,
+    campaign: data.campaign,
+    platform: 'unknown',
+    clickId: '',
+    referrer: data.referrer,
+    referrerDomain: data.referrerDomain || '',
+    landingPage: data.landingPage || '',
+    timestamp: '2026-05-18T00:00:00Z',
+  };
+  document.cookie = cookieName + '=' + encodeURIComponent(JSON.stringify(payload)) + ';path=/';
+}
+
+function seedActiveSession(): void {
+  document.cookie = 'pp_utm_session=' +
+    encodeURIComponent(JSON.stringify({ ts: Date.now() })) + ';path=/';
+}
+
 function makePPLib(cookies?: Record<string, string>): PPLib {
   const log = vi.fn();
   // Read-through getCookie: serves the seeded cookies map first, then falls
   // back to live document.cookie so PersistentValue-managed entries (e.g.
-  // pp_device_id) round-trip.
+  // pp_device_id, pp_utm_*) round-trip.
   const getCookieReal = (name: string): string | null => {
     if (cookies && Object.prototype.hasOwnProperty.call(cookies, name)) return cookies[name];
     try {
@@ -26,12 +54,6 @@ function makePPLib(cookies?: Record<string, string>): PPLib {
     session: {
       getOrCreateSessionId: vi.fn(() => 'test-session-id'),
       clearSession: vi.fn(),
-    },
-    attribution: {
-      getCurrent: vi.fn(() => ({ source: 'google', medium: 'cpc', campaign: 'spring', referrer: 'google.com' })),
-      getFirstTouch: vi.fn(() => ({ source: 'facebook', medium: 'social', campaign: 'launch', referrer: 'facebook.com' })),
-      getLastTouch: vi.fn(() => ({ source: 'google', medium: 'cpc', campaign: 'spring', referrer: 'google.com' })),
-      get: vi.fn(() => ({ source: 'google', medium: 'cpc', campaign: 'spring', platform: 'google_ads' })),
     },
     log,
   } as unknown as PPLib;
@@ -61,26 +83,46 @@ function makeStripConfig() {
 }
 
 describe('createEventPropertiesEnricher', () => {
+  // Captured at module load — restored in beforeEach so URL pollution from a
+  // failing test can't leak utm_* into the next test's captureUtmTouches.
+  const baselineURL = document.URL;
+
   beforeEach(() => {
     localStorage.clear();
-    // Clear cookies — PersistentValue now uses cookies for pp_device_id,
-    // so test isolation needs them wiped alongside localStorage.
+    // Clear cookies — PersistentValue now uses cookies for pp_device_id and
+    // pp_utm_*, so test isolation needs them wiped alongside localStorage.
     document.cookie.split(';').forEach(c => {
       const name = c.split('=')[0].trim();
       if (name) document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+    });
+    Object.defineProperty(document, 'URL', {
+      value: baselineURL, writable: true, configurable: true,
     });
   });
 
   it('adds all required eventProperties to events', () => {
     // utm_* keys are sourced literally from URL (not from attribution
     // service), so stub document.URL for the assertions to land.
-    const originalURL = document.URL;
     Object.defineProperty(document, 'URL', {
       value: 'http://localhost/test?utm_source=google&utm_medium=cpc&utm_campaign=spring',
       writable: true,
       configurable: true,
     });
     window.localStorage.clear();
+
+    // Seed first-touch with a facebook referrer so the initial_referrer
+    // assertion below picks it up. captureUtmTouches sees the existing
+    // populated cookie and the active session marker, so it carries the
+    // normalized slice forward instead of overwriting it.
+    seedTouchCookie('pp_utm_first_touch', {
+      source: 'facebook', medium: 'social', campaign: 'launch',
+      referrer: 'facebook.com',
+    });
+    seedTouchCookie('pp_utm_last_touch', {
+      source: 'google', medium: 'cpc', campaign: 'spring',
+      referrer: 'google.com',
+    });
+    seedActiveSession();
 
     const ppLib = makePPLib({ userId: '42', patientId: '99', app_is_authenticated: 'true', country: 'CA' });
     const enricher = createEventPropertiesEnricher(window, ppLib, makeConfig());
@@ -142,11 +184,7 @@ describe('createEventPropertiesEnricher', () => {
     expect(typeof arg.page.title).toBe('string');
     expect(typeof arg.page.referrer).toBe('string');
 
-    Object.defineProperty(document, 'URL', {
-      value: originalURL,
-      writable: true,
-      configurable: true,
-    });
+    // (URL is restored by the next beforeEach.)
   });
 
   it('pp_distinct_id falls back to device_id when not logged in', () => {
@@ -173,9 +211,12 @@ describe('createEventPropertiesEnricher', () => {
     expect(arg.eventProperties).toBeUndefined();
   });
 
-  it('handles missing attribution service gracefully', () => {
+  it('uses $direct fallbacks for utm_* when no URL params and no prior touch cookies', () => {
+    // Phase 4 removed the ppLib.attribution service entirely; this test now
+    // verifies the equivalent fallback behaviour: clean cookies + URL with
+    // no utm_* params → every utm_* key in the bundle resolves to '$direct'
+    // via captureUtmTouches's first-ever resolver.
     const ppLib = makePPLib();
-    (ppLib as any).attribution = undefined;
     const enricher = createEventPropertiesEnricher(window, ppLib, makeConfig());
     const mockPush = vi.fn(() => 1);
 
