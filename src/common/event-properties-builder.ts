@@ -393,6 +393,293 @@ function defaultCookieNames(): EventPropertiesBuilderCookieNames {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Normalized touch helpers — formerly in src/common/attribution.ts, moved
+// here so the builder can populate the `pp_utm_*` cookie's normalized slice
+// directly (Phase 3). All helpers are pure / parameterized so attribution.ts
+// can still call them during the consolidation window without instantiating
+// the builder. Phase 5 will delete attribution.ts entirely.
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalized + visit-metadata slice of an ExtendedUtmTouch — the shape
+ * formerly known as `TouchAttribution` in attribution.ts. Kept as its own
+ * type so callers that don't care about the literal utm_* slice can pass
+ * just this around.
+ */
+export type NormalizedTouch = {
+  source: string;
+  medium: string;
+  campaign: string;
+  platform: string;
+  clickId: string;
+  referrer: string;
+  referrerDomain: string;
+  landingPage: string;
+  timestamp: string;
+};
+
+// Click-ID → ad platform map. Order matters within an entry (the first
+// matching param wins for clickId extraction); across entries, evaluation
+// order matches the data-team's documented precedence.
+export const CLICK_ID_PLATFORM_MAP: ReadonlyArray<{ params: string[]; platform: string }> = [
+  { params: ['gclid', 'gclsrc', 'dclid', 'wbraid', 'gbraid'], platform: 'google_ads' },
+  { params: ['fbclid'], platform: 'meta_ads' },
+  { params: ['ttclid'], platform: 'tiktok_ads' },
+  { params: ['msclkid'], platform: 'microsoft_ads' },
+  { params: ['li_fat_id'], platform: 'linkedin_ads' },
+  { params: ['twclid'], platform: 'twitter_ads' },
+  { params: ['epik'], platform: 'pinterest_ads' },
+  { params: ['sccid'], platform: 'snapchat_ads' },
+];
+
+// Used by `detectPlatform`'s priority-3 referrer-based classification. Kept
+// distinct from `SEARCH_ENGINE_PATTERNS` above: that one feeds the 5-step UTM
+// resolver (utm_source = engine NAME), while these substrings only need to
+// answer "is this an organic search referrer?" for the normalized platform
+// field. The two lists agree on the common cases but evolved separately.
+export const ORGANIC_SEARCH_DOMAINS: ReadonlyArray<string> = ['google.', 'bing.', 'yahoo.', 'duckduckgo.', 'baidu.', 'yandex.'];
+export const ORGANIC_SOCIAL_DOMAINS: ReadonlyArray<string> = ['facebook.', 'instagram.', 'twitter.', 'x.com', 'linkedin.', 'tiktok.', 'pinterest.', 'reddit.'];
+
+// Custom param aliases — non-standard query params that map onto the
+// canonical UTM dimensions for normalization. E.g. `?source=febpt` populates
+// the normalized `source` field even when no `utm_source` is present.
+// Critically, aliases do NOT influence platform detection (see buildNormalizedTouch
+// — platform comes from known click IDs / utm_source / referrer only).
+export const SOURCE_ALIASES: ReadonlyArray<string> = ['source', 'src', 'ref'];
+export const MEDIUM_ALIASES: ReadonlyArray<string> = ['medium', 'channel'];
+export const CAMPAIGN_ALIASES: ReadonlyArray<string> = ['campaign', 'camp', 'promo'];
+
+/** Marketing-relevant param keys — used by `hasNewTrafficParams` to decide
+ *  whether a visit should rotate last-touch attribution regardless of session
+ *  state. Includes UTM, every known click ID, and the custom aliases. */
+const MARKETING_PARAM_KEYS: ReadonlyArray<string> = [
+  'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+  'gclid', 'gclsrc', 'dclid', 'wbraid', 'gbraid', 'fbclid', 'ttclid',
+  'msclkid', 'li_fat_id', 'twclid', 'epik', 'sccid',
+  ...SOURCE_ALIASES, ...MEDIUM_ALIASES, ...CAMPAIGN_ALIASES,
+];
+
+/**
+ * Extract sanitized URL params keyed by lowercase name. Sanitization runs
+ * through `ppLib.Security.sanitize` (strips known XSS / control sequences).
+ * Failures are logged and yield an empty map — callers must treat the result
+ * as best-effort.
+ */
+export function extractParams(
+  win: Window & typeof globalThis,
+  ppLib: PPLib,
+): Record<string, string> {
+  const params: Record<string, string> = {};
+  try {
+    const searchParams = new URLSearchParams(win.location.search || '');
+    searchParams.forEach(function(value, key) {
+      const sanitized = ppLib.Security.sanitize(value);
+      if (sanitized) {
+        params[key.toLowerCase()] = sanitized;
+      }
+    });
+  } catch (e) {
+    ppLib.log('warn', '[ppAttribution] Failed to parse URL params', e);
+  }
+  return params;
+}
+
+/**
+ * Platform inference cascade. Priority:
+ *   1. Click ID present → vendor-specific platform (`google_ads`, `meta_ads`, …).
+ *   2. `utm_source` mapped to vendor with paid/organic split keyed off
+ *      `utm_medium` (cpc/cpm/paid/paid_social/ppc → `_ads` variant).
+ *   3. Referrer-based detection: organic_search / organic_social / referral.
+ *   4. Fallback: 'direct'.
+ *
+ * `referrer` is the CLASSIFIED referrer ('direct'/'internal'/'unknown'/host),
+ * not a raw URL — see `classifyReferrerForPlatform`.
+ */
+export function detectPlatform(params: Record<string, string>, referrer: string): string {
+  // Priority 1: Click ID detection
+  for (let i = 0; i < CLICK_ID_PLATFORM_MAP.length; i++) {
+    const entry = CLICK_ID_PLATFORM_MAP[i];
+    for (let j = 0; j < entry.params.length; j++) {
+      if (params[entry.params[j]]) {
+        return entry.platform;
+      }
+    }
+  }
+
+  // Priority 2: utm_source mapping
+  const utmSource = params.utm_source;
+  if (utmSource) {
+    const lower = utmSource.toLowerCase();
+    const medium = (params.utm_medium || '').toLowerCase();
+    const isPaid = medium === 'cpc' || medium === 'cpm' || medium === 'paid_social' || medium === 'paid' || medium === 'ppc';
+
+    if (lower === 'google') return isPaid ? 'google_ads' : 'google';
+    if (lower === 'facebook' || lower === 'fb') return isPaid ? 'meta_ads' : 'facebook';
+    if (lower === 'instagram' || lower === 'ig') return isPaid ? 'meta_ads' : 'instagram';
+    if (lower === 'tiktok') return isPaid ? 'tiktok_ads' : 'tiktok';
+    if (lower === 'bing' || lower === 'microsoft') return isPaid ? 'microsoft_ads' : 'bing';
+    if (lower === 'linkedin') return isPaid ? 'linkedin_ads' : 'linkedin';
+    if (lower === 'twitter' || lower === 'x') return isPaid ? 'twitter_ads' : 'twitter';
+    if (lower === 'pinterest') return isPaid ? 'pinterest_ads' : 'pinterest';
+    if (lower === 'snapchat') return isPaid ? 'snapchat_ads' : 'snapchat';
+    return lower;
+  }
+
+  // Priority 3: Referrer-based detection
+  if (referrer && referrer !== 'direct' && referrer !== 'internal' && referrer !== 'unknown') {
+    const refLower = referrer.toLowerCase();
+    for (let s = 0; s < ORGANIC_SEARCH_DOMAINS.length; s++) {
+      if (refLower.indexOf(ORGANIC_SEARCH_DOMAINS[s]) !== -1) return 'organic_search';
+    }
+    for (let o = 0; o < ORGANIC_SOCIAL_DOMAINS.length; o++) {
+      if (refLower.indexOf(ORGANIC_SOCIAL_DOMAINS[o]) !== -1) return 'organic_social';
+    }
+    return 'referral';
+  }
+
+  return 'direct';
+}
+
+export function extractClickId(params: Record<string, string>): string {
+  for (let i = 0; i < CLICK_ID_PLATFORM_MAP.length; i++) {
+    const entry = CLICK_ID_PLATFORM_MAP[i];
+    for (let j = 0; j < entry.params.length; j++) {
+      const val = params[entry.params[j]];
+      if (val) return val;
+    }
+  }
+  return '';
+}
+
+/**
+ * Classifier used ONLY for platform detection (`detectPlatform`). Returns
+ * one of: 'direct', 'internal', 'unknown', or the referrer hostname. The
+ * three-label space is what `detectPlatform` switches on — passing the raw
+ * URL would defeat the organic-search/social heuristics.
+ *
+ * The stored TouchAttribution.referrer / ExtendedUtmTouch.referrer field
+ * stores the FULL URL (see buildNormalizedTouch); this helper is intentionally
+ * separate.
+ */
+export function classifyReferrerForPlatform(win: Window & typeof globalThis): string {
+  try {
+    const ref = win.document.referrer || '';
+    if (!ref) return 'direct';
+
+    const refHost = new URL(ref).hostname;
+    const currentHost = win.location.hostname;
+
+    if (refHost === currentHost) return 'internal';
+    return refHost;
+  } catch (e) {
+    return 'unknown';
+  }
+}
+
+/** Strip the URL fragment (`#...`) from a href. Defense-in-depth against
+ *  credential leakage (OAuth implicit-flow access_tokens, session keys)
+ *  ending up persisted in landingPage cookies for years. */
+export function stripFragment(href: string): string {
+  if (!href) return href;
+  const idx = href.indexOf('#');
+  return idx === -1 ? href : href.slice(0, idx);
+}
+
+/** Extract the hostname from a referrer URL. Returns '' for empty input
+ *  or unparseable URLs — never throws. */
+export function extractReferrerDomain(referrer: string): string {
+  if (!referrer) return '';
+  try {
+    return new URL(referrer).hostname || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * Derive a default `medium` value when no `utm_medium` is present, keyed off
+ * the detected platform. Mirrors GA4's auto-tagging conventions so funnels
+ * stay aligned across tools.
+ */
+export function inferMedium(params: Record<string, string>, platform: string): string {
+  if (params.utm_medium) return params.utm_medium;
+  if (platform.endsWith('_ads')) return 'cpc';
+  if (platform === 'organic_search') return 'organic';
+  if (platform === 'organic_social') return 'social';
+  if (platform === 'referral') return 'referral';
+  if (platform === 'direct') return 'none';
+  return '';
+}
+
+/**
+ * Resolve a UTM dimension's value from the params map, with primary-then-alias
+ * fallback. Used to honour `?source=febpt` / `?channel=email` etc. without
+ * conflating them with the literal utm_* slice.
+ */
+export function resolveParam(params: Record<string, string>, primary: string, aliases: ReadonlyArray<string>): string {
+  if (params[primary]) return params[primary];
+  for (let i = 0; i < aliases.length; i++) {
+    if (params[aliases[i]]) return params[aliases[i]];
+  }
+  return '';
+}
+
+/**
+ * Detect whether the current visit carries any marketing-relevant params —
+ * UTM keys, click IDs, or custom aliases. Used by Phase 3's init() to decide
+ * whether to rotate last-touch regardless of session / self-referral state.
+ */
+export function hasNewTrafficParams(params: Record<string, string>): boolean {
+  for (let i = 0; i < MARKETING_PARAM_KEYS.length; i++) {
+    if (params[MARKETING_PARAM_KEYS[i]]) return true;
+  }
+  return false;
+}
+
+/**
+ * Build the normalized + visit-metadata slice for the current visit. Mirrors
+ * the former `attribution.ts#buildTouch` exactly — same field set, same
+ * normalization, same fragment-stripping invariant. Returned shape is
+ * structurally identical to the legacy `TouchAttribution` so attribution.ts
+ * can keep using it during the consolidation window.
+ */
+export function buildNormalizedTouch(
+  win: Window & typeof globalThis,
+  params: Record<string, string>,
+): NormalizedTouch {
+  // Two referrer views: the classifier feeds platform detection (which keys
+  // on 'direct'/'internal' and hostname-substring matches), while the stored
+  // referrer field is the FULL URL for downstream analytics joins.
+  const referrerClass = classifyReferrerForPlatform(win);
+  const referrerUrl = (win.document && win.document.referrer) || '';
+  const referrerDomain = extractReferrerDomain(referrerUrl);
+  const source = resolveParam(params, 'utm_source', SOURCE_ALIASES);
+  const medium = resolveParam(params, 'utm_medium', MEDIUM_ALIASES);
+  const campaign = resolveParam(params, 'utm_campaign', CAMPAIGN_ALIASES);
+
+  // Detect platform from click IDs, utm_source (NOT custom aliases), or referrer.
+  // Custom aliases like ?source=febpt populate the source field but should NOT
+  // override platform detection — platform should come from known signals only.
+  const platform = detectPlatform(params, referrerClass);
+
+  return {
+    source: source || (platform !== 'direct' ? platform.replace('_ads', '').replace('_', '') : 'direct'),
+    medium: medium || inferMedium(params, platform),
+    campaign: campaign,
+    platform: platform,
+    clickId: extractClickId(params),
+    // landingPage: full URL with query string, fragment STRIPPED.
+    // OAuth implicit-flow auth tokens land in `#access_token=...`; persisting
+    // those for 2 years in a cookie is a credential-leak vector. Query string
+    // is preserved (UTM / marketing params live there).
+    landingPage: stripFragment((win.location && win.location.href) || '/'),
+    referrer: referrerUrl,
+    referrerDomain: referrerDomain,
+    timestamp: new Date().toISOString(),
+  };
+}
+
 export function createEventPropertiesBuilder(
   win: Window & typeof globalThis,
   ppLib: PPLib
