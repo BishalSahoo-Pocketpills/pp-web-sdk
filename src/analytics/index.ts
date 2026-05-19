@@ -783,14 +783,15 @@ type MixpanelQueueData = {
 
         Utils.log('info', 'Initializing tracker v' + CONFIG.version);
 
-        // Phase 4 removed the standalone attribution service — marketing
-        // attribution capture now lives inside the shared event-properties
-        // builder (via captureUtmTouches). The builder is created by the
-        // common module and runs on first build() / getMarketingAttribution
-        // call, so no explicit init() is needed here. attribution.* config
-        // keys (persistAcrossSessions, sessionTimeout) are now no-ops in
-        // this code path; analytics-level attribution toggles below still
-        // gate dispatch.
+        // Marketing attribution capture lives inside the shared
+        // event-properties builder (via captureUtmTouches). The builder is
+        // created by the common module and runs on first build() /
+        // getMarketingAttribution call, so no explicit init() is needed
+        // here. The attribution.* config keys below (autoCapture,
+        // enableFirstTouch, persistAcrossSessions, etc.) gate this module's
+        // own first/last-touch storage in Storage.set('first_touch'), which
+        // is a separate analytics-level system that predates the
+        // event-properties builder.
 
         let currentParams: TrackedParams | null = null;
 

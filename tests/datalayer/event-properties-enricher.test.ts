@@ -55,8 +55,8 @@ function makePPLib(cookies?: Record<string, string>): PPLib {
       getOrCreateSessionId: vi.fn(() => 'test-session-id'),
       clearSession: vi.fn(),
     },
-    // Phase 4 routed marketing attribution through the builder, which calls
-    // ppLib.Security.sanitize on every URL param before normalization.
+    // The builder calls ppLib.Security.sanitize on every URL param before
+    // normalization (via extractParams); tests use an identity stub.
     Security: { sanitize: (v: string) => v },
     log,
   } as unknown as PPLib;
@@ -215,10 +215,10 @@ describe('createEventPropertiesEnricher', () => {
   });
 
   it('uses $direct fallbacks for utm_* when no URL params and no prior touch cookies', () => {
-    // Phase 4 removed the ppLib.attribution service entirely; this test now
-    // verifies the equivalent fallback behaviour: clean cookies + URL with
-    // no utm_* params → every utm_* key in the bundle resolves to '$direct'
-    // via captureUtmTouches's first-ever resolver.
+    // ppLib.attribution was retired in favour of the builder. With clean
+    // cookies and a URL carrying no utm_* params, every utm_* key in the
+    // bundle resolves to '$direct' via captureUtmTouches's first-ever
+    // resolver.
     const ppLib = makePPLib();
     const enricher = createEventPropertiesEnricher(window, ppLib, makeConfig());
     const mockPush = vi.fn(() => 1);

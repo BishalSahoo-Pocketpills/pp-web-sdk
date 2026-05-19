@@ -857,11 +857,11 @@ describe('Campaign / UTM Attribution', () => {
       const loadedCallback = initAndGetLoadedCallback();
 
       // Even with the builder's normalized last-touch resolving "febpt" via
-      // the source= alias (captured by buildNormalizedTouch in the Phase 4
-      // consolidation), the mixpanel utm_*[last touch] super-properties must
-      // remain $direct because there is no literal utm_source param in the
-      // URL. Seeding the extended cookie with normalized-only data exercises
-      // exactly this separation.
+      // the source= alias (captured by buildNormalizedTouch), the mixpanel
+      // utm_*[last touch] super-properties must remain $direct because
+      // there is no literal utm_source param in the URL. Seeding the
+      // extended cookie with normalized-only data exercises exactly this
+      // separation.
       document.cookie = 'pp_utm_last_touch=' + encodeURIComponent(JSON.stringify({
         utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '',
         source: 'febpt', medium: 'organic', campaign: '',
