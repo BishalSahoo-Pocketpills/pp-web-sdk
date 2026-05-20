@@ -141,6 +141,15 @@ export type ExtendedUtmTouch = RawUtmTouch & {
   referrerDomain: string;
   landingPage: string;
   timestamp: string;
+  /**
+   * Session anchor for normalized last-touch rotation. Inlined from the
+   * (now-retired) standalone `pp_utm_session` cookie. Refreshed on every
+   * captureUtmTouches; treated as "session inactive" when 0 or > 30 min old.
+   *
+   * Carried on pp_utm_last_touch only — on pp_utm_first_touch it's persisted
+   * but never read (first-touch is locked, no rotation logic depends on it).
+   */
+  sessionTs: number;
 };
 
 export interface EventPropertiesBuilder {
@@ -320,11 +329,12 @@ const UTM_FIRST_TOUCH_MAX_AGE_SECONDS = 63072000;
 // Last touch UTM — 30 days. Matches the standard Mixpanel/GA "last touch"
 // attribution window so analytics tools agree on which campaign gets credit.
 const UTM_LAST_TOUCH_MAX_AGE_SECONDS = 2592000;
-// Session marker — 30 minutes. Gates rotation of the pp_utm_*_touch
+// Session window — 30 minutes. Gates rotation of the pp_utm_*_touch
 // normalized slice (see captureUtmTouches): last-touch only refreshes when
-// (a) new traffic params on the URL, or (b) the session has expired AND the
-// referrer isn't self-referral.
-const UTM_SESSION_KEY = 'pp_utm_session';
+// (a) new traffic params on the URL, or (b) the session has expired AND
+// the referrer isn't self-referral. Stored inline on
+// pp_utm_last_touch.sessionTs (v3.2.0's standalone pp_utm_session cookie
+// was retired in v3.3.0).
 const UTM_SESSION_MAX_AGE_SECONDS = 1800;
 
 // Legacy pp_mktg_* cookies — read-and-fold migration source for visitors
@@ -369,8 +379,16 @@ function parseUtmTouch(raw: string): ExtendedUtmTouch | null {
     for (let i = 0; i < EXTENDED_TOUCH_EXTRA_KEYS.length; i++) {
       const k = EXTENDED_TOUCH_EXTRA_KEYS[i];
       const v = obj[k];
-      (out as Record<string, string>)[k] = typeof v === 'string' ? v : '';
+      // Cast via `unknown` because ExtendedUtmTouch now contains a numeric
+      // field (sessionTs) alongside the strings; the keys in
+      // EXTENDED_TOUCH_EXTRA_KEYS are still all-string, but the wider type
+      // no longer admits a `Record<string, string>` cast directly.
+      (out as unknown as Record<string, string>)[k] = typeof v === 'string' ? v : '';
     }
+    // sessionTs is the only numeric field — pre-v3.3.0 cookies don't have it
+    // (sentinel 0 falls into "session inactive" naturally on first read).
+    const ts = obj.sessionTs;
+    out.sessionTs = typeof ts === 'number' && isFinite(ts) ? ts : 0;
     return out;
   } catch (e) {
     return null;
@@ -441,6 +459,7 @@ function emptyExtended(): ExtendedUtmTouch {
     utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '',
     source: '', medium: '', campaign: '', platform: '', clickId: '',
     referrer: '', referrerDomain: '', landingPage: '', timestamp: '',
+    sessionTs: 0,
   };
 }
 
@@ -643,6 +662,77 @@ export function stripFragment(href: string): string {
   return idx === -1 ? href : href.slice(0, idx);
 }
 
+/**
+ * Denylist of query-string parameter names whose VALUES are likely to carry
+ * PII or credentials. Match is case-insensitive against the literal key
+ * name. Conservative: better to drop a legitimate UTM-adjacent key by
+ * coincidence than to persist an email / phone / token for 2 years in
+ * landingPage cookies.
+ *
+ * Curated for the categories the data-team flagged + common OAuth /
+ * auth-link patterns. New entries should land here before they ship to
+ * production landing pages.
+ */
+export const PII_QUERY_PARAM_DENYLIST: ReadonlySet<string> = new Set([
+  // Email / phone / contact
+  'email', 'e_mail', 'mail', 'emailaddress', 'email_address',
+  'phone', 'phone_number', 'phonenumber', 'mobile', 'tel', 'tel_no',
+  // Tokens / credentials
+  'token', 'access_token', 'id_token', 'refresh_token', 'auth_token',
+  'authtoken', 'apikey', 'api_key', 'key', 'secret', 'client_secret',
+  'signature', 'sig',
+  // Session / auth state
+  'password', 'passwd', 'pwd',
+  'session', 'session_id', 'sessionid', 'sid', 'jwt',
+  // Identity
+  'ssn', 'social_security', 'social_security_number',
+  'dob', 'date_of_birth', 'birthdate',
+  'firstname', 'first_name', 'lastname', 'last_name',
+  'fullname', 'full_name', 'name',
+  // Patient / pharmacy-specific (PocketPills domain)
+  'patientid', 'patient_id', 'patient_email', 'rx', 'rx_number',
+  'order_email', 'customer_email',
+]);
+
+/**
+ * Sanitize a URL for persistence in attribution cookies. Strips:
+ *   1. The URL fragment (`#...`) — OAuth implicit-flow access tokens, etc.
+ *   2. Query-string parameters whose names match PII_QUERY_PARAM_DENYLIST.
+ *
+ * Returns the cleaned URL. On any parse failure, falls back to returning
+ * the URL up to (but not including) the `?` — preferring data loss over
+ * PII persistence. Empty input passes through unchanged.
+ *
+ * Exported for testability and reuse by any future code path that needs
+ * to persist a URL captured from the visitor's session.
+ */
+export function sanitizeLandingPage(href: string): string {
+  if (!href) return href;
+  const noFragment = stripFragment(href);
+  const qIdx = noFragment.indexOf('?');
+  if (qIdx === -1) return noFragment;
+
+  const base = noFragment.slice(0, qIdx);
+  const query = noFragment.slice(qIdx + 1);
+
+  try {
+    const params = new URLSearchParams(query);
+    const filtered = new URLSearchParams();
+    params.forEach((value, key) => {
+      if (!PII_QUERY_PARAM_DENYLIST.has(key.toLowerCase())) {
+        filtered.append(key, value);
+      }
+    });
+    const filteredStr = filtered.toString();
+    return filteredStr ? base + '?' + filteredStr : base;
+  } catch (e) {
+    // Defense-in-depth: an unparseable query is treated as suspect, so
+    // we drop it entirely rather than risk persisting PII through a
+    // codepath we couldn't validate. Callers get the base URL only.
+    return base;
+  }
+}
+
 /** Extract the hostname from a referrer URL. Returns '' for empty input
  *  or unparseable URLs — never throws. */
 export function extractReferrerDomain(referrer: string): string {
@@ -725,11 +815,12 @@ export function buildNormalizedTouch(
     campaign: campaign,
     platform: platform,
     clickId: extractClickId(params),
-    // landingPage: full URL with query string, fragment STRIPPED.
-    // OAuth implicit-flow auth tokens land in `#access_token=...`; persisting
-    // those for 2 years in a cookie is a credential-leak vector. Query string
-    // is preserved (UTM / marketing params live there).
-    landingPage: stripFragment((win.location && win.location.href) || '/'),
+    // landingPage: full URL with query string, fragment stripped AND known
+    // PII / credential query params dropped. Without sanitisation a landing
+    // page that accepts `?email=`, `?token=`, etc. would persist user PII
+    // in the cookie for up to 2 years (first-touch horizon). UTM / click-ID
+    // params survive — they're explicitly marketing data, not PII.
+    landingPage: sanitizeLandingPage((win.location && win.location.href) || '/'),
     referrer: referrerUrl,
     referrerDomain: referrerDomain,
     timestamp: new Date().toISOString(),
@@ -1049,35 +1140,14 @@ export function createEventPropertiesBuilder(
   }
 
   // ---------------------------------------------------------------------------
-  // Session marker for normalized-slice rotation (pp_utm_session, 30 min).
-  // Distinct from the analytics session_id managed by ppLib.session — this
-  // cookie ONLY gates pp_utm_*_touch normalized rotation. Replaces the
-  // legacy pp_mktg_session. Deserializer accepts shape {ts: number}; any
-  // other input is treated as absent so the next visit rotates last-touch.
+  // Session activity check. Reads the inline `sessionTs` field on
+  // pp_utm_last_touch — the standalone pp_utm_session cookie was retired in
+  // v3.3.0 to consolidate cookie sprawl. Returns false when sessionTs is 0
+  // (never written, or pre-v3.3.0 cookie with no field) or older than 30 min.
   // ---------------------------------------------------------------------------
-  const utmSessionStore = createPersistentValue<{ ts: number }>(win, ppLib, {
-    cookieName: UTM_SESSION_KEY,
-    maxAgeSeconds: UTM_SESSION_MAX_AGE_SECONDS,
-    serialize: (v) => JSON.stringify(v),
-    deserialize: (raw) => {
-      if (!raw) return null;
-      try {
-        const p = JSON.parse(raw);
-        if (!p || typeof p !== 'object') return null;
-        const ts = (p as Record<string, unknown>).ts;
-        return typeof ts === 'number' ? { ts: ts } : null;
-      } catch (e) { return null; }
-    },
-  });
-
-  function isUtmSessionActive(): boolean {
-    const s = utmSessionStore.read();
-    if (!s || typeof s.ts !== 'number') return false;
-    return (Date.now() - s.ts) < UTM_SESSION_MAX_AGE_SECONDS * 1000;
-  }
-
-  function touchUtmSession(): void {
-    utmSessionStore.write({ ts: Date.now() });
+  function isUtmSessionActiveFromExt(ext: ExtendedUtmTouch): boolean {
+    if (!ext.sessionTs) return false;
+    return (Date.now() - ext.sessionTs) < UTM_SESSION_MAX_AGE_SECONDS * 1000;
   }
 
   /**
@@ -1123,7 +1193,9 @@ export function createEventPropertiesBuilder(
       if (!mktg) return;
       // Merge legacy normalized data into the extended cookie; keep the
       // utm_* literal slice from whatever the extended cookie already had
-      // (so a parallel 5-step capture isn't overwritten).
+      // (so a parallel 5-step capture isn't overwritten). sessionTs is
+      // carried forward — the v3.2.0 → v3.3.0 session handoff (a few lines
+      // below) may have populated it from pp_utm_session before this fold.
       persistExtended(storageKey, {
         utm_source: ext.utm_source,
         utm_medium: ext.utm_medium,
@@ -1139,18 +1211,44 @@ export function createEventPropertiesBuilder(
         referrerDomain: mktg.referrerDomain,
         landingPage: mktg.landingPage,
         timestamp: mktg.timestamp,
+        sessionTs: ext.sessionTs,
       });
     };
 
     foldInto(UTM_FIRST_TOUCH_KEY, LEGACY_MKTG_FIRST_KEY);
     foldInto(UTM_LAST_TOUCH_KEY, LEGACY_MKTG_LAST_KEY);
 
-    // Best-effort deletion of the legacy cookies + the pp_mktg_session
-    // marker. Uses Max-Age=0 with the configured cookieDomain since the
-    // browser only matches deletes against the same Domain attribute the
-    // cookie was originally written with; ppLib.deleteCookie covers the
-    // host-scoped legacy form for visitors who predate the domain rollout.
-    const legacyNames = [LEGACY_MKTG_FIRST_KEY, LEGACY_MKTG_LAST_KEY, 'pp_mktg_session'];
+    // Fold any in-flight pp_utm_session timestamp (v3.2.0 leftover) into
+    // pp_utm_last_touch.sessionTs so visitors mid-session don't see an
+    // unwanted last-touch rotation on their first v3.3.0 page load. The
+    // session window is only 30 min so this only matters for visitors
+    // active right at the upgrade boundary, but it's a clean handoff.
+    try {
+      const sessionRaw = ppLib.getCookie('pp_utm_session');
+      if (sessionRaw) {
+        const parsed = JSON.parse(sessionRaw);
+        const ts = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>).ts : null;
+        if (typeof ts === 'number' && isFinite(ts)) {
+          const lastExt = readStoredExtended(UTM_LAST_TOUCH_KEY);
+          if (!lastExt.sessionTs) {
+            persistExtended(UTM_LAST_TOUCH_KEY, { ...lastExt, sessionTs: ts });
+          }
+        }
+      }
+    } catch (e) { /* best-effort — fall through to deletion */ }
+
+    // Best-effort deletion of the legacy cookies. Uses Max-Age=0 with the
+    // configured cookieDomain since the browser only matches deletes against
+    // the same Domain attribute the cookie was originally written with;
+    // ppLib.deleteCookie covers the host-scoped legacy form for visitors
+    // who predate the domain rollout.
+    //
+    // pp_utm_session is in the list as a one-shot cleanup for v3.2.0 →
+    // v3.3.0: the standalone session marker cookie was retired and inlined
+    // into pp_utm_last_touch.sessionTs. Visitors who already had the cookie
+    // will see it deleted on first builder use; visitors who never had it
+    // are unaffected (the delete is a no-op).
+    const legacyNames = [LEGACY_MKTG_FIRST_KEY, LEGACY_MKTG_LAST_KEY, 'pp_mktg_session', 'pp_utm_session'];
     for (let i = 0; i < legacyNames.length; i++) {
       const name = legacyNames[i];
       try {
@@ -1192,7 +1290,7 @@ export function createEventPropertiesBuilder(
     // can be in mixed states (e.g. legacy localStorage migration seeds only
     // utm_*; pp_mktg_* migration seeds only normalized).
     const normalizedFirstEver = !existingLastExt.platform;
-    const sessionActive = isUtmSessionActive();
+    const sessionActive = isUtmSessionActiveFromExt(existingLastExt);
     const selfReferral = isSelfReferralFromUrl(currentTouch.referrer);
     if (normalizedFirstEver || hasNewParams || (!sessionActive && !selfReferral)) {
       return currentTouch;
@@ -1252,6 +1350,10 @@ export function createEventPropertiesBuilder(
     );
 
     // === Combine and persist last-touch ===
+    // sessionTs is refreshed to Date.now() on every capture — this is the
+    // 30-min session anchor that resolveNormalizedSlice reads on the next
+    // visit to decide whether to rotate or carry forward. Replaces the
+    // standalone pp_utm_session cookie that existed in v3.2.0.
     const resolvedLastExt: ExtendedUtmTouch = {
       utm_source: resolvedUtm.utm_source,
       utm_medium: resolvedUtm.utm_medium,
@@ -1267,6 +1369,7 @@ export function createEventPropertiesBuilder(
       referrerDomain: resolvedNormalized.referrerDomain,
       landingPage: resolvedNormalized.landingPage,
       timestamp: resolvedNormalized.timestamp,
+      sessionTs: Date.now(),
     };
     persistExtended(UTM_LAST_TOUCH_KEY, resolvedLastExt);
 
@@ -1300,13 +1403,15 @@ export function createEventPropertiesBuilder(
         referrerDomain: normalizedSliceEmpty ? resolvedLastExt.referrerDomain : existingFirstExt.referrerDomain,
         landingPage: normalizedSliceEmpty ? resolvedLastExt.landingPage : existingFirstExt.landingPage,
         timestamp: normalizedSliceEmpty ? resolvedLastExt.timestamp : existingFirstExt.timestamp,
+        // First-touch never participates in session-veto rotation (the cookie
+        // is locked by per-slice immutability above), so sessionTs is
+        // persisted as 0 — schema-uniform but semantically inert.
+        sessionTs: 0,
       });
     }
 
-    // === Touch session ===
-    // Re-anchors the 30-min window so subsequent same-session captures see
-    // sessionActive=true and skip the normalized-slice rotation.
-    touchUtmSession();
+    // Session anchor for last-touch rotation is now inlined as `sessionTs`
+    // on the resolvedLastExt persisted above — no separate cookie to touch.
   }
 
   /**

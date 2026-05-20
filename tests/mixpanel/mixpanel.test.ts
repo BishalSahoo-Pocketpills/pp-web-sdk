@@ -870,9 +870,10 @@ describe('Campaign / UTM Attribution', () => {
         referrerDomain: 'tagassistant.google.com',
         landingPage: '/lp/',
         timestamp: '2026-05-05T00:00:00Z',
+        // sessionTs Date.now() keeps the session active so the builder
+        // doesn't rotate normalized last-touch when captureUtmTouches runs.
+        sessionTs: Date.now(),
       })) + ';path=/';
-      document.cookie = 'pp_utm_session=' +
-        encodeURIComponent(JSON.stringify({ ts: Date.now() })) + ';path=/';
 
       const mp = createMockMixpanel();
       invokeLoadedCallback(loadedCallback, mp);

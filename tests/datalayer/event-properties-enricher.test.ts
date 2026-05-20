@@ -6,12 +6,20 @@ import type { PPLib } from '../../src/types/common.types';
 
 /**
  * Seed a pp_utm_first_touch / pp_utm_last_touch cookie with given normalized
- * data so tests can reproduce the pre-Phase-4 ppLib.attribution fixture
- * behaviour. `platform: 'unknown'` is a non-empty canary that flags the
- * cookie as already-written (suppresses the mktg migration shim and lets
- * the session veto carry the data forward when pp_utm_session is active).
+ * data so tests can reproduce attribution fixtures without going through the
+ * builder. `platform: 'unknown'` is a non-empty canary that flags the cookie
+ * as already-written (suppresses the mktg migration shim and lets the
+ * session veto carry the data forward when the inline sessionTs is fresh).
+ *
+ * `activeSession=true` (default) sets sessionTs to Date.now() so the cookie
+ * stays valid as "in-session" — captureUtmTouches won't rotate it. Pass
+ * false to seed an expired-session cookie.
  */
-function seedTouchCookie(cookieName: string, data: { source: string; medium: string; campaign: string; referrer: string; referrerDomain?: string; landingPage?: string }): void {
+function seedTouchCookie(
+  cookieName: string,
+  data: { source: string; medium: string; campaign: string; referrer: string; referrerDomain?: string; landingPage?: string },
+  activeSession: boolean = true,
+): void {
   const payload = {
     utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '',
     source: data.source,
@@ -23,14 +31,15 @@ function seedTouchCookie(cookieName: string, data: { source: string; medium: str
     referrerDomain: data.referrerDomain || '',
     landingPage: data.landingPage || '',
     timestamp: '2026-05-18T00:00:00Z',
+    sessionTs: activeSession ? Date.now() : 0,
   };
   document.cookie = cookieName + '=' + encodeURIComponent(JSON.stringify(payload)) + ';path=/';
 }
 
-function seedActiveSession(): void {
-  document.cookie = 'pp_utm_session=' +
-    encodeURIComponent(JSON.stringify({ ts: Date.now() })) + ';path=/';
-}
+// Retained for callsite clarity but now a no-op — session anchor lives
+// inline on pp_utm_last_touch.sessionTs (set by seedTouchCookie when
+// `activeSession=true`). Kept so existing test call sites read sensibly.
+function seedActiveSession(): void { /* sessionTs is set by seedTouchCookie */ }
 
 function makePPLib(cookies?: Record<string, string>): PPLib {
   const log = vi.fn();
