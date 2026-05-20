@@ -24,7 +24,7 @@ type FixtureTouch = {
  * tells captureUtmTouches the cookie has been written before, so it won't
  * be reset by the migrateLegacyMktgCookiesOnce shim.
  */
-function fixtureToExtendedCookie(touch: FixtureTouch): string {
+function fixtureToExtendedCookie(touch: FixtureTouch, sessionTs: number = 0): string {
   return JSON.stringify({
     utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '',
     source: touch.source,
@@ -36,6 +36,7 @@ function fixtureToExtendedCookie(touch: FixtureTouch): string {
     referrerDomain: touch.referrerDomain || '',
     landingPage: touch.landingPage || '',
     timestamp: '2026-05-18T00:00:00Z',
+    sessionTs: sessionTs,
   });
 }
 
@@ -59,10 +60,10 @@ function makePPLib(opts?: {
   const session = opts?.session === null ? undefined : (opts?.session || { id: 'test-session-id' });
 
   // Pre-seed the consolidated pp_utm_*_touch cookies from the fixture's
-  // first/last touches, plus pp_utm_session so captureUtmTouches doesn't
-  // rotate last-touch on the implicit "direct" current visit. Replaces the
-  // pre-Phase-4 ppLib.attribution mock — the builder now reads attribution
-  // exclusively from cookies.
+  // first/last touches. last-touch's sessionTs is set to Date.now() so
+  // captureUtmTouches's session-veto carries the fixture data forward
+  // instead of rotating to the implicit "direct" current visit. (Pre-v3.3.0
+  // this was a separate pp_utm_session cookie.)
   if (attribution) {
     if (attribution.first) {
       document.cookie = 'pp_utm_first_touch=' +
@@ -70,9 +71,7 @@ function makePPLib(opts?: {
     }
     if (attribution.last) {
       document.cookie = 'pp_utm_last_touch=' +
-        encodeURIComponent(fixtureToExtendedCookie(attribution.last)) + ';path=/';
-      document.cookie = 'pp_utm_session=' +
-        encodeURIComponent(JSON.stringify({ ts: Date.now() })) + ';path=/';
+        encodeURIComponent(fixtureToExtendedCookie(attribution.last, Date.now())) + ';path=/';
     }
   }
 
@@ -765,7 +764,20 @@ describe('createEventPropertiesBuilder', () => {
     }
 
     function expireUtmSession(): void {
-      document.cookie = 'pp_utm_session=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+      // v3.3.0 inlined the session marker into pp_utm_last_touch.sessionTs.
+      // Set it to 1 (effectively "captured at unix epoch") to put the session
+      // well past the 30-min window without dropping the cookie itself —
+      // dropping the cookie would clear the rest of the seeded last-touch
+      // data and break the test's setup. Match-and-rewrite parses the cookie
+      // value, overrides sessionTs, and writes the modified payload back.
+      const m = document.cookie.match(/pp_utm_last_touch=([^;]+)/);
+      if (!m) return;
+      try {
+        const parsed = JSON.parse(decodeURIComponent(m[1]));
+        parsed.sessionTs = 1;
+        document.cookie = 'pp_utm_last_touch=' +
+          encodeURIComponent(JSON.stringify(parsed)) + ';path=/';
+      } catch (e) { /* leave cookie alone if unparseable */ }
     }
 
     beforeEach(() => {
@@ -1050,6 +1062,96 @@ describe('createEventPropertiesBuilder', () => {
         expect(document.cookie).not.toMatch(/pp_mktg_first_touch=[^;]+/);
         expect(document.cookie).not.toMatch(/pp_mktg_last_touch=[^;]+/);
         expect(document.cookie).not.toMatch(/pp_mktg_session=[^;]+/);
+      });
+
+      it('deletes the retired pp_utm_session cookie and folds its ts into pp_utm_last_touch.sessionTs (v3.2.0 → v3.3.0 handoff)', () => {
+        // Simulate a visitor mid-session right at the v3.2.0 → v3.3.0
+        // upgrade boundary: they have a fresh pp_utm_session cookie from
+        // the old code path plus an existing extended last-touch without
+        // the inline sessionTs field.
+        const sessionTs = Date.now() - 5 * 60 * 1000; // 5 min ago
+        document.cookie = 'pp_utm_session=' +
+          encodeURIComponent(JSON.stringify({ ts: sessionTs })) + ';path=/';
+        document.cookie = 'pp_utm_last_touch=' + encodeURIComponent(JSON.stringify({
+          utm_source: 'facebook', utm_medium: 'social', utm_campaign: 'spring',
+          utm_content: '', utm_term: '',
+          source: 'facebook', medium: 'social', campaign: 'spring',
+          platform: 'meta_ads', clickId: '',
+          referrer: 'https://www.facebook.com/', referrerDomain: 'www.facebook.com',
+          landingPage: 'http://localhost/old-lp', timestamp: '2026-05-19T00:00:00Z',
+          // sessionTs intentionally missing — pre-v3.3.0 shape.
+        })) + ';path=/';
+
+        // First builder use on v3.3.0 — migration runs, folds ts, deletes.
+        createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+
+        // pp_utm_session cookie cleaned up.
+        expect(document.cookie).not.toMatch(/pp_utm_session=[^;]+/);
+
+        // sessionTs folded into pp_utm_last_touch — read the cookie back
+        // and verify the ts survived the handoff. (Exact equality is hard
+        // because captureUtmTouches refreshes sessionTs to Date.now() AFTER
+        // the migration on the same builder instance — so we check the
+        // fold-then-refresh path landed on a fresh ts, not the legacy one.)
+        const m = document.cookie.match(/pp_utm_last_touch=([^;]+)/) as RegExpMatchArray;
+        const parsed = JSON.parse(decodeURIComponent(m[1]));
+        expect(typeof parsed.sessionTs).toBe('number');
+        expect(parsed.sessionTs).toBeGreaterThan(sessionTs);
+      });
+    });
+
+    describe('landingPage PII sanitisation', () => {
+      it('strips denylist query params (email, token, password, etc.) before persisting', () => {
+        setHref('http://localhost/lp?utm_source=google&utm_medium=cpc&email=alice%40example.com&token=secret-abc&password=hunter2');
+        setReferrer('https://www.google.com/');
+
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+
+        // Marketing params preserved.
+        expect(ma!.landingPage).toContain('utm_source=google');
+        expect(ma!.landingPage).toContain('utm_medium=cpc');
+        // PII params dropped — none of the sensitive keys appear in the
+        // persisted landing URL.
+        expect(ma!.landingPage).not.toContain('email');
+        expect(ma!.landingPage).not.toContain('alice');
+        expect(ma!.landingPage).not.toContain('token');
+        expect(ma!.landingPage).not.toContain('secret-abc');
+        expect(ma!.landingPage).not.toContain('password');
+        expect(ma!.landingPage).not.toContain('hunter2');
+      });
+
+      it('preserves the URL when no PII params are present', () => {
+        setHref('http://localhost/lp?utm_source=google&utm_medium=cpc&utm_campaign=spring&promo=q2');
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+
+        expect(ma!.landingPage).toBe('http://localhost/lp?utm_source=google&utm_medium=cpc&utm_campaign=spring&promo=q2');
+      });
+
+      it('drops PII params with case-insensitive name match', () => {
+        setHref('http://localhost/lp?utm_source=g&EMAIL=a%40b.co&Token=xyz&Patient_ID=42');
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+        expect(ma!.landingPage).toContain('utm_source=g');
+        expect(ma!.landingPage).not.toContain('EMAIL');
+        expect(ma!.landingPage).not.toContain('Token');
+        expect(ma!.landingPage).not.toContain('Patient_ID');
+        expect(ma!.landingPage).not.toContain('xyz');
+      });
+
+      it('strips both fragment and PII params together (defence-in-depth)', () => {
+        setHref('http://localhost/cb?utm_source=email&token=ABC#access_token=oauth-secret');
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+        // Fragment gone (stripFragment), AND query-string token gone.
+        expect(ma!.landingPage).not.toContain('#');
+        expect(ma!.landingPage).not.toContain('access_token');
+        expect(ma!.landingPage).not.toContain('oauth-secret');
+        expect(ma!.landingPage).not.toContain('token=ABC');
+        // The marketing param survives.
+        expect(ma!.landingPage).toContain('utm_source=email');
       });
     });
   });
