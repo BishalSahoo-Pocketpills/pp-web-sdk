@@ -76,17 +76,49 @@ import { bootstrapModule } from '@src/common/bootstrap';
     return flat;
   }
 
+  // Pre-init buffer for track() calls that arrive BEFORE ppLib.mixpanel.init()
+  // has installed window.mixpanel. Without this, the analytics module's auto-
+  // pageview fires while win.mixpanel is undefined and is silently dropped.
+  //
+  // Industry-standard pattern: the caller-facing facade always succeeds;
+  // the SDK handles buffering internally. Matches Segment, Amplitude, Heap,
+  // and Mixpanel's own stub-queue design. Drained in the `loaded` callback
+  // inside the mp().init() call below.
+  //
+  // Cap to prevent unbounded growth if mp.init is never called (misconfig).
+  // 200 events ≈ a few minutes of heavy auto-tracking; beyond that we drop
+  // with a one-time warn rather than memory-leak the page.
+  const PRE_INIT_QUEUE_MAX = 200;
+  const preInitTrackQueue: Array<{ name: string; props?: Record<string, unknown> }> = [];
+  let preInitOverflowWarned = false;
+
   function trackFacade(eventName: string, properties?: Record<string, unknown>): boolean {
     try {
       if (!CONFIG.enabled) return false;
       // Consent gate — drop silently on denial. No log noise (would fire
       // on every event during a denied session) and no stub-queue growth.
       if (ppLib.consent && !ppLib.consent.isGranted()) return false;
-      const mp = win.mixpanel;
-      if (!mp || typeof mp.track !== 'function') return false;
       if (typeof eventName !== 'string' || !eventName) {
         ppLib.log('warn', '[ppMixpanel] track called with empty eventName');
         return false;
+      }
+
+      const mp = win.mixpanel;
+      if (!mp || typeof mp.track !== 'function') {
+        // Mixpanel SDK not initialized yet (user hasn't called configure+init,
+        // OR init was called but the loader stub hasn't installed window.mixpanel
+        // yet). Buffer the call instead of dropping it; drained on the `loaded`
+        // callback's success path below.
+        if (preInitTrackQueue.length >= PRE_INIT_QUEUE_MAX) {
+          if (!preInitOverflowWarned) {
+            preInitOverflowWarned = true;
+            ppLib.log('warn', '[ppMixpanel] pre-init track queue full (' +
+              PRE_INIT_QUEUE_MAX + ' events); dropping further events until init() completes');
+          }
+          return false;
+        }
+        preInitTrackQueue.push({ name: eventName, props: properties });
+        return true;
       }
 
       let merged: Record<string, unknown>;
@@ -110,6 +142,21 @@ import { bootstrapModule } from '@src/common/bootstrap';
       ppLib.log('error', '[ppMixpanel] track facade error', ppLib.safeLogError(e));
       return false;
     }
+  }
+
+  /**
+   * Drain the pre-init buffer through the normal trackFacade path so all
+   * enrichment (event-properties builder, consent gate, super-props) applies.
+   * Called once from inside the `loaded` callback of mp.init().
+   */
+  function drainPreInitTrackQueue(): void {
+    if (preInitTrackQueue.length === 0) return;
+    const drained = preInitTrackQueue.length;
+    while (preInitTrackQueue.length > 0) {
+      const item = preInitTrackQueue.shift();
+      if (item) trackFacade(item.name, item.props);
+    }
+    ppLib.log('info', '[ppMixpanel] drained ' + drained + ' pre-init track event(s)');
   }
 
   // =====================================================
@@ -726,6 +773,13 @@ import { bootstrapModule } from '@src/common/bootstrap';
             win
           });
         }
+
+        // Drain any track() calls that arrived BEFORE init completed. With
+        // this drain in place, callers (including the analytics module's
+        // auto-pageview path) can safely call ppLib.mixpanel.track() at any
+        // time during page lifecycle without losing events to a race with
+        // mp.init() ordering.
+        drainPreInitTrackQueue();
 
         ppLib.log('info', '[ppMixpanel] Initialized successfully');
       }

@@ -21,9 +21,31 @@ beforeEach(() => {
 });
 
 describe('ppLib.mixpanel.track facade', () => {
-  it('returns false and logs nothing when win.mixpanel is not loaded', () => {
+  it('buffers events and returns true when win.mixpanel is not loaded yet', () => {
+    // v3.6.0 changed the facade contract: instead of dropping events when
+    // the Mixpanel SDK isn't loaded, the facade now buffers them in a
+    // pre-init queue and drains them when mp.init()'s loaded callback fires.
+    // This eliminates the load-order race that previously dropped the
+    // analytics module's auto-pageview when it fired before the user's
+    // mp.configure() + mp.init() DOMContentLoaded handler completed.
     loadWithCommon('mixpanel');
     (window as any).ppLib.mixpanel.configure({ token: 'tok' });
+
+    const result = (window as any).ppLib.mixpanel.track('view_item', { items: [] });
+
+    // Returns true — the call is recorded (buffered), even though no actual
+    // Mixpanel API request was made yet.
+    expect(result).toBe(true);
+    expect((window as any).mixpanel).toBeUndefined();
+  });
+
+  it('drops events when consent is denied (no buffering)', () => {
+    // Consent denial is a deliberate refusal — buffering would later replay
+    // events the user explicitly opted out of. Drop instead.
+    loadWithCommon('mixpanel');
+    (window as any).ppLib.mixpanel.configure({ token: 'tok' });
+    // Set consent denied before track call
+    (window as any).ppLib.consent.revoke();
 
     const result = (window as any).ppLib.mixpanel.track('view_item', { items: [] });
 
