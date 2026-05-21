@@ -1170,6 +1170,39 @@ describe('initMixpanel()', () => {
     expect(initArgs[1].property_blacklist).toBeUndefined();
     expect(typeof initArgs[1].loaded).toBe('function');
   });
+
+  it('omits api_host from mp.init when apiHost is not configured', () => {
+    // Default behaviour — caller didn't set apiHost. Mixpanel SDK should
+    // fall back to its built-in US default (api.mixpanel.com) by NOT
+    // receiving an api_host key at all. Avoids pinning the URL in case
+    // Mixpanel ever rotates the default.
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'my-token' });
+
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    const initArgs = window.mixpanel._i[0];
+    expect(initArgs[0]).toBe('my-token');
+    expect('api_host' in initArgs[1]).toBe(false);
+  });
+
+  it('forwards apiHost to mp.init as api_host when configured', () => {
+    // Non-US data-residency projects (EU / India) need the explicit
+    // endpoint or Mixpanel's US ingest silently drops their events.
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({
+      token: 'india-staging-token',
+      apiHost: 'https://api-in.mixpanel.com',
+    });
+
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    const initArgs = window.mixpanel._i[0];
+    expect(initArgs[0]).toBe('india-staging-token');
+    expect(initArgs[1].api_host).toBe('https://api-in.mixpanel.com');
+  });
 });
 
 // =========================================================================

@@ -479,7 +479,12 @@ import { bootstrapModule } from '@src/common/bootstrap';
       }
     }
 
-    mp().init(CONFIG.token, {
+    // Compose init options. api_host is forwarded only when CONFIG.apiHost is
+    // a non-empty string — omitting the key entirely lets the Mixpanel SDK
+    // fall back to its US default (https://api.mixpanel.com), preserving
+    // legacy behaviour for projects that never set it. Explicit override
+    // routes to a different data-residency region (EU / India).
+    const initOptions: Record<string, unknown> = {
       cross_subdomain_cookie: CONFIG.crossSubdomainCookie,
       opt_out_tracking_by_default: CONFIG.optOutByDefault,
       api_transport: 'sendBeacon',
@@ -724,7 +729,17 @@ import { bootstrapModule } from '@src/common/bootstrap';
 
         ppLib.log('info', '[ppMixpanel] Initialized successfully');
       }
-    });
+    };
+
+    // Forward api_host only when the caller set it. Omitting the key entirely
+    // lets the Mixpanel SDK use its built-in US default (api.mixpanel.com).
+    // Set explicitly for projects on EU (api-eu.mixpanel.com) or India
+    // (api-in.mixpanel.com) data residencies.
+    if (CONFIG.apiHost) {
+      initOptions.api_host = CONFIG.apiHost;
+    }
+
+    mp().init(CONFIG.token, initOptions);
   }
 
   // =====================================================

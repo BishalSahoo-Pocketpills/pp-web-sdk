@@ -21,6 +21,20 @@ export interface MixpanelConfig extends SdkSecurityOptions {
   // (e.g. `mixpanel-2-2.65.0.min.js`) before flipping requireIntegrity.
   cdnUrl?: string;
   /**
+   * Mixpanel API endpoint for this project's data-residency region.
+   * Forwarded to `mixpanel.init({ api_host })`. Leave undefined to use
+   * Mixpanel's default (US: `https://api.mixpanel.com`). Set explicitly
+   * for projects on a different residency:
+   *   - EU:    'https://api-eu.mixpanel.com'
+   *   - India: 'https://api-in.mixpanel.com'
+   *
+   * Production typically uses US (the default — no config needed).
+   * Staging environments pointing at non-US test projects must override
+   * this; otherwise events are silently dropped by the wrong region's
+   * ingest endpoint.
+   */
+  apiHost?: string;
+  /**
    * When true (default), `ppLib.mixpanel.track()` merges the SDK's canonical
    * event properties (UTM touch attribution, device/session/login state,
    * marketing attribution, click IDs) into every track call. Caller-passed
