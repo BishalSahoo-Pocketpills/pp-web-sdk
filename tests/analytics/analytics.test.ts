@@ -1330,27 +1330,27 @@ describe('Platforms.GTM', () => {
 // =========================================================================
 describe('Platforms.Mixpanel', () => {
   describe('send', () => {
-    it('calls register when ready and type is "register"', () => {
+    it('calls register when type is "register" and window.mixpanel is available', () => {
       window.requestIdleCallback = vi.fn((cb) => cb());
       const mp = createMockMixpanel();
       window.mixpanel = mp;
       loadWithDebug();
       const platforms = window.ppAnalyticsDebug.platforms;
-      platforms.Mixpanel.ready = true;
-      platforms.Mixpanel.queue = [];
 
       platforms.Mixpanel.send({ type: 'register', properties: { key: 'val' } });
       expect(mp.register).toHaveBeenCalledWith({ key: 'val' });
     });
 
-    it('calls track when ready and type is "track"', () => {
+    it('dispatches track via window.mixpanel when ppLib.mixpanel is not loaded', () => {
+      // v3.6.0: analytics dispatches via ppLib.mixpanel.track() preferentially
+      // (which buffers internally before init), with a fallback to direct
+      // win.mixpanel.track() for test fixtures / minimal deployments that
+      // don't load the mixpanel module. This test exercises the fallback path.
       window.requestIdleCallback = vi.fn((cb) => cb());
       const mp = createMockMixpanel();
       window.mixpanel = mp;
       loadWithDebug();
       const platforms = window.ppAnalyticsDebug.platforms;
-      platforms.Mixpanel.ready = true;
-      platforms.Mixpanel.queue = [];
 
       platforms.Mixpanel.send({
         type: 'track',
@@ -1360,36 +1360,13 @@ describe('Platforms.Mixpanel', () => {
       expect(mp.track).toHaveBeenCalledWith('Test Event', { prop: 'value' });
     });
 
-    it('queues data when not ready and calls checkReady', () => {
-      vi.useFakeTimers();
-      window.requestIdleCallback = vi.fn((cb) => cb());
-      loadWithDebug();
-      const platforms = window.ppAnalyticsDebug.platforms;
-      platforms.Mixpanel.ready = false;
-      platforms.Mixpanel.queue = [];
-
-      platforms.Mixpanel.send({
-        type: 'track',
-        eventName: 'Queued Event',
-        properties: {}
-      });
-
-      expect(platforms.Mixpanel.queue.length).toBe(1);
-      expect(platforms.Mixpanel.queue[0].eventName).toBe('Queued Event');
-      vi.useRealTimers();
-    });
-
     it('validates data before sending', () => {
       window.requestIdleCallback = vi.fn((cb) => cb());
       const mp = createMockMixpanel();
       window.mixpanel = mp;
       loadWithDebug();
+
       const platforms = window.ppAnalyticsDebug.platforms;
-      platforms.Mixpanel.ready = true;
-      platforms.Mixpanel.queue = [];
-      // Module init drains the auto-pageview synchronously now that pollUntil
-      // does an immediate check on mount — reset the mock so the assertion
-      // below isolates the send() rejection path.
       mp.track.mockClear();
 
       platforms.Mixpanel.send({
@@ -1397,27 +1374,24 @@ describe('Platforms.Mixpanel', () => {
         eventName: 'Bad',
         properties: { xss: '<script>alert(1)</script>' }
       });
-      // Should be rejected by validateData
+      // Should be rejected by validateData before reaching mp.track
       expect(mp.track).not.toHaveBeenCalled();
     });
 
-    it('ignores null data', () => {
+    it('ignores null / undefined / non-object data', () => {
       window.requestIdleCallback = vi.fn((cb) => cb());
       loadWithDebug();
       const platforms = window.ppAnalyticsDebug.platforms;
-      platforms.Mixpanel.ready = true;
       // Should not throw
       platforms.Mixpanel.send(null);
       platforms.Mixpanel.send(undefined);
       platforms.Mixpanel.send('string');
     });
 
-    it('handles send error gracefully', () => {
+    it('handles a window.mixpanel.track that throws gracefully', () => {
       window.requestIdleCallback = vi.fn((cb) => cb());
       loadWithDebug();
       const platforms = window.ppAnalyticsDebug.platforms;
-      platforms.Mixpanel.ready = true;
-      // Create a mixpanel that throws on track
       window.mixpanel = {
         register: vi.fn(),
         track: () => { throw new Error('track fail'); }
@@ -1428,105 +1402,41 @@ describe('Platforms.Mixpanel', () => {
       }).not.toThrow();
     });
 
-    it('uses defaults for missing properties and eventName', () => {
+    it('uses default eventName "Unknown Event" and empty props when missing', () => {
       window.requestIdleCallback = vi.fn((cb) => cb());
       const mp = createMockMixpanel();
       window.mixpanel = mp;
       loadWithDebug();
       const platforms = window.ppAnalyticsDebug.platforms;
-      platforms.Mixpanel.ready = true;
-      platforms.Mixpanel.queue = [];
+      mp.track.mockClear();
+      mp.register.mockClear();
 
-      // track with no eventName -> defaults to 'Unknown Event'
       platforms.Mixpanel.send({ type: 'track' });
       expect(mp.track).toHaveBeenCalledWith('Unknown Event', {});
 
-      // register with no properties -> defaults to {}
       platforms.Mixpanel.send({ type: 'register' });
       expect(mp.register).toHaveBeenCalledWith({});
     });
-  });
 
-  describe('checkReady', () => {
-    it('polls and sets ready when mixpanel becomes available', () => {
-      vi.useFakeTimers();
+    it('logs a warning when neither ppLib.mixpanel nor window.mixpanel is available', () => {
       window.requestIdleCallback = vi.fn((cb) => cb());
       loadWithDebug();
       const platforms = window.ppAnalyticsDebug.platforms;
-      platforms.Mixpanel.ready = false;
-      platforms.Mixpanel.queue = [];
+      // No window.mixpanel, no ppLib.mixpanel → fallback warn path
+      delete (window as any).mixpanel;
 
-      // Queue an event
-      platforms.Mixpanel.queue.push({
-        type: 'track',
-        eventName: 'Delayed',
-        properties: {}
-      });
-
-      // Start checkReady
-      platforms.Mixpanel.checkReady();
-
-      // Not available yet
-      vi.advanceTimersByTime(100);
-      expect(platforms.Mixpanel.ready).toBe(false);
-
-      // Make mixpanel available
-      const mp = createMockMixpanel();
-      window.mixpanel = mp;
-
-      vi.advanceTimersByTime(100);
-      expect(platforms.Mixpanel.ready).toBe(true);
-      // Queue should be flushed
-      expect(platforms.Mixpanel.queue.length).toBe(0);
-      expect(mp.track).toHaveBeenCalledWith('Delayed', {});
-      vi.useRealTimers();
-    });
-
-    it('stops after maxRetries', () => {
-      vi.useFakeTimers();
-      window.requestIdleCallback = vi.fn((cb) => cb());
-      loadWithDebug();
-      const platforms = window.ppAnalyticsDebug.platforms;
-      const config = window.ppAnalyticsDebug.config;
-      config.platforms.mixpanel.maxRetries = 3;
-      config.platforms.mixpanel.retryInterval = 50;
-      platforms.Mixpanel.ready = false;
-      platforms.Mixpanel.queue = [];
-
-      platforms.Mixpanel.checkReady();
-
-      // Advance past all retries (3 * 50ms = 150ms, plus some extra)
-      vi.advanceTimersByTime(200);
-
-      // Should not be ready since mixpanel was never available
-      expect(platforms.Mixpanel.ready).toBe(false);
-      vi.useRealTimers();
-    });
-
-    it('flushes queued events when ready', () => {
-      vi.useFakeTimers();
-      window.requestIdleCallback = vi.fn((cb) => cb());
-      const mp = createMockMixpanel();
-      loadWithDebug();
-      const platforms = window.ppAnalyticsDebug.platforms;
-      platforms.Mixpanel.ready = false;
-      platforms.Mixpanel.queue = [
-        { type: 'register', properties: { a: 1 } },
-        { type: 'track', eventName: 'E1', properties: {} },
-      ];
-
-      // Set mixpanel available before checkReady
-      window.mixpanel = mp;
-      platforms.Mixpanel.checkReady();
-      vi.advanceTimersByTime(100);
-
-      expect(platforms.Mixpanel.ready).toBe(true);
-      expect(platforms.Mixpanel.queue.length).toBe(0);
-      expect(mp.register).toHaveBeenCalledWith({ a: 1 });
-      expect(mp.track).toHaveBeenCalledWith('E1', {});
-      vi.useRealTimers();
+      // Should not throw; event is dropped with a warn log
+      expect(() => {
+        platforms.Mixpanel.send({ type: 'track', eventName: 'Nowhere', properties: {} });
+      }).not.toThrow();
     });
   });
+
+  // (Removed: describe('checkReady', ...). The analytics-side queue+polling
+  // mechanism was retired in v3.6.0 — buffering now lives in
+  // ppLib.mixpanel.track's pre-init queue inside the mixpanel module, which
+  // is unconditionally drained on the loaded callback. See
+  // tests/mixpanel/track-facade.test.ts for the buffer contract.)
 });
 
 // =========================================================================
@@ -1802,38 +1712,38 @@ describe('Tracker.sendAttribution', () => {
     expect(dataLayer.some(e => e.event === 'last_touch_attribution')).toBe(false);
   });
 
-  it('queues Mixpanel registration with attribution props', () => {
-    vi.useFakeTimers();
+  it('dispatches Mixpanel register() with First Touch / Last Touch attribution props', () => {
+    // v3.6.0: assert against the live mp.register call rather than the
+    // (removed) platforms.Mixpanel.queue.
     setUrl('https://example.com/?utm_source=google&utm_medium=cpc&utm_campaign=test');
     window.requestIdleCallback = vi.fn((cb) => cb());
+    const mp = createMockMixpanel();
+    window.mixpanel = mp;
     loadWithDebug();
-    const platforms = window.ppAnalyticsDebug.platforms;
-    // Mixpanel not ready, so events are queued
-    expect(platforms.Mixpanel.queue.length).toBeGreaterThan(0);
-    const registerData = platforms.Mixpanel.queue.find(d => d.type === 'register');
-    if (registerData) {
-      expect(registerData.properties['First Touch Source']).toBe('google');
-      expect(registerData.properties['Last Touch Source']).toBe('google');
-    }
-    vi.useRealTimers();
+
+    const registerCalls = mp.register.mock.calls
+      .map((call: any[]) => call[0])
+      .filter((props: any) => props && 'First Touch Source' in props);
+    expect(registerCalls.length).toBeGreaterThan(0);
+    expect(registerCalls[0]['First Touch Source']).toBe('google');
+    expect(registerCalls[0]['Last Touch Source']).toBe('google');
   });
 
   it('skips Mixpanel when Mixpanel is disabled', () => {
-    vi.useFakeTimers();
     setUrl('https://example.com/?utm_source=google');
     window.requestIdleCallback = vi.fn((cb) => cb());
     loadModule('common');
     window.ppLib.config.debug = true;
+    const mp = createMockMixpanel();
+    window.mixpanel = mp;
     loadModule('analytics', { coverable: false });
     const config = window.ppAnalyticsDebug.config;
     config.platforms.mixpanel.enabled = false;
-    const platforms = window.ppAnalyticsDebug.platforms;
-    platforms.Mixpanel.queue = [];
+    mp.register.mockClear();
 
     window.ppAnalyticsDebug.tracker.sendAttribution();
-    // No Mixpanel data should be queued
-    expect(platforms.Mixpanel.queue.length).toBe(0);
-    vi.useRealTimers();
+    // No Mixpanel data should be dispatched
+    expect(mp.register).not.toHaveBeenCalled();
   });
 
   it('sends to custom platforms', () => {
@@ -1899,19 +1809,27 @@ describe('Tracker.trackPageView', () => {
     expect(pvEvent.page_path).toBeDefined();
   });
 
-  it('queues Mixpanel Page View event', () => {
-    vi.useFakeTimers();
+  it('dispatches a Mixpanel "pageview" event with page_url / page_title / page_path props', () => {
+    // v3.6.0 removed the analytics-side Mixpanel queue. trackPageView now
+    // routes through EventQueue → Platforms.Mixpanel.send → ppLib.mixpanel.track()
+    // (or win.mixpanel.track fallback when ppLib.mixpanel isn't loaded —
+    // which is the case in this test fixture). Assert the call shape on
+    // the live mock rather than peeking into a queue that no longer exists.
     window.requestIdleCallback = vi.fn((cb) => cb());
+    const mp = createMockMixpanel();
+    window.mixpanel = mp;
     loadWithDebug();
-    const platforms = window.ppAnalyticsDebug.platforms;
-    platforms.Mixpanel.ready = false;
-    platforms.Mixpanel.queue = [];
+    mp.track.mockClear();  // ignore any auto-pageview from module init
 
     window.ppAnalyticsDebug.tracker.trackPageView();
-    const trackData = platforms.Mixpanel.queue.find(d => d.type === 'track' && d.eventName === 'pageview');
-    expect(trackData).toBeDefined();
-    expect(trackData.properties.page_url).toBeDefined();
-    vi.useRealTimers();
+    expect(mp.track).toHaveBeenCalledWith(
+      'pageview',
+      expect.objectContaining({
+        page_url: expect.any(String),
+        page_title: expect.any(String),
+        page_path: expect.any(String),
+      })
+    );
   });
 
   it('skips GTM when disabled', () => {
@@ -1927,32 +1845,27 @@ describe('Tracker.trackPageView', () => {
   });
 
   it('skips Mixpanel Page View when trackPageView is disabled', () => {
-    vi.useFakeTimers();
     window.requestIdleCallback = vi.fn((cb) => cb());
+    const mp = createMockMixpanel();
+    window.mixpanel = mp;
     loadWithDebug();
     window.ppAnalyticsDebug.config.platforms.mixpanel.trackPageView = false;
-    const platforms = window.ppAnalyticsDebug.platforms;
-    platforms.Mixpanel.ready = false;
-    platforms.Mixpanel.queue = [];
+    mp.track.mockClear();
 
     window.ppAnalyticsDebug.tracker.trackPageView();
-    const trackData = platforms.Mixpanel.queue.find(d => d.type === 'track' && d.eventName === 'pageview');
-    expect(trackData).toBeUndefined();
-    vi.useRealTimers();
+    expect(mp.track).not.toHaveBeenCalled();
   });
 
   it('skips Mixpanel entirely when Mixpanel platform is disabled', () => {
-    vi.useFakeTimers();
     window.requestIdleCallback = vi.fn((cb) => cb());
+    const mp = createMockMixpanel();
+    window.mixpanel = mp;
     loadWithDebug();
     window.ppAnalyticsDebug.config.platforms.mixpanel.enabled = false;
-    const platforms = window.ppAnalyticsDebug.platforms;
-    platforms.Mixpanel.ready = false;
-    platforms.Mixpanel.queue = [];
+    mp.track.mockClear();
 
     window.ppAnalyticsDebug.tracker.trackPageView();
-    expect(platforms.Mixpanel.queue.length).toBe(0);
-    vi.useRealTimers();
+    expect(mp.track).not.toHaveBeenCalled();
   });
 
   it('handles error gracefully', () => {
@@ -2068,17 +1981,15 @@ describe('Tracker.track', () => {
   });
 
   it('skips Mixpanel when disabled', () => {
-    vi.useFakeTimers();
     window.requestIdleCallback = vi.fn((cb) => cb());
+    const mp = createMockMixpanel();
+    window.mixpanel = mp;
     loadWithDebug();
     window.ppAnalyticsDebug.config.platforms.mixpanel.enabled = false;
-    const platforms = window.ppAnalyticsDebug.platforms;
-    platforms.Mixpanel.ready = false;
-    platforms.Mixpanel.queue = [];
+    mp.track.mockClear();
 
     window.ppAnalytics.track('mp_off', {});
-    expect(platforms.Mixpanel.queue.length).toBe(0);
-    vi.useRealTimers();
+    expect(mp.track).not.toHaveBeenCalledWith('mp_off', expect.any(Object));
   });
 });
 
@@ -2325,18 +2236,10 @@ describe('Edge cases', () => {
     window.ppAnalyticsDebug.platforms.GTM.push = origPush;
   });
 
-  it('Mixpanel.checkReady error is handled gracefully', () => {
-    window.requestIdleCallback = vi.fn((cb) => cb());
-    loadWithDebug();
-    const platforms = window.ppAnalyticsDebug.platforms;
-    // Force setInterval to throw
-    const origSetInterval = window.setInterval;
-    window.setInterval = () => { throw new Error('interval fail'); };
-    expect(() => {
-      platforms.Mixpanel.checkReady();
-    }).not.toThrow();
-    window.setInterval = origSetInterval;
-  });
+  // (Removed: Mixpanel.checkReady error tests. The function was retired in
+  // v3.6.0 — see Platforms.Mixpanel describe block for the new direct-dispatch
+  // contract, and tests/mixpanel/track-facade.test.ts for the buffer behavior
+  // that replaced the polling mechanism.)
 
   it('Platforms.register error is handled gracefully', () => {
     window.requestIdleCallback = vi.fn((cb) => cb());
@@ -2879,61 +2782,59 @@ describe('Additional coverage paths', () => {
   });
 
   it('Tracker.sendAttribution Mixpanel props only for firstTouch', () => {
-    vi.useFakeTimers();
     window.requestIdleCallback = vi.fn((cb) => cb());
+    const mp = createMockMixpanel();
+    window.mixpanel = mp;
     loadWithDebug();
-    const platforms = window.ppAnalyticsDebug.platforms;
-    platforms.Mixpanel.ready = false;
-    platforms.Mixpanel.queue = [];
+    mp.register.mockClear();
     // Only first_touch in storage
     setSessionItem('first_touch', { utm_source: 'fb', utm_medium: 'social', utm_campaign: 'c1', landing_page: 'https://a.com' });
 
     window.ppAnalyticsDebug.tracker.sendAttribution();
 
-    const registerData = platforms.Mixpanel.queue.find(d => d.type === 'register');
-    expect(registerData).toBeDefined();
-    expect(registerData.properties['First Touch Source']).toBe('fb');
-    // No last touch properties
-    expect(registerData.properties['Last Touch Source']).toBeUndefined();
-    vi.useRealTimers();
+    const registerCalls = mp.register.mock.calls
+      .map((c: any[]) => c[0])
+      .filter((p: any) => p && 'First Touch Source' in p);
+    expect(registerCalls.length).toBeGreaterThan(0);
+    expect(registerCalls[0]['First Touch Source']).toBe('fb');
+    expect(registerCalls[0]['Last Touch Source']).toBeUndefined();
   });
 
   it('Tracker.sendAttribution Mixpanel props only for lastTouch', () => {
-    vi.useFakeTimers();
     window.requestIdleCallback = vi.fn((cb) => cb());
+    const mp = createMockMixpanel();
+    window.mixpanel = mp;
     loadWithDebug();
-    const platforms = window.ppAnalyticsDebug.platforms;
-    platforms.Mixpanel.ready = false;
-    platforms.Mixpanel.queue = [];
+    mp.register.mockClear();
     // Only last_touch in storage
     setSessionItem('last_touch', { utm_source: 'tw', utm_medium: 'social', utm_campaign: 'c2', landing_page: 'https://b.com' });
 
     window.ppAnalyticsDebug.tracker.sendAttribution();
 
-    const registerData = platforms.Mixpanel.queue.find(d => d.type === 'register');
-    expect(registerData).toBeDefined();
-    expect(registerData.properties['Last Touch Source']).toBe('tw');
-    expect(registerData.properties['First Touch Source']).toBeUndefined();
-    vi.useRealTimers();
+    const registerCalls = mp.register.mock.calls
+      .map((c: any[]) => c[0])
+      .filter((p: any) => p && 'Last Touch Source' in p);
+    expect(registerCalls.length).toBeGreaterThan(0);
+    expect(registerCalls[0]['Last Touch Source']).toBe('tw');
+    expect(registerCalls[0]['First Touch Source']).toBeUndefined();
   });
 
   it('Tracker.sendAttribution skips Mixpanel register when no touch data', () => {
-    vi.useFakeTimers();
     window.requestIdleCallback = vi.fn((cb) => cb());
+    const mp = createMockMixpanel();
+    window.mixpanel = mp;
     loadWithDebug();
-    const platforms = window.ppAnalyticsDebug.platforms;
-    platforms.Mixpanel.ready = false;
-    platforms.Mixpanel.queue = [];
-    // Clear storage
     sessionStorage.clear();
     localStorage.clear();
+    mp.register.mockClear();
 
     window.ppAnalyticsDebug.tracker.sendAttribution();
 
-    // No register event should be queued since mixpanelProps is empty
-    const registerData = platforms.Mixpanel.queue.find(d => d.type === 'register');
-    expect(registerData).toBeUndefined();
-    vi.useRealTimers();
+    // No register call with attribution props since storage is empty
+    const registerCalls = mp.register.mock.calls
+      .map((c: any[]) => c[0])
+      .filter((p: any) => p && ('First Touch Source' in p || 'Last Touch Source' in p));
+    expect(registerCalls.length).toBe(0);
   });
 
   it('Tracker.sendAttribution custom platform handler with null platform entries', () => {
@@ -2995,30 +2896,10 @@ describe('Additional coverage paths', () => {
     expect(evt.first_touch_source).toBeUndefined();
   });
 
-  it('Mixpanel.checkReady does not double-flush (queue empty after flush)', () => {
-    vi.useFakeTimers();
-    window.requestIdleCallback = vi.fn((cb) => cb());
-    const mp = createMockMixpanel();
-    window.mixpanel = mp;
-    loadWithDebug();
-    const platforms = window.ppAnalyticsDebug.platforms;
-    platforms.Mixpanel.ready = false;
-    platforms.Mixpanel.queue = [
-      { type: 'track', eventName: 'Flush1', properties: {} },
-    ];
-
-    platforms.Mixpanel.checkReady();
-    vi.advanceTimersByTime(100);
-
-    expect(platforms.Mixpanel.ready).toBe(true);
-    expect(platforms.Mixpanel.queue.length).toBe(0);
-    expect(mp.track).toHaveBeenCalledWith('Flush1', {});
-
-    // Second checkReady should be a no-op (already ready)
-    platforms.Mixpanel.checkReady();
-    vi.advanceTimersByTime(200);
-    vi.useRealTimers();
-  });
+  // (Removed: Mixpanel.checkReady double-flush test. v3.6.0 retired the
+  // analytics-side queue+poll mechanism; the equivalent contract — that
+  // pre-init buffered events flush exactly once on the loaded callback —
+  // is tested in tests/mixpanel/track-facade.test.ts.)
 
   it('EventQueue handles useRequestIdleCallback=false config', () => {
     vi.useFakeTimers();
@@ -3140,47 +3021,11 @@ describe('Additional coverage paths', () => {
 // =========================================================================
 // Mixpanel.destroy()
 // =========================================================================
-describe('Mixpanel.destroy()', () => {
-  it('clears interval, resets state, and empties queue', () => {
-    vi.useFakeTimers();
-    window.requestIdleCallback = vi.fn((cb: any) => cb());
-    loadWithDebug();
-    const platforms = window.ppAnalyticsDebug.platforms;
-
-    // Set up a polling interval by triggering checkReady
-    platforms.Mixpanel.ready = false;
-    platforms.Mixpanel._checking = false;
-    platforms.Mixpanel.queue = [{ type: 'track', eventName: 'E1', properties: {} }];
-    platforms.Mixpanel.checkReady();
-
-    expect(platforms.Mixpanel._checking).toBe(true);
-    expect(platforms.Mixpanel._pollHandle).not.toBeNull();
-
-    // Destroy should clear everything
-    platforms.Mixpanel.destroy();
-
-    expect(platforms.Mixpanel._pollHandle).toBeNull();
-    expect(platforms.Mixpanel._checking).toBe(false);
-    expect(platforms.Mixpanel.ready).toBe(false);
-    expect(platforms.Mixpanel.queue.length).toBe(0);
-
-    vi.useRealTimers();
-  });
-
-  it('destroy() is safe to call when no interval is active', () => {
-    window.requestIdleCallback = vi.fn((cb: any) => cb());
-    loadWithDebug();
-    const platforms = window.ppAnalyticsDebug.platforms;
-
-    // Clear any auto-started interval first
-    platforms.Mixpanel.destroy();
-
-    // Now call destroy again when _intervalId is already null
-    expect(() => platforms.Mixpanel.destroy()).not.toThrow();
-    expect(platforms.Mixpanel._pollHandle).toBeNull();
-    expect(platforms.Mixpanel.ready).toBe(false);
-  });
-});
+// (Removed: Mixpanel.destroy() tests. The destroy / _pollHandle / _checking
+// surface was part of the analytics-side queue+polling mechanism that v3.6.0
+// retired. Buffering now lives in ppLib.mixpanel.track's pre-init queue,
+// which is unconditionally drained on the loaded callback and has no
+// teardown contract to test.)
 
 // =========================================================================
 // CONSENT CACHING

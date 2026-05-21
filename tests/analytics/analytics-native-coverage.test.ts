@@ -733,76 +733,28 @@ describe('Analytics native coverage', () => {
   // ==========================================================================
   // PLATFORMS — MIXPANEL
   // ==========================================================================
-  it('Mixpanel.send: queues when not ready, processes after checkReady finds mixpanel', async () => {
-    await freshLoad();
-    const dbg = window.ppAnalyticsDebug;
-    const mockMp = createMockMixpanel();
-
-    // Initially not ready
-    dbg.platforms.Mixpanel.ready = false;
-    dbg.platforms.Mixpanel._checking = false;
-    dbg.platforms.Mixpanel.queue = [];
-
-    // Send data while not ready → queued
-    dbg.platforms.Mixpanel.send({ type: 'register', properties: { k: 'v' } });
-    expect(dbg.platforms.Mixpanel.queue.length).toBe(1);
-
-    // Now make mixpanel available and wait for checkReady to find it
-    window.mixpanel = mockMp;
-    await vi.waitFor(() => {
-      expect(dbg.platforms.Mixpanel.ready).toBe(true);
-    });
-    expect(mockMp.register).toHaveBeenCalledWith({ k: 'v' });
-
-    // Cleanup interval
-    if (dbg.platforms.Mixpanel._intervalId) {
-      clearInterval(dbg.platforms.Mixpanel._intervalId);
-    }
-  });
-
-  it('Mixpanel.send: register call when ready', async () => {
+  it('Mixpanel.send: dispatches register call to window.mixpanel', async () => {
     await freshLoad();
     const dbg = window.ppAnalyticsDebug;
     const mockMp = createMockMixpanel();
     window.mixpanel = mockMp;
-    dbg.platforms.Mixpanel.ready = true;
     dbg.platforms.Mixpanel.send({ type: 'register', properties: { src: 'google' } });
     expect(mockMp.register).toHaveBeenCalledWith({ src: 'google' });
   });
 
-  it('Mixpanel.send: track call when ready', async () => {
+  it('Mixpanel.send: dispatches track call to window.mixpanel', async () => {
     await freshLoad();
     const dbg = window.ppAnalyticsDebug;
     const mockMp = createMockMixpanel();
     window.mixpanel = mockMp;
-    dbg.platforms.Mixpanel.ready = true;
     dbg.platforms.Mixpanel.send({ type: 'track', eventName: 'Page View', properties: { page: '/' } });
     expect(mockMp.track).toHaveBeenCalledWith('Page View', { page: '/' });
   });
 
-  it('Mixpanel.checkReady: times out and clears queue', async () => {
-    vi.useFakeTimers();
-    await freshLoad();
-    const dbg = window.ppAnalyticsDebug;
-
-    // No mixpanel on window
-    delete (window as any).mixpanel;
-    dbg.platforms.Mixpanel.ready = false;
-    dbg.platforms.Mixpanel._checking = false;
-    dbg.platforms.Mixpanel.queue = [{ type: 'register', properties: {} }];
-    dbg.config.platforms.mixpanel.maxRetries = 3;
-    dbg.config.platforms.mixpanel.retryInterval = 10;
-
-    dbg.platforms.Mixpanel.checkReady();
-
-    // Advance past 3 retries
-    vi.advanceTimersByTime(50);
-
-    expect(dbg.platforms.Mixpanel.ready).toBe(false);
-    expect(dbg.platforms.Mixpanel._checking).toBe(false);
-    expect(dbg.platforms.Mixpanel.queue.length).toBe(0);
-    vi.useRealTimers();
-  });
+  // (Removed: Mixpanel.send queues when not ready, Mixpanel.checkReady: times out
+  // and clears queue. The analytics-side queue+polling mechanism was retired in
+  // v3.6.0 in favor of a single pre-init buffer inside ppLib.mixpanel.track —
+  // see tests/mixpanel/track-facade.test.ts.)
 
   // ==========================================================================
   // PLATFORMS — register (custom platforms)
@@ -1424,20 +1376,10 @@ describe('Analytics native coverage', () => {
     expect(mockMp.track).not.toHaveBeenCalled();
   });
 
-  // ==========================================================================
-  // Mixpanel.checkReady error path
-  // ==========================================================================
-  it('Mixpanel.checkReady error path', async () => {
-    await freshLoad();
-    const dbg = window.ppAnalyticsDebug;
-    dbg.platforms.Mixpanel._checking = false;
-    // Make setInterval throw
-    const origSI = globalThis.setInterval;
-    (globalThis as any).setInterval = () => { throw new Error('si error'); };
-    dbg.platforms.Mixpanel.checkReady();
-    expect(dbg.platforms.Mixpanel._checking).toBe(false);
-    (globalThis as any).setInterval = origSI;
-  });
+  // (Removed: Mixpanel.checkReady error path. checkReady was retired in
+  // v3.6.0 along with the analytics-side queue+polling mechanism. The
+  // equivalent error-handling coverage now lives in trackFacade's try/catch
+  // in src/mixpanel/index.ts.)
 
   // ==========================================================================
   // Platforms.register error path

@@ -636,12 +636,17 @@ type MixpanelQueueData = {
       }
     },
 
+    // Mixpanel dispatch — direct passthrough to the ppLib.mixpanel facade.
+    //
+    // Until v3.6.0 this used a local queue + checkReady polling to handle
+    // load-order races (mp.init() called after analytics's auto-pageview).
+    // That duplicated Mixpanel's own stub queue AND ppLib.mixpanel.trackFacade's
+    // pre-init buffer, with a 5-second hard timeout that silently dropped
+    // events if it expired. Now we dispatch directly: ppLib.mixpanel.track()
+    // buffers internally when win.mixpanel isn't ready yet, and the buffer
+    // is drained inside mp.init()'s `loaded` callback — single source of
+    // truth, no polling, no timeout.
     Mixpanel: {
-      ready: false,
-      _checking: false,
-      _pollHandle: null as { cancel: () => void } | null,
-      queue: [] as MixpanelQueueData[],
-
       send: function(data: MixpanelQueueData): void {
         try {
           /*! v8 ignore start */
@@ -655,31 +660,37 @@ type MixpanelQueueData = {
             return;
           }
 
-          /*! v8 ignore start */
-          if (!this.ready) {
-            this.queue.push(data);
-            if (!this._checking) this.checkReady();
-            return;
-          }
-          /*! v8 ignore stop */
-
           const dataType = SafeUtils.get(data, 'type', '');
 
-          if (dataType === 'register' && win.mixpanel && win.mixpanel.register) {
+          if (dataType === 'register') {
+            // register() goes direct to window.mixpanel — no enrichment path,
+            // and no facade exposing it. Buffer here if Mixpanel SDK isn't
+            // loaded yet (rare for register() since it's typically called
+            // alongside init by the mixpanel module itself).
             /*! v8 ignore start */
-            win.mixpanel.register(data.properties || {});
-            /*! v8 ignore stop */
-          /*! v8 ignore start */
-          } else if (dataType === 'track' && win.mixpanel && win.mixpanel.track) {
-          /*! v8 ignore stop */
-            /*! v8 ignore start */
-            // Route through the SDK facade so canonical event-properties
-            // context is merged in. Falls back to direct call if the
-            // mixpanel module isn't available (load-order guard).
-            if (ppLib.mixpanel && ppLib.mixpanel.track) {
-              ppLib.mixpanel.track(data.eventName || 'Unknown Event', data.properties || {});
+            if (win.mixpanel && typeof win.mixpanel.register === 'function') {
+              win.mixpanel.register(data.properties || {});
             } else {
+              Utils.log('warn', 'Mixpanel.register skipped — SDK not loaded');
+            }
+            /*! v8 ignore stop */
+          } else if (dataType === 'track') {
+            // Preferred path: ppLib.mixpanel.track() handles the load-order
+            // race internally (buffers when win.mixpanel.track isn't a
+            // function yet, drains on the loaded callback). No checkReady,
+            // no polling, no timeout.
+            //
+            // Fallback: direct win.mixpanel.track call when the mixpanel
+            // module isn't loaded but a Mixpanel SDK stub was installed by
+            // another integration. Keeps analytics usable in test fixtures
+            // and minimal deployments that don't include mixpanel.min.js.
+            /*! v8 ignore start */
+            if (ppLib.mixpanel && typeof ppLib.mixpanel.track === 'function') {
+              ppLib.mixpanel.track(data.eventName || 'Unknown Event', data.properties || {});
+            } else if (win.mixpanel && typeof win.mixpanel.track === 'function') {
               win.mixpanel.track(data.eventName || 'Unknown Event', data.properties || {});
+            } else {
+              Utils.log('warn', 'Mixpanel not loaded; event dropped: ' + data.eventName);
             }
             /*! v8 ignore stop */
           }
@@ -688,60 +699,7 @@ type MixpanelQueueData = {
         } catch (e) {
           Utils.log('error', 'Mixpanel send error', e);
         }
-      },
-
-      checkReady: function(): void {
-        try {
-          this._checking = true;
-          const self = this;
-          const maxRetries = SafeUtils.get(CONFIG, 'platforms.mixpanel.maxRetries', 50);
-          const retryInterval = SafeUtils.get(CONFIG, 'platforms.mixpanel.retryInterval', 100);
-
-          self._pollHandle = pollUntil({
-            check: function() {
-              /*! v8 ignore start */
-              if (win.mixpanel && typeof win.mixpanel.register === 'function') {
-              /*! v8 ignore stop */
-                self._checking = false;
-                self.ready = true;
-                while (self.queue.length > 0) {
-                  const data = self.queue.shift();
-                  /*! v8 ignore start */
-                  if (data) {
-                  /*! v8 ignore stop */
-                    self.send(data);
-                  }
-                }
-                return true;
-              }
-              return false;
-            },
-            intervalMs: retryInterval,
-            maxAttempts: maxRetries,
-            onMaxAttempts: function() {
-              self._checking = false;
-              self.queue.length = 0;
-              Utils.log('verbose', 'Mixpanel not available, clearing queued events');
-            },
-            win
-          });
-        } catch (e) {
-          this._checking = false;
-          Utils.log('error', 'Mixpanel check ready error', e);
-        }
-      },
-
-      /*! v8 ignore start */
-      destroy: function(): void {
-        if (this._pollHandle) {
-          this._pollHandle.cancel();
-          this._pollHandle = null;
-        }
-        this._checking = false;
-        this.ready = false;
-        this.queue.length = 0;
       }
-      /*! v8 ignore stop */
     },
 
     register: function(name: string, handler: (data: Record<string, unknown>) => void): void {
