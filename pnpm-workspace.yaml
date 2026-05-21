@@ -1,3 +1,16 @@
 packages: []
+
+# pnpm v11 migration target — the `overrides` and the build-allowlist were
+# previously declared in the `pnpm` field of `package.json`, which pnpm v11
+# no longer reads. Same semantics, new home. See:
+# https://pnpm.io/settings#overrides
+overrides:
+  # Pin coverage-engine internals to a specific version to lock in a
+  # known-good code path in our v8 coverage pipeline. Migrated from
+  # the pre-v11 package.json#pnpm.overrides block.
+  ast-v8-to-istanbul: 1.0.0
+
+allowBuilds:
+  esbuild: true
 onlyBuiltDependencies:
   - esbuild
