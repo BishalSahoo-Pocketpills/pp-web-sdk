@@ -35,8 +35,26 @@ import { safeLogPayload, safeLogError } from '@src/common/log-sanitize';
   // try.pocketpills.com and www.pocketpills.com share session/device/UTM
   // state via cookies scoped to `.pocketpills.com`. We derive the domain
   // from the live hostname so the same SDK build can run in dev (localhost,
-  // jsdom) without writing cookies the browser would reject. A caller may
-  // set `ppLib.config.cookieDomain` before this script loads to override.
+  // jsdom) without writing cookies the browser would reject.
+  //
+  // ## Overriding for staging / preview / partner hosts
+  //
+  // Auto-detect is intentionally narrow: only known PocketPills production
+  // domains opt in. Other hosts get HOST-SCOPED cookies (no Domain
+  // attribute), which means cross-subdomain self-referral detection (the
+  // load-bearing piece of audit fix 3.b/3.c) falls back to literal-hostname
+  // match only. For staging environments with multiple subdomains (e.g.
+  // `try.staging.pocketpills.com` ↔ `www.staging.pocketpills.com`), set
+  // `ppLib.config.cookieDomain` BEFORE this script loads:
+  //
+  //   <script>
+  //     window.ppLib = window.ppLib || {};
+  //     window.ppLib.config = { cookieDomain: '.staging.pocketpills.com' };
+  //   </script>
+  //   <script defer src="https://.../common.min.js"></script>
+  //
+  // The string-type check below preserves the override — auto-detect only
+  // fires when cookieDomain is unset.
   if (typeof ppLib.config.cookieDomain !== 'string') {
     try {
       const hostname = (win.location && win.location.hostname) || '';

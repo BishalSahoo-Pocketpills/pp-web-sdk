@@ -1272,10 +1272,18 @@ export function createEventPropertiesBuilder(
    * Returns the slice to PERSIST for last-touch. Rotates when:
    *   - First-ever capture (cookie empty), OR
    *   - New marketing params on this visit, OR
-   *   - Session expired AND referrer is NOT self-referral (refresh of a
-   *     same-domain page leaves document.referrer pointing at our own host,
-   *     which would otherwise flip last-touch attribution to "pocketpills.com"
-   *     once the 30-min session expired — audit issues 3.b + 3.c).
+   *   - Session expired AND referrer is NOT self-referral AND the current
+   *     visit carries at least one positive signal (a non-empty referrer
+   *     OR a URL param). The "no signal" branch is the privacy-mode variant
+   *     of audit issues 3.b + 3.c: a Brave / strict-privacy browser that
+   *     strips document.referrer on refresh would otherwise read as
+   *     `selfReferral=false` and flip last-touch to "direct", silently
+   *     losing the original attribution. We can't distinguish "user
+   *     genuinely came back direct" from "browser stripped the referrer
+   *     on an internal navigation," so we conservatively preserve prior
+   *     attribution rather than overwrite it with the weaker "direct"
+   *     signal. True new visitors (no prior touch) still go through the
+   *     normalizedFirstEver branch and get the direct touch.
    * Otherwise carries the prior normalized slice forward unchanged.
    */
   function resolveNormalizedSlice(
@@ -1292,7 +1300,12 @@ export function createEventPropertiesBuilder(
     const normalizedFirstEver = !existingLastExt.platform;
     const sessionActive = isUtmSessionActiveFromExt(existingLastExt);
     const selfReferral = isSelfReferralFromUrl(currentTouch.referrer);
-    if (normalizedFirstEver || hasNewParams || (!sessionActive && !selfReferral)) {
+    // No positive attribution signal on this visit — empty referrer AND no
+    // URL params. Diverges from GA's "after-timeout direct = new touch"
+    // default, by data-team direction: privacy-mode browsers shouldn't
+    // silently flip established last-touch to direct.
+    const currentHasNoSignal = !currentTouch.referrer && !hasNewParams;
+    if (normalizedFirstEver || hasNewParams || (!sessionActive && !selfReferral && !currentHasNoSignal)) {
       return currentTouch;
     }
     return {
