@@ -898,6 +898,76 @@ describe('createEventPropertiesBuilder', () => {
         expect(ma!.source).toBe('facebook');
         expect(ma!.campaign).toBe('relaunch');
       });
+
+      it('privacy-mode: empty referrer + session expired → last-touch NOT updated (no-signal veto)', () => {
+        // A Brave / strict-privacy browser that strips document.referrer on
+        // refresh would otherwise read as selfReferral=false and flip
+        // last-touch to "direct", silently losing the original attribution.
+        // The no-signal veto (empty referrer AND no URL params) preserves
+        // the prior touch even though the self-referral check can't fire.
+        seedInitialLastTouch();
+
+        setHref('http://localhost/signup');
+        setReferrer('');  // privacy-mode stripped
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+
+        // Last-touch survives the privacy-stripped refresh — would have
+        // flipped to "direct" without the no-signal veto.
+        expect(ma!.source).toBe('google');
+        expect(ma!.campaign).toBe('spring');
+      });
+
+      it('first-ever visit with empty referrer → direct touch (no-signal veto does NOT block first capture)', () => {
+        // The no-signal veto only protects EXISTING attribution. A genuine
+        // first-time visitor with no referrer and no URL params should still
+        // get the direct touch — otherwise we'd never capture anything.
+        setHref('http://localhost/lp');
+        setReferrer('');
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+
+        expect(ma!.platform).toBe('direct');
+        expect(ma!.source).toBe('direct');
+      });
+    });
+
+    describe('cookieDomain override (staging / preview hosts)', () => {
+      it('respects an explicit cookieDomain set before builder creation', () => {
+        // Staging / preview hosts that aren't `pocketpills.com` need to set
+        // ppLib.config.cookieDomain explicitly so cross-subdomain self-referral
+        // detection (audit 3.b/3.c) keeps working. Test locks in that the
+        // explicit value is read by isSelfReferralRef via the cookieDomain path.
+        setHref('https://app.staging-pp.example.com/checkout');
+        setReferrer('https://www.staging-pp.example.com/cart');  // cross-subdomain
+
+        // Seed prior last-touch (google), expire session, simulate refresh
+        // via cross-subdomain hop. Without an explicit cookieDomain, the
+        // host-match check would fail (app.* vs www.*), the cross-subdomain
+        // fallback would skip (cookieDomain undefined), and last-touch
+        // would flip to 'staging-pp.example.com' (the new referrer's host).
+        document.cookie = 'pp_utm_last_touch=' + encodeURIComponent(JSON.stringify({
+          utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'spring',
+          utm_content: '', utm_term: '',
+          source: 'google', medium: 'cpc', campaign: 'spring',
+          platform: 'google_ads', clickId: '',
+          referrer: 'https://www.google.com/', referrerDomain: 'www.google.com',
+          landingPage: 'https://www.staging-pp.example.com/lp',
+          timestamp: '2026-05-19T00:00:00Z',
+          sessionTs: 1,  // expired
+        })) + ';path=/';
+
+        const ppLib = makePPLib({ attribution: null });
+        // Explicit override — the auto-detect doesn't recognise staging-pp.example.com.
+        (ppLib as any).config.cookieDomain = '.staging-pp.example.com';
+
+        const ma = createEventPropertiesBuilder(window, ppLib).getMarketingAttribution();
+
+        // With the override, the cross-subdomain referrer is recognised as
+        // self-referral and the rotation is vetoed → google survives.
+        expect(ma!.source).toBe('google');
+        expect(ma!.campaign).toBe('spring');
+      });
     });
 
     describe('first-touch immutability (audit T9)', () => {
