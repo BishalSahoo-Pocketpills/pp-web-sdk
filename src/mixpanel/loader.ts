@@ -107,6 +107,13 @@ export function loadMixpanelSDK(win: Window & typeof globalThis, doc: Document):
     let h: any;
     (win as unknown as { mixpanel: unknown }).mixpanel = a;
     a._i = [];
+    // Tag the stub so resolveMpRef can distinguish it from a real (or
+    // test-installed) Mixpanel handle. Stub methods are queueing closures
+    // that push into `_i` for replay; calling them does NOT actually
+    // emit events. If resolveMpRef treated the stub as "ready" the
+    // watchdog would log "force-drained" events that in fact just went
+    // into the stub queue forever (if the real SDK never loads).
+    (a as { _ppStub?: boolean })._ppStub = true;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     a.init = function (b: any, d: any, g: any) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

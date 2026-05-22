@@ -200,6 +200,11 @@ function resolveMpRef(name: InstanceName): MixpanelGlobal | undefined {
     ? (globalThis as { mixpanel?: MixpanelGlobal })
     : undefined;
   if (!g || !g.mixpanel) return undefined;
+  // Skip the loader's stub queue — its `.track` is a closure that pushes
+  // into `_i[]` for replay, not a real send. If we returned the stub
+  // here, the watchdog drain would "succeed" into a queue that only
+  // drains when the real SDK finally loads. See loader.ts `_ppStub`.
+  if ((g.mixpanel as { _ppStub?: boolean })._ppStub) return undefined;
   if (name === 'primary') {
     if (typeof g.mixpanel.track === 'function') {
       state.mpRef = g.mixpanel;
@@ -273,26 +278,34 @@ export function dispatch(op: MixpanelOp, args: unknown[], options?: DispatchOpti
   const targets = resolveTargets(op, options);
   if (targets.length === 0) return false;
 
-  // If ANY targeted instance isn't ready, buffer the whole call (RAW args
-  // so enrichment re-runs at drain time with the latest builder context).
-  // Disabled targets aren't waited on — `resolveTargets` already filtered
-  // them out.
-  const allReady = targets.every((n) => isReady(n));
-  if (!allReady) {
+  // Buffering rule:
+  //   - Normal dispatch: if ANY targeted instance isn't ready, buffer the
+  //     whole call so we don't silently break parity by sending to one
+  //     instance only. Re-enrichment happens on drain.
+  //   - force=true (watchdog escape hatch): buffer ONLY if NO target is
+  //     ready. Partial fan-out is allowed once we've given up on full
+  //     parity for this boot cycle.
+  const readyTargets = targets.filter((n) => isReady(n));
+  if (readyTargets.length === 0) {
+    return enqueue({ op, args, options: options ? { ...options } : undefined });
+  }
+  if (!(options && options.force) && readyTargets.length < targets.length) {
     return enqueue({ op, args, options: options ? { ...options } : undefined });
   }
 
-  // All targets ready — enrich once, fan out with per-instance try/catch.
+  // Enrich once, fan out with per-instance try/catch.
   let resolvedArgs = args;
   if (handler.enrichable && !(options && options.skipEnrichment)) {
     resolvedArgs = enrichTrackArgs(args);
   }
 
   let anyOk = false;
-  for (let i = 0; i < targets.length; i++) {
-    const name = targets[i];
+  for (let i = 0; i < readyTargets.length; i++) {
+    const name = readyTargets[i];
     const mp = resolveMpRef(name);
+    /*! v8 ignore start */
     if (!mp) continue;
+    /*! v8 ignore stop */
     try {
       handler.invoke(mp, resolvedArgs);
       anyOk = true;
@@ -324,4 +337,41 @@ export function drainIfReady(): void {
     dispatch(entry.op, entry.args, entry.options);
   }
   pp.log('info', M.PRE_INIT_DRAINED(entries.length));
+}
+
+/**
+ * Watchdog escape hatch — replay the buffered queue with `force: true` so
+ * dispatch allows partial fan-out. Returns the number of entries that
+ * reached at least one ready instance. Entries that found NO ready
+ * instance are re-buffered by dispatch's own enqueue path; the caller
+ * can read `queueSize()` to see how many remain stuck.
+ *
+ * Why a force flag (vs duplicating dispatch's invoke loop here): the
+ * consent gate, OP_TABLE routing rules, alias-primary-only default,
+ * empty-event-name guard, and enrichment all live inside dispatch. Going
+ * around dispatch would duplicate every one of those concerns AND make
+ * future routing-table edits a two-place change. The `force` flag is a
+ * single bit on DispatchOptions that flips one branch — much narrower
+ * surface to maintain.
+ */
+export function drainToReady(): number {
+  if (!pp) return 0;
+  const entries = drain();
+  if (entries.length === 0) return 0;
+  let dispatched = 0;
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    // Decide before dispatching whether this entry can hit any instance
+    // — dispatch's return value can't tell us "dispatched vs re-enqueued"
+    // since both paths return true. resolveTargets honors the same
+    // routing rules (alias defaults, runtime setEnabled) that dispatch
+    // would use, so the count stays accurate even for op-specific
+    // routing.
+    const targets = resolveTargets(entry.op, entry.options);
+    const hasReady = targets.some((n) => isReady(n));
+    const forcedOpts: DispatchOptions = { ...(entry.options || {}), force: true };
+    dispatch(entry.op, entry.args, forcedOpts);
+    if (hasReady) dispatched++;
+  }
+  return dispatched;
 }
