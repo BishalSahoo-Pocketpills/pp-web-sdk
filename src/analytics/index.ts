@@ -663,12 +663,24 @@ type MixpanelQueueData = {
           const dataType = SafeUtils.get(data, 'type', '');
 
           if (dataType === 'register') {
-            // register() goes direct to window.mixpanel — no enrichment path,
-            // and no facade exposing it. Buffer here if Mixpanel SDK isn't
-            // loaded yet (rare for register() since it's typically called
-            // alongside init by the mixpanel module itself).
+            // Route through the SDK facade. The facade fans out to BOTH
+            // Mixpanel instances (primary + secondary) when dual-instance
+            // is enabled, internally buffering pre-init writes. Going
+            // direct to `win.mixpanel.register` would silently drop the
+            // super-prop on secondary, breaking parity for any module
+            // that registers via `Analytics.Mixpanel.send({ type:
+            // 'register', ... })` (the same channel mixpanel-bridged
+            // modules use for track).
+            //
+            // Fallback path mirrors the track branch below: direct
+            // `win.mixpanel.register` only when the mixpanel MODULE
+            // isn't loaded (minimal deployment / test fixture). Never
+            // bypasses secondary because if the facade isn't loaded,
+            // there's no secondary either.
+            if (ppLib.mixpanel && typeof ppLib.mixpanel.register === 'function') {
+              ppLib.mixpanel.register(data.properties || {});
             /*! v8 ignore start */
-            if (win.mixpanel && typeof win.mixpanel.register === 'function') {
+            } else if (win.mixpanel && typeof win.mixpanel.register === 'function') {
               win.mixpanel.register(data.properties || {});
             } else {
               Utils.log('warn', 'Mixpanel.register skipped — SDK not loaded');

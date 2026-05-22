@@ -20,6 +20,7 @@ export const M = {
   MODULE_LOADED: `${PREFIX} Module loaded`,
   MODULE_DISABLED: `${PREFIX} Module disabled via config`,
   NO_TOKEN: `${PREFIX} No token configured. Call ppLib.mixpanel.configure({ token: "..." }) before init.`,
+  TOKEN_EQUAL_REJECT: `${PREFIX} primary and secondary share the same token — refusing to init secondary. Same-token dual-write doubles ingest volume and corrupts identity-merge semantics. Verify ppLib.mixpanel.configure was called with distinct project tokens.`,
   INITIALIZED_SUCCESSFULLY: `${PREFIX} Initialized successfully`,
   INSTANCE_LOADED: (name: string): string => `${PREFIX} Instance loaded: ${name}`,
   INIT_FAILED: (name: string): string => `${PREFIX} init() failed for ${name}`,
