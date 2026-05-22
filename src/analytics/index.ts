@@ -680,10 +680,16 @@ type MixpanelQueueData = {
             // function yet, drains on the loaded callback). No checkReady,
             // no polling, no timeout.
             //
+            // Route through the SDK facade. The facade fans out to BOTH
+            // mixpanel instances (primary + secondary) when dual-instance
+            // is enabled, internally buffering pre-init events.
+            //
             // Fallback: direct win.mixpanel.track call when the mixpanel
-            // module isn't loaded but a Mixpanel SDK stub was installed by
-            // another integration. Keeps analytics usable in test fixtures
-            // and minimal deployments that don't include mixpanel.min.js.
+            // MODULE isn't loaded but a Mixpanel SDK stub was installed
+            // by another integration. Keeps analytics usable in test
+            // fixtures and minimal deployments. Never bypasses secondary
+            // because the dual-instance fan-out lives inside the facade
+            // — if the facade isn't there, there's no secondary either.
             /*! v8 ignore start */
             if (ppLib.mixpanel && typeof ppLib.mixpanel.track === 'function') {
               ppLib.mixpanel.track(data.eventName || 'Unknown Event', data.properties || {});

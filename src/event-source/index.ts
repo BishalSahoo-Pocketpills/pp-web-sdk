@@ -181,11 +181,14 @@ import { bootstrapModule } from '@src/common/bootstrap';
       }
       /*! v8 ignore stop */
 
-      // Route through the SDK facade so canonical event-properties context
-      // is merged in alongside the event-source payload.
+      // Route through the SDK facade — fans out to both mixpanel
+      // instances when dual-instance is enabled. Fallback to direct
+      // win.mixpanel.track only when the mixpanel MODULE isn't loaded
+      // (minimal deployment); never bypasses secondary in that case
+      // because secondary lives inside the facade.
       if (ppLib.mixpanel && ppLib.mixpanel.track) {
         ppLib.mixpanel.track(CONFIG.mixpanelEventName, data as unknown as Record<string, unknown>);
-      } else {
+      } else if (win.mixpanel && typeof win.mixpanel.track === 'function') {
         win.mixpanel.track(CONFIG.mixpanelEventName, data);
       }
       ppLib.log('verbose', '[ppEventSource] Sent to Mixpanel', data);

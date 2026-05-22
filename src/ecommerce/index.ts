@@ -301,9 +301,14 @@ import { bootstrapModule } from '@src/common/bootstrap';
       // Mixpanel gets the FLAT shape per the Analytics events spec —
       // `ecommerce_value`, `item_ids[]`, etc. dataLayer/GTM keeps nested.
       const flatPayload = flattenEcommerceForMixpanel(ecommerceData);
+      // Route through the SDK facade — fans out to both mixpanel
+      // instances when dual-instance is enabled. Fallback to direct
+      // win.mixpanel.track only when the mixpanel MODULE isn't loaded
+      // (minimal deployment); never bypasses secondary in that case
+      // because secondary lives inside the facade.
       if (ppLib.mixpanel && ppLib.mixpanel.track) {
         ppLib.mixpanel.track(eventName, flatPayload);
-      } else {
+      } else if (win.mixpanel && typeof win.mixpanel.track === 'function') {
         win.mixpanel.track(eventName, flatPayload);
       }
       ppLib.log('info', '[ppEcommerce] Mixpanel → ' + eventName, ppLib.safeLogPayload(ecommerceData));

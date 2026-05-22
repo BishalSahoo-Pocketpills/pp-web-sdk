@@ -6,6 +6,140 @@ export interface MixpanelCookieNames {
   experiments: string;
 }
 
+// =====================================================
+// Dual-instance core types
+// =====================================================
+
+export type InstanceName = 'primary' | 'secondary';
+
+/**
+ * Operations the dispatcher routes through. People-namespace ops carry the
+ * `people.` prefix so a single flat union covers every Mixpanel surface we
+ * call into. Keep in sync with the routing table in dispatch.ts.
+ */
+export type MixpanelOp =
+  | 'track'
+  | 'identify'
+  | 'register'
+  | 'register_once'
+  | 'unregister'
+  | 'alias'
+  | 'reset'
+  | 'opt_in_tracking'
+  | 'opt_out_tracking'
+  | 'people.set'
+  | 'people.set_once'
+  | 'people.increment'
+  | 'people.append'
+  | 'people.union'
+  | 'people.unset'
+  | 'people.track_charge';
+
+export interface DispatchOptions {
+  /** When omitted, dispatches to every currently-enabled instance. */
+  instances?: InstanceName[];
+  /**
+   * When true, bypass the eventPropertiesBuilder enrichment merge on track().
+   * Defaults to false — enrichment is the desired path for SDK-internal calls.
+   */
+  skipEnrichment?: boolean;
+}
+
+export interface DispatchResult {
+  instance: InstanceName;
+  ok: boolean;
+  /** Populated only when ok === false. Sanitized error class label. */
+  error?: string;
+  /** True when the call was buffered into the pre-init queue instead of dispatched. */
+  buffered?: boolean;
+  /** True when this instance was skipped (disabled or excluded by routing rules). */
+  skipped?: boolean;
+}
+
+// =====================================================
+// Configuration shapes
+// =====================================================
+
+/**
+ * Per-instance config. Project-identity fields (`token`, `apiHost`,
+ * `projectName`) and the runtime `enabled` flag live here. SDK-loader and
+ * cross-cutting config (SRI, cookieNames, sessionTimeout, enrichTrack,
+ * emitMode) live in SharedMixpanelConfig — they apply once to the single
+ * injected <script> regardless of how many instances we run.
+ */
+export interface MixpanelInstanceConfig {
+  enabled: boolean;
+  token: string;
+  /**
+   * Mixpanel API endpoint for this instance's data-residency region.
+   * Forwarded to `mixpanel.init({ api_host })`. Leave undefined to use
+   * Mixpanel's US default. Set explicitly for EU / India projects.
+   */
+  apiHost?: string;
+  /**
+   * Optional human-readable label registered as the `project` super-prop.
+   * Helpful when debugging events that flow to both instances and you want
+   * the source project name on every event in Mixpanel's Debug View.
+   */
+  projectName?: string;
+  /**
+   * Passthrough into `mp.init(token, { ...initOptions }, name)`. Empty by
+   * default — Simplified ID Merge is a server-side project setting in the
+   * new project, so neither instance needs a client-side merge flag today.
+   * Retained for future per-instance tuning (e.g. `persistence_name`,
+   * `disable_persistence`, custom `loaded` hooks).
+   */
+  initOptions?: Record<string, unknown>;
+}
+
+/**
+ * SDK-loader + cross-instance config. Applies to the single injected
+ * <script> tag and to enrichment that happens once before fan-out.
+ *
+ * Per-instance overrides of these fields are NOT supported — the loader
+ * stub injects exactly one script, so per-instance `cdnUrl` / `integrity`
+ * cannot be enforced without breaking SRI guarantees.
+ */
+export interface SharedMixpanelConfig extends SdkSecurityOptions {
+  crossSubdomainCookie: boolean;
+  optOutByDefault: boolean;
+  sessionTimeout: number;
+  cookieNames: MixpanelCookieNames;
+  nonce?: string;
+  /**
+   * Pinned CDN URL for SRI. Pin to a specific version
+   * (e.g. `mixpanel-2-2.65.0.min.js`) before flipping `requireIntegrity`.
+   */
+  cdnUrl?: string;
+  /**
+   * When true, `ppLib.mixpanel.track()` merges the SDK's canonical event
+   * properties into every track call before fan-out. Caller props win on
+   * collision. Set false to forward caller props unchanged.
+   */
+  enrichTrack: boolean;
+  /**
+   * How the Mixpanel facade serializes the per-event property bag.
+   *   - 'flat':   flat keys only (legacy).
+   *   - 'dual':   both flat keys AND nested wrappers (migration default).
+   *   - 'nested': nested wrappers only — the contract-aligned end state.
+   *
+   * Caller-passed properties win on collision in all modes.
+   */
+  emitMode: 'flat' | 'dual' | 'nested';
+}
+
+export interface DualMixpanelConfig {
+  primary: MixpanelInstanceConfig;
+  secondary: MixpanelInstanceConfig;
+  shared: SharedMixpanelConfig;
+}
+
+/**
+ * Legacy single-instance config kept for backward compatibility. When
+ * `configure()` receives this flat shape it synthesizes a DualMixpanelConfig
+ * with `secondary: { enabled: false }` so existing callers (`configure({
+ * token: '...' })`) keep working unchanged.
+ */
 export interface MixpanelConfig extends SdkSecurityOptions {
   enabled: boolean;
   token: string;
@@ -15,56 +149,9 @@ export interface MixpanelConfig extends SdkSecurityOptions {
   sessionTimeout: number;
   cookieNames: MixpanelCookieNames;
   nonce?: string;
-  // SRI is only effective when paired with a pinned cdnUrl — the default
-  // `-latest` URL changes whenever Mixpanel ships, which would
-  // invalidate the hash and break the loader. Pin to a specific version
-  // (e.g. `mixpanel-2-2.65.0.min.js`) before flipping requireIntegrity.
   cdnUrl?: string;
-  /**
-   * Mixpanel API endpoint for this project's data-residency region.
-   * Forwarded to `mixpanel.init({ api_host })`. Leave undefined to use
-   * Mixpanel's default (US: `https://api.mixpanel.com`). Set explicitly
-   * for projects on a different residency:
-   *   - EU:    'https://api-eu.mixpanel.com'
-   *   - India: 'https://api-in.mixpanel.com'
-   *
-   * Production typically uses US (the default — no config needed).
-   * Staging environments pointing at non-US test projects must override
-   * this; otherwise events are silently dropped by the wrong region's
-   * ingest endpoint.
-   */
   apiHost?: string;
-  /**
-   * When true (default), `ppLib.mixpanel.track()` merges the SDK's canonical
-   * event properties (UTM touch attribution, device/session/login state,
-   * marketing attribution, click IDs) into every track call. Caller-passed
-   * properties always win on key collision.
-   *
-   * Set to false to forward the caller's properties unchanged. Mixpanel's
-   * existing super-properties continue to attach automatically either way.
-   */
   enrichTrack: boolean;
-  /**
-   * How the Mixpanel facade serializes the per-event property bag.
-   *   - 'flat':   current legacy behavior — flat keys only (no nested wrappers).
-   *   - 'dual':   both flat keys AND nested wrappers (default for migration).
-   *   - 'nested': nested wrappers only — eventProperties / userProperties /
-   *               page / attribution. The contract-aligned end state.
-   *
-   * 'dual' is the default so consumers' Mixpanel reports / BigQuery queries
-   * can migrate to the nested shape on their own schedule. Flip to 'nested'
-   * once downstream is ready.
-   *
-   * **Caller precedence** — properties passed by the caller of
-   * `ppLib.mixpanel.track(name, properties)` always win on key collision.
-   * In 'nested' and 'dual' modes this means: if a caller passes a key that
-   * matches one of the nested wrappers (`page`, `userProperties`,
-   * `eventProperties`, `attribution`), the caller's value REPLACES the
-   * SDK's wrapper entirely — it is NOT shallow-merged into it. This is the
-   * intentional escape hatch for callers that need to inject custom shapes;
-   * SDK consumers wanting to override one nested field should pass a
-   * complete wrapper object (e.g. `{ eventProperties: { ...defaults, key: v } }`).
-   */
   emitMode: 'flat' | 'dual' | 'nested';
 }
 
@@ -75,19 +162,103 @@ export interface SessionManager {
   check: () => void;
 }
 
+// =====================================================
+// Public API surface
+// =====================================================
+
+/**
+ * Single-instance facade exposed at `ppLib.mixpanel.primary` and
+ * `ppLib.mixpanel.secondary`. Same surface as the top-level API but
+ * targets one instance only — no `instances` option, no fan-out.
+ */
+export interface MixpanelInstanceFacade {
+  track: (event: string, properties?: Record<string, unknown>) => boolean;
+  identify: (id: string) => boolean;
+  register: (props: Record<string, unknown>) => boolean;
+  register_once: (props: Record<string, unknown>) => boolean;
+  unregister: (prop: string) => boolean;
+  alias: (id: string, original?: string) => boolean;
+  reset: () => boolean;
+  opt_in_tracking: () => boolean;
+  opt_out_tracking: () => boolean;
+  people: {
+    set: (props: Record<string, unknown>) => boolean;
+    set_once: (props: Record<string, unknown>) => boolean;
+    increment: (props: Record<string, unknown> | string, by?: number) => boolean;
+    append: (props: Record<string, unknown>) => boolean;
+    union: (props: Record<string, unknown>) => boolean;
+    unset: (props: string | string[]) => boolean;
+    track_charge: (amount: number, props?: Record<string, unknown>) => boolean;
+  };
+  setEnabled: (enabled: boolean) => void;
+  isEnabled: () => boolean;
+  getConfig: () => MixpanelInstanceConfig;
+  /** Read this instance's Mixpanel cookie data (`mp_<token>_mixpanel`). */
+  getCookieData: () => Record<string, unknown>;
+}
+
 export interface MixpanelAPI {
-  configure: (options?: DeepPartial<MixpanelConfig>) => MixpanelConfig;
-  init: () => void;
   /**
-   * Internal SDK facade for sending events to Mixpanel. Other SDK modules
-   * (analytics, ecommerce, event-source) MUST use this instead of calling
-   * `window.mixpanel.track` directly so every event carries the SDK's
-   * canonical context block.
-   *
-   * No-op (returns false) if Mixpanel isn't loaded yet or is disabled.
-   * Returns true when forwarded.
+   * Accepts either the new DualMixpanelConfig shape or the legacy flat
+   * MixpanelConfig shape. Legacy input is synthesized into a dual config
+   * with `secondary: { enabled: false }` so existing single-instance
+   * callers keep working unchanged.
    */
-  track: (eventName: string, properties?: Record<string, unknown>) => boolean;
-  getMixpanelCookieData: () => Record<string, unknown>;
-  getConfig: () => MixpanelConfig;
+  configure: (
+    options?: DeepPartial<DualMixpanelConfig> | DeepPartial<MixpanelConfig>,
+  ) => DualMixpanelConfig;
+  init: () => void;
+
+  // -------- Functional core (dual-write by default) --------
+  // Returns true when AT LEAST ONE targeted instance accepted the call
+  // (either dispatched live or buffered into the pre-init queue).
+  // Returns false only when every targeted instance failed or was disabled.
+
+  /** SDK-internal track facade. Other modules (analytics, ecommerce,
+   *  event-source) MUST use this instead of `window.mixpanel.track` so
+   *  every event carries the SDK's canonical context block. */
+  track: (
+    eventName: string,
+    properties?: Record<string, unknown>,
+    options?: DispatchOptions,
+  ) => boolean;
+  identify: (id: string, options?: DispatchOptions) => boolean;
+  register: (props: Record<string, unknown>, options?: DispatchOptions) => boolean;
+  register_once: (props: Record<string, unknown>, options?: DispatchOptions) => boolean;
+  unregister: (prop: string, options?: DispatchOptions) => boolean;
+  /** Alias is excluded from secondary by default — Mixpanel's legacy
+   *  Original-ID merge concept does not apply to Simplified ID Merge
+   *  projects. Pass `{ instances: ['secondary'] }` to override if you
+   *  really know what you're doing. */
+  alias: (id: string, original?: string, options?: DispatchOptions) => boolean;
+  reset: (options?: DispatchOptions) => boolean;
+  opt_in_tracking: (options?: DispatchOptions) => boolean;
+  opt_out_tracking: (options?: DispatchOptions) => boolean;
+  people: {
+    set: (props: Record<string, unknown>, options?: DispatchOptions) => boolean;
+    set_once: (props: Record<string, unknown>, options?: DispatchOptions) => boolean;
+    increment: (
+      props: Record<string, unknown> | string,
+      by?: number,
+      options?: DispatchOptions,
+    ) => boolean;
+    append: (props: Record<string, unknown>, options?: DispatchOptions) => boolean;
+    union: (props: Record<string, unknown>, options?: DispatchOptions) => boolean;
+    unset: (props: string | string[], options?: DispatchOptions) => boolean;
+    track_charge: (
+      amount: number,
+      props?: Record<string, unknown>,
+      options?: DispatchOptions,
+    ) => boolean;
+  };
+
+  // -------- Namespaced sugar (single-instance scope) --------
+  primary: MixpanelInstanceFacade;
+  secondary: MixpanelInstanceFacade;
+
+  // -------- Lifecycle / utility --------
+  setEnabled: (instance: InstanceName, enabled: boolean) => void;
+  getConfig: () => DualMixpanelConfig;
+  /** Read Mixpanel cookie data. Defaults to primary instance. */
+  getMixpanelCookieData: (instance?: InstanceName) => Record<string, unknown>;
 }

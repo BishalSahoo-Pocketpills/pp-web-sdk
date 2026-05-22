@@ -313,16 +313,34 @@ import { bootstrapModule } from '@src/common/bootstrap';
       // (VWO may not re-fire _vis_opt_queue on subsequent pages)
       sessionStorageSet('pp_vwo_exp_props', JSON.stringify(props));
 
-      // If Mixpanel is already fully loaded, register immediately
-      const mp = win.mixpanel;
-      if (mp && (mp as { __loaded?: boolean }).__loaded) {
-        mp.register(props);
-        if (mp.people && typeof mp.people.set === 'function') {
-          mp.people.set(props);
+      // Register through the SDK facade so BOTH Mixpanel instances
+      // (primary + secondary, when dual-instance is enabled) receive the
+      // experiment super-props. The facade buffers if Mixpanel hasn't
+      // loaded yet — drains automatically when init completes.
+      //
+      // Fallback: when the mixpanel MODULE isn't loaded at all (minimal
+      // deployment), the facade is unavailable; write directly to
+      // window.mixpanel if some other integration installed a Mixpanel
+      // stub. This branch never fires in dual-instance deployments
+      // (ppLib.mixpanel is always loaded there), so there's no secondary
+      // to bypass.
+      if (ppLib.mixpanel && typeof ppLib.mixpanel.register === 'function') {
+        ppLib.mixpanel.register(props);
+        if (ppLib.mixpanel.people && typeof ppLib.mixpanel.people.set === 'function') {
+          ppLib.mixpanel.people.set(props);
         }
-        ppLib.log('info', '[ppVWO] Registered experiments to Mixpanel (immediate)');
+        ppLib.log('info', '[ppVWO] Registered experiments to Mixpanel (via SDK facade)');
       } else {
-        ppLib.log('info', '[ppVWO] Experiment props stored — Mixpanel will register on init');
+        const mp = win.mixpanel;
+        if (mp && (mp as { __loaded?: boolean }).__loaded) {
+          mp.register(props);
+          if (mp.people && typeof mp.people.set === 'function') {
+            mp.people.set(props);
+          }
+          ppLib.log('info', '[ppVWO] Registered experiments to Mixpanel (direct fallback)');
+        } else {
+          ppLib.log('info', '[ppVWO] Experiment props stored — Mixpanel will register on init');
+        }
       }
     } catch (e) {
       ppLib.log('warn', '[ppVWO] Failed to prepare experiment properties', e);

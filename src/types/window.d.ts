@@ -13,21 +13,33 @@ interface PPLibReadyCallback {
 
 // Minimal Mixpanel API surface we actually call. Keeps callers honest
 // about what we depend on without claiming to model the full SDK.
+//
+// Named-instance children live under the same shape — e.g. `mp.secondary`
+// is itself a MixpanelGlobal. The vendored loader stub installs each
+// named instance as a property on the root global, so accessing
+// `window.mixpanel.secondary` (after `mp.init(token, opts, 'secondary')`)
+// yields a fully-functional MixpanelGlobal scoped to that token.
 export interface MixpanelGlobal {
   __SV?: number;
   init: (token: string, config?: Record<string, unknown>, name?: string) => void;
   track: (event: string, properties?: Record<string, unknown>) => void;
   register: (props: Record<string, unknown>) => void;
   register_once: (props: Record<string, unknown>) => void;
+  unregister: (prop: string) => void;
   identify: (id: string) => void;
-  alias: (id: string) => void;
+  alias: (id: string, original?: string) => void;
   reset: () => void;
   opt_in_tracking: () => void;
+  opt_out_tracking: () => void;
   get_distinct_id?: () => string | null;
   get_property: (name: string) => unknown;
   people: {
     set: (props: Record<string, unknown>) => void;
     set_once: (props: Record<string, unknown>) => void;
+    increment: (props: Record<string, unknown> | string, by?: number) => void;
+    append: (props: Record<string, unknown>) => void;
+    union: (props: Record<string, unknown>) => void;
+    unset: (props: string | string[]) => void;
     track_charge?: (amount: number, props?: Record<string, unknown>) => void;
   };
   // Loader-stub queue + extras the vendored snippet attaches.
