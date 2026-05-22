@@ -325,6 +325,228 @@ been published behind a version tag. Breaking changes are flagged
 
 ---
 
+
+## [3.6.1] — 2026-05-22
+
+Post-merge Principal review of the v3.6.0 dual-instance Mixpanel
+rollout surfaced four correctness gaps and a small set of code-quality
+items. All fixes are backward-compatible — no migration required.
+
+### Security
+
+- **Consent gate widened to every PII-emitting Mixpanel op.** Pre-fix
+  the gate covered only `track`; `identify`, `alias`, `register`,
+  `register_once`, `opt_in_tracking`, and all of `people.*` (set,
+  set_once, increment, append, union, track_charge) bypassed it. With
+  `ppLib.consent.revoke()` (or `pp_consent: 'denied'`), calls like
+  `identify('user@example.com')` or `people.set({ email, phone })` were
+  still emitting PII to Mixpanel. The new rule, encoded as a
+  `consentGated` flag on the dispatcher's `OP_TABLE`: any op that
+  emits or stores PII is gated; ops that REDUCE data
+  (`unregister`, `people.unset`) or are operator-controlled lifecycle
+  actions (`reset`, `opt_out_tracking`) bypass the gate. `opt_in_tracking`
+  is gated too — flipping opt-in under denied consent is incoherent;
+  `opt_out_tracking` stays ungated so operators can always opt out.
+
+- **Boot-time guard against same-token dual-write.** Nothing validated
+  that `primary.token !== secondary.token` at boot. A same-token
+  misconfig would silently double-write to one Mixpanel project,
+  doubling billing and ingest volume, and corrupting Mixpanel's
+  identity-merge semantics (two writes with the same `$device_id` to
+  the same project produce a single profile with double event counts).
+  `ppLib.mixpanel.init()` now logs a loud error and disables secondary
+  in this case so the SDK keeps primary-only behavior and data
+  integrity is preserved.
+
+### Changed
+
+- **Analytics `Mixpanel.send({ type: 'register' })` routes through the
+  dispatcher.** Pre-fix it wrote directly to `window.mixpanel.register`,
+  bypassing the dual-instance facade and silently dropping super-props
+  on secondary. Any module using the analytics → Mixpanel bridge for
+  super-prop registration (e.g. campaign params, AB-test exposure)
+  would break dual-instance parity. Now routes through
+  `ppLib.mixpanel.register` (fans out); the direct `win.mixpanel.register`
+  fallback is retained for minimal deployments where the mixpanel
+  module isn't loaded — mirroring the existing track-branch pattern.
+
+- **`initOptions` reserved-key denylist.** Caller-supplied
+  `initOptions.loaded` (a documented passthrough field on
+  `MixpanelInstanceConfig.initOptions`) would silently overwrite the
+  orchestrator's loaded callback, breaking the entire boot chain:
+  identity-sync never runs, the pre-init queue never drains, and the
+  15s watchdog fires with no recovery path. Six orchestrator-owned keys
+  are now denylisted with a per-key warn: `loaded`,
+  `cross_subdomain_cookie`, `opt_out_tracking_by_default`,
+  `track_pageview`, `api_transport`, `api_host`. Non-reserved keys
+  (`persistence_name`, `debug`, `property_blacklist`, etc.) still pass
+  through unchanged.
+
+- **Watchdog actually force-drains buffered events.** Pre-fix the 15s
+  watchdog called `drainIfReady()` which is gated on "all enabled
+  instances loaded" — meaning when one instance was stuck (the exact
+  failure mode the watchdog is supposed to rescue), the pre-init queue
+  stayed buffered forever, even though the log message claimed
+  "force-drained". New `drainToReady()` + a `force` flag on
+  `DispatchOptions` allow partial fan-out: events reach instances that
+  DID load while the stuck one stays empty. The watchdog log now
+  distinguishes three states: (a) force-drained N events to ready
+  instance(s), (b) no instance ready → events stay queued, (c) stuck
+  but idle.
+
+- **Identity sync uses a single primary-then-mirror writer.**
+  `unifyDistinctIdWithPpDistinctId` (run during boot's
+  `registerSharedContext` pass) previously dispatched `identify` to
+  both instances by default, even though secondary's identity is
+  already being mirrored from primary by `syncIdentityFromPrimary` in
+  the loaded-callback chain. Two writers to secondary's identity made
+  future identity edits hard to reason about. Now: unify identifies
+  primary only, then calls `resyncAfterReset()` to mirror to
+  secondary — single canonical primary-then-mirror path reviewable in
+  one place (`src/mixpanel/shared-context.ts`).
+
+- **`resolveMpRef` renamed to `getOrAdoptMpRef` (impurity flag).** The
+  function does either a pure read (when `state.mpRef` is set) OR an
+  adoption with side effects (writes `state.mpRef` and
+  `state.initialized` when promoting a globally-installed Mixpanel
+  handle). Old name implied a pure resolve; new name makes the
+  side-effect path visible at call sites.
+
+- **Alias guard warn when no target is enabled.**
+  `OP_TABLE.alias` defaults to `instances: ['primary']` (Simplified ID
+  Merge projects don't use alias). After a future cutover that flips
+  `primary.enabled: false`, alias would silently no-op. Now logs a warn
+  with remediation guidance.
+
+- **Loader stub tagged with `_ppStub: true`.** `getOrAdoptMpRef`
+  previously couldn't distinguish the loader's queueing stub from the
+  real Mixpanel SDK — both have a `.track` function. Adopting the stub
+  would make the watchdog drain "succeed" into a queue that only
+  drains when the real SDK loads. The stub is now tagged and explicitly
+  skipped during adoption.
+
+### Test infrastructure
+
+- 16 new tests across `tests/mixpanel/boot-resilience.test.ts`,
+  `tests/integration/mixpanel-data-correctness.test.ts`, and added
+  coverage in `dual-instance.test.ts` + `dual-instance-coverage.test.ts`
+  for the widened consent gate.
+- Full suite: 2334 / 2334 passing (was 2314 at v3.6.0). Each fix
+  shipped with its tests in the same merge.
+
+## [3.6.0] — 2026-05-21
+
+### Added
+
+- **Dual-instance Mixpanel support — primary + secondary fan-out.**
+  Powers the migration from PocketPills' old Mixpanel project
+  (Original ID Merge) to the new project (Simplified ID Merge,
+  configured server-side in Mixpanel's Project Settings → Identity
+  Merge). During the validation window both projects receive identical
+  events with shared `$device_id` and `distinct_id` so parity
+  dashboards can validate the new project before cutover.
+
+  **Public API** (`window.ppLib.mixpanel`):
+
+  ```ts
+  ppLib.mixpanel = {
+    // Functional core — dual-write to every enabled instance by default.
+    track, identify, register, register_once, unregister, alias,
+    reset, opt_in_tracking, opt_out_tracking,
+    people: { set, set_once, increment, append, union, unset, track_charge },
+
+    // Pass { instances: ['primary'] } as the trailing options arg to
+    // restrict any call to one instance.
+
+    // Namespaced sugar — single-instance scope, same surface.
+    primary: { ...same ops + setEnabled / isEnabled / getConfig },
+    secondary: { ...same },
+
+    // Lifecycle.
+    configure(DualMixpanelConfig | LegacyMixpanelConfig),
+    init(), setEnabled(name, bool), getConfig(),
+  };
+  ```
+
+  **Config shape:**
+
+  ```ts
+  ppLib.mixpanel.configure({
+    primary:   { enabled: true,  token: 'PRIMARY_TOKEN',   projectName: 'OldProject' },
+    secondary: { enabled: true,  token: 'SECONDARY_TOKEN', projectName: 'NewProject' },
+    shared:    { sessionTimeout: 1800000, cookieNames: {...}, ... },
+  });
+  ```
+
+  **Legacy back-compat:** `configure({ token: '...' })` still works —
+  synthesized into `{ primary: { token: '...' }, secondary: { enabled:
+  false } }`. Existing single-instance callers see no behavior change.
+
+- **HOF dispatcher** (`src/mixpanel/dispatch.ts`) — every Mixpanel op
+  routes through one primitive with consent gating, enrichment, and
+  per-instance error isolation. Adding a new op is a one-line entry in
+  `OP_TABLE`. A primary throw never blocks secondary and vice versa.
+
+- **`alias` defaults to primary-only routing** — Simplified ID Merge
+  projects don't use legacy alias-to-merge semantics. Callers can
+  override via `{ instances: ['secondary'] }`.
+
+- **Identity sync — `$device_id` pinning.** Secondary's `loaded`
+  callback runs `syncIdentityFromPrimary` BEFORE any tracks fire,
+  pinning secondary's `$device_id` to primary's. Without this, named
+  Mixpanel instances each generate their own UUIDs, making cross-
+  project parity for anonymous events impossible.
+
+- **Shared `SessionManager`** — one canonical session ID fans out via
+  `dispatch('register')` to every enabled instance so both projects
+  report identical session boundaries.
+
+- **Single SDK script injection** — the vendored Mixpanel loader stub
+  is injected exactly once regardless of how many instances run. SRI /
+  nonce / `cdnUrl` apply to the one script and live in the shared
+  config (per-instance overrides not supported by design).
+
+- **Watchdog (15s)** — if either enabled instance fails to report
+  `loaded` (network failure, ad-blocker, SRI mismatch), the buffered
+  pre-init queue is rescued so events aren't silently swallowed. The
+  drain logic was hardened in v3.6.1.
+
+- **Cookie migration is primary-only** — secondary is a fresh project
+  with no legacy cookies to migrate. Per-token sessionStorage flag
+  (`pp_mp_migrated_<token>`) prevents primary/secondary state sharing.
+
+- **Bypass-path rewiring (same release):** `src/vwo/index.ts`,
+  `src/analytics/index.ts`, `src/ecommerce/index.ts`,
+  `src/event-source/index.ts` previously wrote directly to
+  `window.mixpanel.*` — silently primary-only. They now route through
+  `ppLib.mixpanel.*` (fan-out), with fallbacks retained for minimal
+  deployments where the mixpanel module isn't included.
+
+### Test infrastructure
+
+- Test count grew from 2245 (pre-dual-instance) to 2314.
+- New test surfaces: `tests/mixpanel/dual-instance.test.ts` (35 IIFE
+  behavior tests), `tests/mixpanel/dual-instance-coverage.test.ts`
+  (17 native-import coverage tests),
+  `tests/integration/dual-mixpanel-parity.test.ts` (5 end-to-end
+  parity tests asserting identical event names + property bags +
+  distinct_ids across both instances for a 10-event mixed sequence).
+- Mixpanel module coverage: ~89% (per-module varies; bundle coverage
+  ~93% lines / ~85% branches).
+
+### Cutover runbook
+
+See [Dual-instance Mixpanel architecture](https://github.com/Pocketpills-marketing/pp-web-sdk/blob/main/src/mixpanel/README.md)
+in-repo, or the architectural memo at `src/mixpanel/`:
+
+1. Both `primary` and `secondary` enabled, parity dashboards run for
+   ≥1 week.
+2. Config-only PR flips `primary.enabled: false` after validation.
+3. After a week of secondary-only operation, drop the `primary` config
+   block. Optional internal rename `secondary` → `primary` is a
+   separate refactor (no public API change since callers use
+   `ppLib.mixpanel.track()` not `ppLib.mixpanel.primary.track()`).
+
 ## How to read this file
 
 Each entry above is in one of four buckets:
