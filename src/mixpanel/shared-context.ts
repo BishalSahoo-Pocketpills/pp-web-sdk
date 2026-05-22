@@ -14,6 +14,7 @@ import { pollUntil } from '@src/common/retry';
 import { dispatch } from '@src/mixpanel/dispatch';
 import { getState } from '@src/mixpanel/instance-state';
 import { registerCampaignParams } from '@src/mixpanel/campaign';
+import { resyncAfterReset } from '@src/mixpanel/identity-sync';
 import { COOKIE_KEYS, DEFAULTS, M } from '@src/mixpanel/messages';
 
 const VWO_BRIDGE_POLL_MAX_ATTEMPTS = DEFAULTS.VWO_BRIDGE_POLL_MAX_ATTEMPTS;
@@ -108,6 +109,17 @@ function registerMarketingAttribution(): void {
  * Reads primary's current distinct_id; skips the dispatched identify when
  * it already matches. Without this short-circuit a fresh identify() fires
  * on every page load and pollutes the Mixpanel ingest with redundant calls.
+ *
+ * Identity sync is primary-then-mirror, not dual-write:
+ *   1. Identify primary to ppDistinctId (single instance — secondary was
+ *      already identified by syncIdentityFromPrimary in its loaded
+ *      callback, possibly to primary's OLD distinct_id).
+ *   2. Resync secondary from primary so it picks up the NEW canonical id.
+ *
+ * Pre-fix this dispatched `identify` to both instances by default. That
+ * worked, but secondary received two identify() calls within ~100ms of
+ * its loaded callback (once via syncIdentityFromPrimary, once via this
+ * unify pass) — redundant and noisy in Mixpanel's debug view.
  */
 function unifyDistinctIdWithPpDistinctId(): void {
   if (!pp || !pp.eventPropertiesBuilder) return;
@@ -116,9 +128,6 @@ function unifyDistinctIdWithPpDistinctId(): void {
     const ppDistinctId = bundle.userProperties.pp_distinct_id;
     if (typeof ppDistinctId !== 'string' || ppDistinctId.length === 0) return;
 
-    // Eq-check against primary's current distinct_id. The legacy single-
-    // instance code did this gate; preserving it matches existing test
-    // semantics and avoids redundant identify() calls.
     const primary = getState('primary');
     const currentMpId =
       primary.mpRef && typeof primary.mpRef.get_distinct_id === 'function'
@@ -126,7 +135,14 @@ function unifyDistinctIdWithPpDistinctId(): void {
         : null;
     if (currentMpId === ppDistinctId) return;
 
-    dispatch('identify', [ppDistinctId]);
+    // Primary first — single call. The instances:['primary'] scope is
+    // what eliminates the double-identify on secondary.
+    dispatch('identify', [ppDistinctId], { instances: ['primary'] });
+    // Then mirror to secondary (if enabled and loaded). resyncAfterReset
+    // reads primary's now-canonical distinct_id and applies it to
+    // secondary in one call — same path used after `reset()`. No-op
+    // when secondary is disabled or not yet ready.
+    resyncAfterReset();
     pp.log('info', M.DISTINCT_ID_UNIFIED(currentMpId as string | null, ppDistinctId));
   } catch (e) {
     pp.log('warn', M.DISTINCT_ID_UNIFICATION_FAILED, e);

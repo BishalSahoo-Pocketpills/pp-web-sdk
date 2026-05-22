@@ -389,6 +389,24 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
         return;
       }
 
+      // Token-equality guard — primary and secondary MUST be different
+      // Mixpanel projects. Same-token misconfig silently double-bills,
+      // doubles ingest volume, and corrupts the identity-merge story
+      // (two writes with the same $device_id to the same project produce
+      // a single profile and double event counts). Disable secondary in
+      // this case so the operator sees the loud error and the SDK keeps
+      // primary-only behavior.
+      const secondaryState = getState('secondary');
+      if (
+        secondaryState.enabled &&
+        secondaryState.config.token &&
+        secondaryState.config.token === primaryState.config.token
+      ) {
+        ppLib.log('error', M.TOKEN_EQUAL_REJECT);
+        secondaryState.enabled = false;
+        CONFIG.secondary.enabled = false;
+      }
+
       // Refresh module-scoped state from the resolved CONFIG. The wiring
       // helpers were also called at IIFE boot with the default config so
       // dispatch/buffering work pre-init; re-applying here picks up any
