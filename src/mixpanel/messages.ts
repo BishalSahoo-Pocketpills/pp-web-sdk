@@ -47,6 +47,7 @@ export const M = {
   // ---- Dispatch ----
   UNKNOWN_DISPATCH_OP: `${PREFIX} unknown dispatch op`,
   DISPATCH_ERROR: `${PREFIX} dispatch error`,
+  ALIAS_NO_TARGET: `${PREFIX} alias called but no targeted instance is enabled — Simplified ID Merge projects do not use alias; if primary is disabled (post-cutover), the call is a silent no-op. Pass { instances: ['secondary'] } if you really need it.`,
 
   // ---- Cookie migration ----
   PRE_INIT_COOKIE_READ_ERROR: `${PREFIX} Pre-init cookie read error`,

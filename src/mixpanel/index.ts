@@ -600,7 +600,14 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
     /** Legacy regex scan — pre-dual-instance behavior for getMixpanelCookieData
      *  when no token is configured. Returns the LAST matching mp_*_mixpanel
      *  cookie's parsed value. Matches the legacy error-log format so callers
-     *  asserting on it (existing tests) keep working. */
+     *  asserting on it (existing tests) keep working.
+     *
+     *  Iteration order: `document.cookie` ordering is implementation-defined,
+     *  so when multiple `mp_*_mixpanel` cookies coexist (dual-instance) the
+     *  "last" match is non-deterministic. The token-keyed lookup at
+     *  `api.getMixpanelCookieData(name)` is the deterministic API; this
+     *  fallback is intentionally lossy for debug-only use before configure()
+     *  has run. */
     function legacyRegexScanMpCookie(): Record<string, unknown> {
       let mixpanelData: Record<string, unknown> = {};
       const regex = /^mp_([a-zA-Z0-9]+)_mixpanel$/i;

@@ -218,13 +218,25 @@ function enrichTrackArgs(args: unknown[]): unknown[] {
 // =====================================================
 
 /**
- * Resolve an instance's live Mixpanel handle. If state.mpRef is set
- * (normal init path), use it. Otherwise fall back to the global —
- * back-compat for callers (incl. existing tests) that install
- * window.mixpanel directly without going through init(). Auto-promotes
- * the discovered ref into state so subsequent calls skip the fallback.
+ * **Impure** — gets the instance's live Mixpanel handle, ADOPTING the
+ * global if state.mpRef isn't set yet. Writes to `state.mpRef` and
+ * `state.initialized` as a side effect when adoption succeeds.
+ *
+ * Two code paths feed this:
+ *   1. Normal init: onInstanceLoaded sets state.mpRef → this is a pure
+ *      read (no adoption).
+ *   2. Tests that install window.mixpanel directly without going
+ *      through init() (legacy single-instance test pattern). This
+ *      function adopts that global into state so subsequent dispatches
+ *      stay consistent.
+ *
+ * The stub queue installed by loader.ts is tagged with `_ppStub: true`
+ * and explicitly skipped — its `.track` is a queueing closure that
+ * pushes into `_i[]` for replay, not a real send. Adopting the stub
+ * would silently make the watchdog drain "succeed" into a queue that
+ * only drains when the real SDK finally loads.
  */
-function resolveMpRef(name: InstanceName): MixpanelGlobal | undefined {
+function getOrAdoptMpRef(name: InstanceName): MixpanelGlobal | undefined {
   const state = getState(name);
   if (state.mpRef) return state.mpRef;
   const g = typeof globalThis !== 'undefined'
@@ -256,7 +268,7 @@ function resolveMpRef(name: InstanceName): MixpanelGlobal | undefined {
 }
 
 function isReady(name: InstanceName): boolean {
-  return !!resolveMpRef(name);
+  return !!getOrAdoptMpRef(name);
 }
 
 function resolveTargets(op: MixpanelOp, options?: DispatchOptions): InstanceName[] {
@@ -307,7 +319,14 @@ export function dispatch(op: MixpanelOp, args: unknown[], options?: DispatchOpti
   }
 
   const targets = resolveTargets(op, options);
-  if (targets.length === 0) return false;
+  if (targets.length === 0) {
+    // alias's defaultInstances is ['primary'] (Simplified ID Merge
+    // projects don't use alias). After the cutover that flips
+    // `primary.enabled: false`, alias becomes a silent no-op. Warn so
+    // legacy code paths surface instead of failing invisibly.
+    if (op === 'alias') pp.log('warn', M.ALIAS_NO_TARGET);
+    return false;
+  }
 
   // Buffering rule:
   //   - Normal dispatch: if ANY targeted instance isn't ready, buffer the
@@ -333,7 +352,7 @@ export function dispatch(op: MixpanelOp, args: unknown[], options?: DispatchOpti
   let anyOk = false;
   for (let i = 0; i < readyTargets.length; i++) {
     const name = readyTargets[i];
-    const mp = resolveMpRef(name);
+    const mp = getOrAdoptMpRef(name);
     /*! v8 ignore start */
     if (!mp) continue;
     /*! v8 ignore stop */
