@@ -23,6 +23,12 @@ export const M = {
   INITIALIZED_SUCCESSFULLY: `${PREFIX} Initialized successfully`,
   INSTANCE_LOADED: (name: string): string => `${PREFIX} Instance loaded: ${name}`,
   INIT_FAILED: (name: string): string => `${PREFIX} init() failed for ${name}`,
+  INIT_OPT_RESERVED: (key: string): string =>
+    `${PREFIX} initOptions.${key} is reserved by the SDK orchestrator; ignoring caller override`,
+  WATCHDOG_FORCE_DRAIN: (stuck: string, drained: number): string =>
+    `${PREFIX} watchdog: ${stuck} did not report loaded within 15000ms; force-drained ${drained} buffered op(s) to ready instances. Check network / SRI / ad-blockers.`,
+  WATCHDOG_NO_READY: (stuck: string): string =>
+    `${PREFIX} watchdog: ${stuck} did not report loaded within 15000ms; no instance is ready, buffered events remain queued. Check network / SRI / ad-blockers.`,
 
   // ---- Loader / SDK ----
   SDK_LOAD_FAILED: (src: string): string =>

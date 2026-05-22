@@ -44,7 +44,9 @@ import {
   configureDispatcher,
   dispatch,
   drainIfReady,
+  drainToReady,
 } from '@src/mixpanel/dispatch';
+import { size as queueSize } from '@src/mixpanel/pre-init-queue';
 import { configureLoader, loadMixpanelSDK } from '@src/mixpanel/loader';
 import {
   SessionManager,
@@ -230,6 +232,20 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       ppLib.log('info', M.INITIALIZED_SUCCESSFULLY);
     }
 
+    // Keys the orchestrator owns. A caller-supplied `initOptions.loaded`
+    // would silently overwrite onInstanceLoaded → identity sync never runs,
+    // pre-init queue never drains, watchdog fires at 15s. The other
+    // reserved keys are load-time semantics the dispatcher relies on
+    // (consent gating, dual-pageview suppression, beacon transport).
+    const RESERVED_INIT_OPTS = [
+      'loaded',
+      'cross_subdomain_cookie',
+      'opt_out_tracking_by_default',
+      'track_pageview',
+      'api_transport',
+      'api_host',
+    ];
+
     function buildInitOptions(
       instanceCfg: MixpanelInstanceConfig,
       loaded: (mp: MixpanelGlobal) => void,
@@ -246,10 +262,18 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       };
       // Per-instance passthrough — empty by default since Simplified ID
       // Merge is a server-side project setting (no client flag needed).
+      // Reserved keys (especially `loaded`) are skipped with a loud warn:
+      // overriding them breaks the boot orchestration and the failure
+      // mode (events buffered indefinitely until the watchdog) is silent.
       if (instanceCfg.initOptions) {
         const keys = Object.keys(instanceCfg.initOptions);
         for (let i = 0; i < keys.length; i++) {
-          opts[keys[i]] = instanceCfg.initOptions[keys[i]];
+          const k = keys[i];
+          if (RESERVED_INIT_OPTS.indexOf(k) >= 0) {
+            ppLib.log('warn', M.INIT_OPT_RESERVED(k));
+            continue;
+          }
+          opts[k] = instanceCfg.initOptions[k];
         }
       }
       if (instanceCfg.apiHost) opts.api_host = instanceCfg.apiHost;
@@ -413,21 +437,46 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       watchdogTimer = setTimeout(() => {
         watchdogTimer = null;
         if (allLoadedFired) return;
+
         const enabled = getEnabledStates();
         const stuck = enabled.filter((s) => !s.initialized);
+        const stuckNames = stuck.map((s) => s.name).join('+');
+
+        // Bypass `drainIfReady`'s "all enabled ready" gate. drainToReady
+        // replays through `dispatch`, which routes only to instances that
+        // resolve via `resolveMpRef`. Entries that can't reach any ready
+        // instance are re-enqueued by dispatch's own buffer path — they
+        // remain queued for whenever the stuck instance recovers.
+        const dispatched = drainToReady();
+        const remaining = queueSize();
+
         if (stuck.length > 0) {
-          ppLib.log(
-            'warn',
-            '[ppMixpanel] watchdog: ' + stuck.map((s) => s.name).join('+') +
-              ' did not report loaded within ' + WATCHDOG_MS + 'ms; force-draining ' +
-              'to ready instances. Check network / SRI / ad-blockers.',
-          );
+          if (dispatched > 0) {
+            ppLib.log('warn', M.WATCHDOG_FORCE_DRAIN(stuckNames, dispatched));
+          } else if (remaining > 0) {
+            // Nothing was ready; entries got re-buffered. Be explicit so
+            // the operator doesn't read "watchdog fired" and assume drain
+            // happened.
+            ppLib.log('warn', M.WATCHDOG_NO_READY(stuckNames));
+          } else {
+            // No buffered entries at all — stuck but idle. Still surface
+            // the load failure so observability picks it up.
+            ppLib.log('warn', M.WATCHDOG_FORCE_DRAIN(stuckNames, 0));
+          }
         }
-        // Drain whatever's pending to whoever's ready. drainIfReady's
-        // gate is "all enabled ready" — we bypass it here by directly
-        // replaying buffered ops through dispatch (which itself routes
-        // only to ready instances).
-        onAllLoaded();
+
+        // Mark all-loaded fired so a late `loaded` callback (after the
+        // watchdog) doesn't double-fire `onAllLoaded`. Identity sync /
+        // shared context still need to run for whichever instances DID
+        // load — but only when at least one is ready.
+        if (enabled.some((s) => s.initialized && !!s.mpRef)) {
+          onAllLoaded();
+        } else {
+          // Nothing loaded — `onAllLoaded` would dispatch register()
+          // into the void. Skip; the late `loaded` callback path will
+          // run it if/when an instance recovers.
+          allLoadedFired = true;
+        }
       }, WATCHDOG_MS);
     }
 

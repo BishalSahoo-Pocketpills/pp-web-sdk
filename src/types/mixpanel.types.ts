@@ -43,6 +43,17 @@ export interface DispatchOptions {
    * Defaults to false — enrichment is the desired path for SDK-internal calls.
    */
   skipEnrichment?: boolean;
+  /**
+   * Watchdog-only escape hatch. When true, the dispatcher's "buffer if any
+   * target is unready" rule is downgraded to "buffer only if NO target is
+   * ready" — i.e. partial fan-out is allowed. Used by the boot watchdog
+   * after a load timeout so events reach the instances that DID load
+   * instead of staying buffered forever waiting for the stuck one.
+   *
+   * Never set this in user-facing API calls. Steady-state dispatch keeps
+   * the all-ready rule so partial events don't silently break parity.
+   */
+  force?: boolean;
 }
 
 export interface DispatchResult {
