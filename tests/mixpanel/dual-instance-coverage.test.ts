@@ -153,7 +153,7 @@ describe('dual-instance native coverage', () => {
       expect((window as any).ppLib.mixpanel.track('event')).toBe(false);
     });
 
-    it('consent gate blocks track; identity ops pass through', async () => {
+    it('consent gate blocks all PII-emitting ops (track, identify, register, people.set)', async () => {
       const api = await freshLoadDual();
       const { root, primary } = createDualMockMixpanel();
       (window as any).mixpanel = root;
@@ -162,8 +162,31 @@ describe('dual-instance native coverage', () => {
       expect(api.track('event')).toBe(false);
       expect(primary.track).not.toHaveBeenCalled();
 
-      api.identify('user-1');
-      expect(primary.identify).toHaveBeenCalledWith('user-1');
+      // H2: identity / register / people.set are now gated too.
+      expect(api.identify('user-1')).toBe(false);
+      expect(primary.identify).not.toHaveBeenCalled();
+
+      expect(api.register({ a: 1 })).toBe(false);
+      expect(primary.register).not.toHaveBeenCalled();
+
+      expect(api.people.set({ email: 'x@y.z' })).toBe(false);
+      expect(primary.people.set).not.toHaveBeenCalled();
+    });
+
+    it('consent gate does NOT block data-reduction / lifecycle ops (unregister, people.unset, reset, opt_out)', async () => {
+      const api = await freshLoadDual();
+      const { root, primary } = createDualMockMixpanel();
+      (window as any).mixpanel = root;
+      (window as any).ppLib.consent.revoke();
+
+      expect(api.unregister('foo')).toBe(true);
+      expect(api.people.unset('email')).toBe(true);
+      expect(api.reset()).toBe(true);
+      expect(api.opt_out_tracking()).toBe(true);
+      expect(primary.unregister).toHaveBeenCalledWith('foo');
+      expect(primary.people.unset).toHaveBeenCalledWith('email');
+      expect(primary.reset).toHaveBeenCalled();
+      expect(primary.opt_out_tracking).toHaveBeenCalled();
     });
 
     it('per-call instances override is filtered to enabled instances', async () => {

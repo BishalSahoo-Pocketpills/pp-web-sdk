@@ -2,8 +2,9 @@
  * Dispatch — the single HOF every Mixpanel operation routes through.
  *
  * Responsibilities (kept here so cross-cutting concerns live in ONE place):
- *   - Consent gating (track only — identity/state ops bypass consent gate,
- *     matching legacy trackFacade semantics).
+ *   - Consent gating (any op that emits or stores PII to Mixpanel —
+ *     see OP_TABLE comment for the full list; ops that REDUCE data or
+ *     are operator-controlled lifecycle actions bypass the gate).
  *   - Event-property enrichment for track (once, before fan-out).
  *   - Pre-init buffering when any targeted instance isn't ready yet. Buffer
  *     stores RAW args (not enriched) so enrichment re-runs at drain time
@@ -74,6 +75,25 @@ interface OpHandler {
   enrichable?: boolean;
 }
 
+// Consent-gating rule: any op that EMITS or STORES PII to Mixpanel is
+// gated. Ops that REDUCE data or that are operator-controlled lifecycle
+// actions are NOT gated. Specifically:
+//
+//   Gated (cannot run when consent denied):
+//     track, identify, alias            — emit identity / events
+//     register, register_once           — persist super-props in the
+//                                         Mixpanel cookie (PII at rest)
+//     opt_in_tracking                   — flipping opt-in under denied
+//                                         consent is incoherent
+//     people.set / set_once / increment / append / union / track_charge
+//                                       — write profile data
+//
+//   NOT gated:
+//     unregister                        — removes a super-prop (reduces)
+//     reset                             — operator/state reset
+//     opt_out_tracking                  — operator MUST be able to opt
+//                                         out regardless of consent state
+//     people.unset                      — removes profile data (reduces)
 const OP_TABLE: Record<MixpanelOp, OpHandler> = {
   track: {
     invoke: (mp, [event, props]) =>
@@ -83,12 +103,15 @@ const OP_TABLE: Record<MixpanelOp, OpHandler> = {
   },
   identify: {
     invoke: (mp, [id]) => mp.identify(id as string),
+    consentGated: true,
   },
   register: {
     invoke: (mp, [props]) => mp.register(props as Record<string, unknown>),
+    consentGated: true,
   },
   register_once: {
     invoke: (mp, [props]) => mp.register_once(props as Record<string, unknown>),
+    consentGated: true,
   },
   unregister: {
     invoke: (mp, [prop]) => mp.unregister(prop as string),
@@ -101,6 +124,7 @@ const OP_TABLE: Record<MixpanelOp, OpHandler> = {
       original === undefined
         ? mp.alias(id as string)
         : mp.alias(id as string, original as string),
+    consentGated: true,
     // Excluded from secondary by default — Simplified ID Merge projects
     // do not use the legacy alias-to-merge flow.
     defaultInstances: ['primary'],
@@ -110,25 +134,31 @@ const OP_TABLE: Record<MixpanelOp, OpHandler> = {
   },
   opt_in_tracking: {
     invoke: (mp) => mp.opt_in_tracking(),
+    consentGated: true,
   },
   opt_out_tracking: {
     invoke: (mp) => mp.opt_out_tracking(),
   },
   'people.set': {
     invoke: (mp, [props]) => mp.people.set(props as Record<string, unknown>),
+    consentGated: true,
   },
   'people.set_once': {
     invoke: (mp, [props]) => mp.people.set_once(props as Record<string, unknown>),
+    consentGated: true,
   },
   'people.increment': {
     invoke: (mp, [props, by]) =>
       mp.people.increment(props as Record<string, unknown> | string, by as number | undefined),
+    consentGated: true,
   },
   'people.append': {
     invoke: (mp, [props]) => mp.people.append(props as Record<string, unknown>),
+    consentGated: true,
   },
   'people.union': {
     invoke: (mp, [props]) => mp.people.union(props as Record<string, unknown>),
+    consentGated: true,
   },
   'people.unset': {
     invoke: (mp, [props]) => mp.people.unset(props as string | string[]),
@@ -139,6 +169,7 @@ const OP_TABLE: Record<MixpanelOp, OpHandler> = {
         mp.people.track_charge(amount as number, props as Record<string, unknown> | undefined);
       }
     },
+    consentGated: true,
   },
 };
 

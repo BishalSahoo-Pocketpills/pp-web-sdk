@@ -450,20 +450,66 @@ describe('dual-instance Mixpanel', () => {
       expect((window as any).ppLib.mixpanel.track('event')).toBe(false);
     });
 
-    it('consent gate drops track when revoked, but identity ops still flow', () => {
+    it('consent gate drops all PII-emitting ops (track + identity + people) when revoked', () => {
       const api = loadDualConfigured();
       const { root, primary, secondary } = createDualMockMixpanel();
       (window as any).mixpanel = root;
       (window as any).ppLib.consent.revoke();
 
-      // track is consent-gated.
+      // Track — gated (returns false, no fan-out).
       expect(api.track('event')).toBe(false);
       expect(primary.track).not.toHaveBeenCalled();
+      expect(secondary.track).not.toHaveBeenCalled();
 
-      // identity ops bypass consent gate — matches legacy semantics.
-      api.identify('user-7');
-      expect(primary.identify).toHaveBeenCalledWith('user-7');
-      expect(secondary.identify).toHaveBeenCalledWith('user-7');
+      // Identity — gated. Pre-H2 this leaked PII to Mixpanel even with
+      // consent denied; now it's blocked at the dispatcher.
+      expect(api.identify('user-7')).toBe(false);
+      expect(primary.identify).not.toHaveBeenCalled();
+      expect(secondary.identify).not.toHaveBeenCalled();
+
+      // people.set — gated (writes profile PII).
+      expect(api.people.set({ email: 'x@y.z' })).toBe(false);
+      expect(primary.people.set).not.toHaveBeenCalled();
+
+      // register — gated (persists in Mixpanel cookie as PII at rest).
+      expect(api.register({ plan: 'pro' })).toBe(false);
+      expect(primary.register).not.toHaveBeenCalled();
+    });
+
+    it('consent gate does NOT block data-reduction or operator-lifecycle ops', () => {
+      const api = loadDualConfigured();
+      const { root, primary } = createDualMockMixpanel();
+      (window as any).mixpanel = root;
+      (window as any).ppLib.consent.revoke();
+
+      // unregister — client-side removal, no emit. Allowed.
+      expect(api.unregister('foo')).toBe(true);
+      expect(primary.unregister).toHaveBeenCalledWith('foo');
+
+      // people.unset — server-side deletion, reducing data. Allowed.
+      expect(api.people.unset('email')).toBe(true);
+      expect(primary.people.unset).toHaveBeenCalledWith('email');
+
+      // opt_out_tracking — operator MUST be able to opt out regardless.
+      expect(api.opt_out_tracking()).toBe(true);
+      expect(primary.opt_out_tracking).toHaveBeenCalled();
+
+      // reset — operator/state action, always allowed.
+      expect(api.reset()).toBe(true);
+      expect(primary.reset).toHaveBeenCalled();
+    });
+
+    it('consent gate blocks opt_in_tracking — incoherent to flip opt-in under denied consent', () => {
+      const api = loadDualConfigured();
+      const { root, primary } = createDualMockMixpanel();
+      (window as any).mixpanel = root;
+      // Seed the implicit opt_in from the loaded callback may have run;
+      // clear and revoke before testing the gate.
+      primary.opt_in_tracking.mockClear();
+      (window as any).ppLib.consent.revoke();
+
+      expect(api.opt_in_tracking()).toBe(false);
+      expect(primary.opt_in_tracking).not.toHaveBeenCalled();
     });
 
     it('per-call instances override is filtered to currently-enabled instances', () => {
