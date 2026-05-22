@@ -198,6 +198,25 @@ describe('dual-instance Mixpanel', () => {
       expect(primary.alias).not.toHaveBeenCalled();
       expect(secondary.alias).toHaveBeenCalledWith('forced');
     });
+
+    it('alias warns loudly when no target is enabled (post-cutover safety net)', () => {
+      const api = loadDualConfigured();
+      const { root } = createDualMockMixpanel();
+      (window as any).mixpanel = root;
+
+      // Disable primary at runtime — simulates the post-cutover state
+      // where the only default alias target is gone.
+      api.setEnabled('primary', false);
+
+      const logSpy = vi.spyOn((window as any).ppLib, 'log');
+      const result = api.alias('lost-call');
+
+      expect(result).toBe(false);
+      const warn = logSpy.mock.calls.find(
+        (c) => c[0] === 'warn' && /alias called but no targeted instance is enabled/.test(String(c[1])),
+      );
+      expect(warn).toBeTruthy();
+    });
   });
 
   describe('identify fan-out', () => {
