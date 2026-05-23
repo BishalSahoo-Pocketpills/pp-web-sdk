@@ -10,6 +10,37 @@ This section tracks changes that have landed on `main` but have not yet
 been published behind a version tag. Breaking changes are flagged
 **BREAKING** and include migration notes.
 
+### Changed
+
+- **Session cookies dual-write: `pp_analytics_session_id` /
+  `pp_analytics_last_activity` (read primary) + `_pps` / `_ppsa`
+  (read fallback).** The session ID and last-activity timestamp are
+  now persisted under BOTH the long-form names AND the short opaque
+  names introduced in v3.3.0. The long-form names are the read primary
+  — that's what downstream consumers (GTM tags, BigQuery exports, the
+  Angular webapp reading on the same domain) key off. The short names
+  are kept alive as a fallback so the v3.3.0 hardening intent (obscure
+  names less inviting for inspection / tampering) remains usable if
+  the long names get cleared or blocked.
+  - **Read order:** `pp_analytics_session_id` → `_pps` → legacy
+    localStorage `pp_analytics_session_id` → generate fresh.
+  - **No auto-purge.** The prior one-time migration that deleted
+    `pp_analytics_*` cookies after copying their value into `_pps` is
+    removed. Both names stay alive for the session lifetime.
+  - **Same 30-min sliding TTL** on all four cookies, written together
+    on every `getOrCreateSessionId()` call so neither name outlives
+    the other.
+  - **Self-healing:** if `_pps` survives while `pp_analytics_*` was
+    selectively cleared, the next read restores the long-form cookie
+    via the standard dual-write path.
+  - **`clearSession()`** wipes all four cookies + the legacy
+    localStorage entries.
+  - Tradeoff: the explicit `pp_analytics_*` names re-expose the
+    session identifier under a recognizable label, partially undoing
+    the v3.3.0 rename's obscurity. Accepted intentionally — external
+    consumers that key off the long-form name (GTM, BigQuery) outweigh
+    the marginal obscurity benefit of the rename alone.
+
 ### Security
 
 - **Unified consent gate above per-SDK opt-outs (`ppLib.consent`).**
