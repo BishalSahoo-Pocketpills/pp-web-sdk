@@ -3,10 +3,13 @@
  * `utm_* [last touch]` super-props plus click-IDs (gclid, fbclid). Now
  * dispatch-driven so both instances get identical attribution super-props.
  *
- * Per the Analytics UTM events spec, every utm_* [first/last touch] key
- * defaults to '$direct' when no value is set. Applied uniformly across
- * [first touch] / [last touch] / session-reset so direct visits produce
- * stable, queryable values rather than empty strings or missing keys.
+ * Per the Analytics UTM events spec, utm_source / utm_medium / utm_campaign
+ * default to '$direct' when no value is set; utm_content and utm_term
+ * default to 'none' (so consumers can distinguish "direct traffic with no
+ * creative/keyword context" from "creative/keyword genuinely absent").
+ * Applied uniformly across [first touch] / [last touch] / session-reset so
+ * direct visits produce stable, queryable values rather than empty strings
+ * or missing keys.
  *
  * The shared event-properties builder tracks LITERAL `utm_*` URL params
  * (no normalization), so traffic that uses non-utm aliases like
@@ -41,8 +44,8 @@ function emptyUtmTouch(): UtmTouch {
   return { utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '' };
 }
 
-function fallbackForKeyword(_keyword: string): string {
-  return '$direct';
+function fallbackForKeyword(keyword: string): string {
+  return keyword === 'utm_content' || keyword === 'utm_term' ? 'none' : '$direct';
 }
 
 function buildTouchParams(

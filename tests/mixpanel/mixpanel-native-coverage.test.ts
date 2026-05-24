@@ -874,18 +874,24 @@ describe('Mixpanel native coverage', () => {
   // 11. Loaded callback — resetCampaign
   // ==========================================================================
   describe('loaded callback — resetCampaign', () => {
-    it('sets utm_* [last touch] to $direct on session timeout when no utm params present', async () => {
+    it('sets utm_* [last touch] to spec defaults on session timeout when no utm params present', async () => {
       const loadedCallback = await initAndGetLoadedCallback({ sessionTimeout: 1 });
       const mp = createMockMixpanel();
 
       mp.register({ 'last event time': Date.now() - 100, 'session ID': 'old' });
       invokeLoadedCallback(loadedCallback, mp);
 
-      // Per the Analytics UTM events spec, every utm_* dimension defaults to
-      // '$direct' on direct visits — uniform across all dimensions.
-      ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'].forEach((kw) => {
+      // Per the Analytics UTM events spec, utm_source/utm_medium/utm_campaign
+      // default to '$direct' on direct visits; utm_content/utm_term default
+      // to 'none'.
+      ['utm_source', 'utm_medium', 'utm_campaign'].forEach((kw) => {
         expect(mp.people.set).toHaveBeenCalledWith(
           expect.objectContaining({ [kw + ' [last touch]']: '$direct' })
+        );
+      });
+      ['utm_content', 'utm_term'].forEach((kw) => {
+        expect(mp.people.set).toHaveBeenCalledWith(
+          expect.objectContaining({ [kw + ' [last touch]']: 'none' })
         );
       });
     });
@@ -1298,13 +1304,13 @@ describe('Mixpanel native coverage', () => {
           'utm_source [last touch]': 'google',
           'utm_medium [last touch]': '$direct',
           'utm_campaign [last touch]': '$direct',
-          'utm_content [last touch]': '$direct',
-          'utm_term [last touch]': '$direct',
+          'utm_content [last touch]': 'none',
+          'utm_term [last touch]': 'none',
         })
       );
     });
 
-    it('registers $direct super-properties when no UTM params present', async () => {
+    it('registers default super-properties when no UTM params present', async () => {
       Object.defineProperty(document, 'URL', {
         value: 'http://localhost/test?foo=bar',
         writable: true,
@@ -1322,8 +1328,8 @@ describe('Mixpanel native coverage', () => {
           'utm_source [last touch]': '$direct',
           'utm_medium [last touch]': '$direct',
           'utm_campaign [last touch]': '$direct',
-          'utm_content [last touch]': '$direct',
-          'utm_term [last touch]': '$direct',
+          'utm_content [last touch]': 'none',
+          'utm_term [last touch]': 'none',
         })
       );
       expect(mp.register_once).toHaveBeenCalledWith(
@@ -1331,8 +1337,8 @@ describe('Mixpanel native coverage', () => {
           'utm_source [first touch]': '$direct',
           'utm_medium [first touch]': '$direct',
           'utm_campaign [first touch]': '$direct',
-          'utm_content [first touch]': '$direct',
-          'utm_term [first touch]': '$direct',
+          'utm_content [first touch]': 'none',
+          'utm_term [first touch]': 'none',
         })
       );
     });

@@ -705,19 +705,26 @@ describe('Campaign / UTM Attribution', () => {
   });
 
   describe('resetCampaign()', () => {
-    it('sets utm_* [last touch] to $direct on session timeout when no utm params present', () => {
+    it('sets utm_* [last touch] to spec defaults on session timeout when no utm params present', () => {
       const loadedCallback = initAndGetLoadedCallback({ sessionTimeout: 1 });
       const mp = createMockMixpanel();
 
       mp.register({ 'last event time': Date.now() - 100, 'session ID': 'old' });
       invokeLoadedCallback(loadedCallback, mp);
 
-      // Per the Analytics UTM events spec, every utm_* dimension defaults to
-      // '$direct' on direct visits — uniform across source/medium/campaign/
-      // content/term so direct visits produce queryable values.
-      ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'].forEach((kw) => {
+      // Per the Analytics UTM events spec, utm_source / utm_medium /
+      // utm_campaign default to '$direct' on direct visits, while
+      // utm_content / utm_term default to 'none' (so consumers can
+      // distinguish "direct traffic with no creative/keyword context"
+      // from "creative/keyword genuinely absent").
+      ['utm_source', 'utm_medium', 'utm_campaign'].forEach((kw) => {
         expect(mp.people.set).toHaveBeenCalledWith(
           expect.objectContaining({ [kw + ' [last touch]']: '$direct' })
+        );
+      });
+      ['utm_content', 'utm_term'].forEach((kw) => {
+        expect(mp.people.set).toHaveBeenCalledWith(
+          expect.objectContaining({ [kw + ' [last touch]']: 'none' })
         );
       });
     });
@@ -769,8 +776,8 @@ describe('Campaign / UTM Attribution', () => {
           'utm_source [last touch]': '$direct',
           'utm_medium [last touch]': '$direct',
           'utm_campaign [last touch]': '$direct',
-          'utm_content [last touch]': '$direct',
-          'utm_term [last touch]': '$direct',
+          'utm_content [last touch]': 'none',
+          'utm_term [last touch]': 'none',
         })
       );
       expect(mp.register_once).toHaveBeenCalledWith(
@@ -778,8 +785,8 @@ describe('Campaign / UTM Attribution', () => {
           'utm_source [first touch]': '$direct',
           'utm_medium [first touch]': '$direct',
           'utm_campaign [first touch]': '$direct',
-          'utm_content [first touch]': '$direct',
-          'utm_term [first touch]': '$direct',
+          'utm_content [first touch]': 'none',
+          'utm_term [first touch]': 'none',
         })
       );
 
@@ -914,8 +921,8 @@ describe('Campaign / UTM Attribution', () => {
           'utm_source [last touch]': 'google',
           'utm_medium [last touch]': '$direct',
           'utm_campaign [last touch]': '$direct',
-          'utm_content [last touch]': '$direct',
-          'utm_term [last touch]': '$direct',
+          'utm_content [last touch]': 'none',
+          'utm_term [last touch]': 'none',
         })
       );
 

@@ -1063,11 +1063,20 @@ export function createEventPropertiesBuilder(
   //   1. URL param present → use it.
   //   2. Else search-engine referrer → utm_source = engine name,
   //                                    utm_medium = 'organic',
-  //                                    utm_campaign/content/term = '$direct'.
+  //                                    utm_campaign = '$direct',
+  //                                    utm_content/term = 'none'.
   //   3. Else external (non-self) referrer → utm_source = root domain,
   //                                          utm_medium = 'referral',
-  //                                          utm_campaign/content/term = '$direct'.
-  //   4. Else no referrer → all keys = '$direct'.
+  //                                          utm_campaign = '$direct',
+  //                                          utm_content/term = 'none'.
+  //   4. Else no referrer → utm_source/medium/campaign = '$direct',
+  //                         utm_content/term = 'none'.
+  //
+  // Note on defaults: utm_content and utm_term default to 'none' (not
+  // '$direct') so analytics consumers can distinguish "direct traffic with
+  // no creative/keyword context" from "creative/keyword genuinely absent".
+  // utm_source/medium/campaign continue to default to '$direct' for
+  // historical continuity in the Mixpanel funnels keyed off those values.
   //
   // Subsequent captures:
   //   1. URL param present for a key → overwrite that key.
@@ -1127,8 +1136,8 @@ export function createEventPropertiesBuilder(
       utm_source: urlUtm.utm_source || sourceFallback,
       utm_medium: urlUtm.utm_medium || mediumFallback,
       utm_campaign: urlUtm.utm_campaign || '$direct',
-      utm_content: urlUtm.utm_content || '$direct',
-      utm_term: urlUtm.utm_term || '$direct',
+      utm_content: urlUtm.utm_content || 'none',
+      utm_term: urlUtm.utm_term || 'none',
     };
   }
 
@@ -1480,12 +1489,16 @@ export function createEventPropertiesBuilder(
     return readStoredUtm(UTM_LAST_TOUCH_KEY);
   }
 
-  // Per the Analytics UTM events spec, every utm_* [first/last touch] key
-  // defaults to '$direct' when no value is set (not 'none'). This fills any
-  // legacy partial data with the spec default; freshly-captured users already
-  // have '$direct' baked into the resolved persisted value.
+  // Per the Analytics UTM events spec, utm_source / utm_medium / utm_campaign
+  // default to '$direct' when no value is set; utm_content and utm_term
+  // default to 'none' so consumers can distinguish "direct traffic with no
+  // creative/keyword context" from "creative/keyword genuinely absent". This
+  // fills any legacy partial data with the spec default; freshly-captured
+  // users already have the correct defaults baked into the resolved
+  // persisted value.
   function utmOrFallback(touch: RawUtmTouch, key: keyof RawUtmTouch): string {
-    return touch[key] || '$direct';
+    if (touch[key]) return touch[key];
+    return key === 'utm_content' || key === 'utm_term' ? 'none' : '$direct';
   }
 
   function buildStable() {
