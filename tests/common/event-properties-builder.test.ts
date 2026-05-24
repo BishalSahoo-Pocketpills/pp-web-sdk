@@ -196,18 +196,20 @@ describe('createEventPropertiesBuilder', () => {
       });
       const bundle = createEventPropertiesBuilder(window, ppLib).build();
 
-      // Per the Analytics UTM events spec, every utm_* [first/last touch] key
-      // defaults to '$direct' (not 'none') when no value is set.
+      // Per the Analytics UTM events spec, utm_source/utm_medium/utm_campaign
+      // default to '$direct' when no value is set; utm_content and utm_term
+      // default to 'none' so consumers can distinguish "direct traffic with
+      // no creative/keyword context" from "creative/keyword genuinely absent".
       expect(bundle.eventProperties['utm_source [first touch]']).toBe('$direct');
       expect(bundle.eventProperties['utm_medium [first touch]']).toBe('$direct');
       expect(bundle.eventProperties['utm_campaign [first touch]']).toBe('$direct');
-      expect(bundle.eventProperties['utm_content [first touch]']).toBe('$direct');
-      expect(bundle.eventProperties['utm_term [first touch]']).toBe('$direct');
+      expect(bundle.eventProperties['utm_content [first touch]']).toBe('none');
+      expect(bundle.eventProperties['utm_term [first touch]']).toBe('none');
       expect(bundle.eventProperties['utm_source [last touch]']).toBe('$direct');
       expect(bundle.eventProperties['utm_medium [last touch]']).toBe('$direct');
       expect(bundle.eventProperties['utm_campaign [last touch]']).toBe('$direct');
-      expect(bundle.eventProperties['utm_content [last touch]']).toBe('$direct');
-      expect(bundle.eventProperties['utm_term [last touch]']).toBe('$direct');
+      expect(bundle.eventProperties['utm_content [last touch]']).toBe('none');
+      expect(bundle.eventProperties['utm_term [last touch]']).toBe('none');
       // Current-visit utm_* mirror the same convention for cross-dimension consistency.
       expect(bundle.eventProperties.utm_source).toBe('$direct');
       expect(bundle.eventProperties.utm_medium).toBe('$direct');
