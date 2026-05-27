@@ -117,19 +117,19 @@ export function createSessionService(
     }
   }
 
-  /**
-   * Dual-write the session ID to both the long-form primary and the
-   * `_pps` fallback. Same TTL on both so neither outlives the other.
-   */
   function writeSessionId(sessionId: string): void {
     writeCookie(SESSION_KEY, sessionId);
-    writeCookie(SESSION_FALLBACK_KEY, sessionId);
+    // Clean up legacy fallback cookies — the dual-write was a v3.3.0
+    // migration bridge that doubled session cookie footprint. The
+    // long-form names have been stable since then; the fallbacks now
+    // just waste header budget.
+    try { pp.deleteCookie(SESSION_FALLBACK_KEY); } catch (_e) { /* best-effort */ }
   }
 
   function writeActivity(now: number): void {
     const value = String(now);
     writeCookie(ACTIVITY_KEY, value);
-    writeCookie(ACTIVITY_FALLBACK_KEY, value);
+    try { pp.deleteCookie(ACTIVITY_FALLBACK_KEY); } catch (_e) { /* best-effort */ }
   }
 
   /**

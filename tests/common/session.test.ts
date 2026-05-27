@@ -134,39 +134,34 @@ describe('createSessionService (cookie-backed, win + ppLib)', () => {
     clearAllCookies();
   });
 
-  it('dual-writes session_id to pp_analytics_session_id (primary) AND _pps (fallback)', () => {
+  it('writes session_id to pp_analytics_session_id only and cleans up _pps fallback', () => {
+    // Seed a leftover fallback cookie from the dual-write era.
+    document.cookie = '_pps=old-fallback;path=/';
     const session = createSessionService(window, makeCookiePPLib());
     const id = session.getOrCreateSessionId();
 
     expect(id).toBeTruthy();
-    // Both cookies carry the same value — long-form is the read primary
-    // (external consumers key off it); short-form is the redundant fallback
-    // kept alive in case the long-form gets blocked or cleared.
     expect(document.cookie).toContain('pp_analytics_session_id=' + encodeURIComponent(id));
-    expect(document.cookie).toContain('_pps=' + encodeURIComponent(id));
-    // localStorage stays empty under the cookie-backed contract.
+    // Fallback cookie should be deleted (Max-Age=0), not rewritten.
+    expect(document.cookie).not.toContain('_pps=');
     expect(localStorage.getItem('_pps')).toBeNull();
     expect(localStorage.getItem('_ppsa')).toBeNull();
   });
 
-  it('dual-writes last_activity to pp_analytics_last_activity AND _ppsa, updating both on every call', () => {
+  it('writes last_activity to pp_analytics_last_activity only and cleans up _ppsa fallback', () => {
     vi.useFakeTimers();
+    document.cookie = '_ppsa=9999;path=/';
     const session = createSessionService(window, makeCookiePPLib());
     session.getOrCreateSessionId();
-    // Both cookies present.
-    expect(document.cookie).toMatch(/pp_analytics_last_activity=\d+/);
-    expect(document.cookie).toMatch(/_ppsa=\d+/);
 
-    const ts1Primary = Number(document.cookie.match(/pp_analytics_last_activity=(\d+)/)![1]);
-    const ts1Fallback = Number(document.cookie.match(/_ppsa=(\d+)/)![1]);
-    expect(ts1Primary).toBe(ts1Fallback);
+    expect(document.cookie).toMatch(/pp_analytics_last_activity=\d+/);
+    // Fallback cookie should be deleted.
+    expect(document.cookie).not.toContain('_ppsa=');
 
     vi.advanceTimersByTime(5000);
     session.getOrCreateSessionId();
-    const ts2Primary = Number(document.cookie.match(/pp_analytics_last_activity=(\d+)/)![1]);
-    const ts2Fallback = Number(document.cookie.match(/_ppsa=(\d+)/)![1]);
-    expect(ts2Primary).toBeGreaterThan(ts1Primary);
-    expect(ts2Fallback).toBe(ts2Primary);
+    const ts2 = Number(document.cookie.match(/pp_analytics_last_activity=(\d+)/)![1]);
+    expect(ts2).toBeGreaterThan(0);
 
     vi.useRealTimers();
   });
@@ -190,8 +185,7 @@ describe('createSessionService (cookie-backed, win + ppLib)', () => {
     vi.useRealTimers();
   });
 
-  it('seeds from legacy localStorage when no cookies are present, dual-writing into both cookies', () => {
-    // Pre-cookie-era user: only legacy localStorage entries exist.
+  it('seeds from legacy localStorage when no cookies are present, writes to primary only', () => {
     const legacyId = 'legacy-session-uuid';
     const legacyActivity = Date.now();
     localStorage.setItem('pp_analytics_session_id', legacyId);
@@ -201,17 +195,14 @@ describe('createSessionService (cookie-backed, win + ppLib)', () => {
     const id = session.getOrCreateSessionId();
 
     expect(id).toBe(legacyId);
-    // Both cookies now seeded with the legacy value.
     expect(document.cookie).toContain('pp_analytics_session_id=' + encodeURIComponent(legacyId));
-    expect(document.cookie).toContain('_pps=' + encodeURIComponent(legacyId));
     expect(document.cookie).toMatch(/pp_analytics_last_activity=\d+/);
-    expect(document.cookie).toMatch(/_ppsa=\d+/);
+    // No fallback cookies written.
+    expect(document.cookie).not.toContain('_pps=');
+    expect(document.cookie).not.toContain('_ppsa=');
   });
 
-  it('reads pp_analytics_session_id as primary, _pps as fallback when only fallback is present', () => {
-    // Simulate a scenario where the long-form cookie was cleared but the
-    // short-form one survives — the SDK should read it and re-establish
-    // the dual-write on the next call.
+  it('reads _pps as fallback when only fallback is present, migrates to primary, cleans fallback', () => {
     document.cookie = '_pps=' + encodeURIComponent('fallback-id') + ';path=/';
     document.cookie = '_ppsa=' + Date.now() + ';path=/';
 
@@ -219,12 +210,13 @@ describe('createSessionService (cookie-backed, win + ppLib)', () => {
     const id = session.getOrCreateSessionId();
 
     expect(id).toBe('fallback-id');
-    // After read, dual-write re-establishes the long-form cookie too.
+    // Migrated to primary.
     expect(document.cookie).toContain('pp_analytics_session_id=' + encodeURIComponent('fallback-id'));
-    expect(document.cookie).toContain('_pps=' + encodeURIComponent('fallback-id'));
+    // Fallback cleaned up.
+    expect(document.cookie).not.toContain('_pps=');
   });
 
-  it('prefers pp_analytics_session_id (primary) over _pps (fallback) when both are present with different values', () => {
+  it('prefers pp_analytics_session_id (primary) over _pps (fallback) and cleans fallback', () => {
     document.cookie = 'pp_analytics_session_id=' + encodeURIComponent('primary-id') + ';path=/';
     document.cookie = 'pp_analytics_last_activity=' + Date.now() + ';path=/';
     document.cookie = '_pps=' + encodeURIComponent('fallback-id') + ';path=/';
@@ -233,19 +225,20 @@ describe('createSessionService (cookie-backed, win + ppLib)', () => {
     const session = createSessionService(window, makeCookiePPLib());
     const id = session.getOrCreateSessionId();
 
-    // Primary wins; the fallback gets overwritten to match on the next write.
     expect(id).toBe('primary-id');
-    expect(document.cookie).toContain('_pps=' + encodeURIComponent('primary-id'));
+    // Fallback cleaned up, not rewritten.
+    expect(document.cookie).not.toContain('_pps=');
   });
 
-  it('clearSession deletes all four cookies AND legacy localStorage residue', () => {
-    // Plant residue across every storage layer.
+  it('clearSession deletes primary cookies, fallback cookies, AND legacy localStorage residue', () => {
+    // Plant residue across every storage layer (including pre-existing fallbacks).
     localStorage.setItem('pp_analytics_session_id', 'ls-residue');
     localStorage.setItem('pp_analytics_last_activity', '1');
+    document.cookie = '_pps=stale-fallback;path=/';
+    document.cookie = '_ppsa=9999;path=/';
     const session = createSessionService(window, makeCookiePPLib());
     session.getOrCreateSessionId();
     expect(document.cookie).toContain('pp_analytics_session_id=');
-    expect(document.cookie).toContain('_pps=');
 
     session.clearSession();
     expect(document.cookie).not.toMatch(/pp_analytics_session_id=[^;]/);
