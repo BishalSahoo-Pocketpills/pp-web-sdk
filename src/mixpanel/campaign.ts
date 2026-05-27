@@ -19,6 +19,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import { dispatch } from '@src/mixpanel/dispatch';
+import { utmFallback } from '@src/common/utm-fallback';
 
 let pp: PPLib | null = null;
 
@@ -44,9 +45,6 @@ function emptyUtmTouch(): UtmTouch {
   return { utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '' };
 }
 
-function fallbackForKeyword(keyword: string): string {
-  return keyword === 'utm_content' || keyword === 'utm_term' ? 'none' : '$direct';
-}
 
 function buildTouchParams(
   touch: UtmTouch,
@@ -55,7 +53,7 @@ function buildTouchParams(
   const params: Record<string, string> = {};
   for (let i = 0; i < CAMPAIGN_KEYWORDS.length; i++) {
     const kw = CAMPAIGN_KEYWORDS[i] as keyof UtmTouch;
-    params[kw + ' ' + suffix] = touch[kw] || fallbackForKeyword(kw);
+    params[kw + ' ' + suffix] = touch[kw] || utmFallback(kw);
   }
   return params;
 }

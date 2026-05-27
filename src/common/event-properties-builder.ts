@@ -22,6 +22,7 @@ import {
 } from '@src/common/super-property-keys';
 import { createPersistentValue, createLocalStorageValue } from '@src/common/persistent-storage';
 import { generateUuid } from '@src/common/uuid';
+import { utmFallback } from '@src/common/utm-fallback';
 
 export interface EventPropertiesBuilderCookieNames {
   userId: string;
@@ -1480,8 +1481,7 @@ export function createEventPropertiesBuilder(
   // users already have the correct defaults baked into the resolved
   // persisted value.
   function utmOrFallback(touch: RawUtmTouch, key: keyof RawUtmTouch): string {
-    if (touch[key]) return touch[key];
-    return key === 'utm_content' || key === 'utm_term' ? 'none' : '$direct';
+    return touch[key] || utmFallback(key);
   }
 
   function buildStable() {

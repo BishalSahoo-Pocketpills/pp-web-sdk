@@ -3,6 +3,7 @@ import type { BrazeConfig } from '@src/types/braze.types';
 import { createDebounceTracker } from '@src/common/debounce';
 import { addInteractionListener } from '@src/common/dom-events';
 import { isConsentGranted } from '@src/common/consent-check';
+import { getElementDebounceKey } from '@src/common/element-key';
 
 export function createEventHandler(
   win: Window & typeof globalThis,
@@ -18,12 +19,7 @@ export function createEventHandler(
   }
 
   function getElementKey(el: Element): string {
-    const eventName = el.getAttribute(CONFIG.event.eventAttribute) || '';
-    /*! v8 ignore start */
-    const tag = el.tagName || '';
-    /*! v8 ignore stop */
-    const text = (el.textContent || '').substring(0, 50).trim();
-    return tag + ':' + eventName + ':' + text;
+    return getElementDebounceKey(el, el.getAttribute(CONFIG.event.eventAttribute) || '');
   }
 
   function extractProps(el: Element): Record<string, string> {

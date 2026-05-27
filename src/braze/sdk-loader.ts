@@ -1,5 +1,6 @@
 import type { PPLib } from '@src/types/common.types';
 import type { BrazeConfig } from '@src/types/braze.types';
+import { checkSriIntegrity } from '@src/common/sri';
 
 export function createSdkLoader(
   win: Window & typeof globalThis,
@@ -96,17 +97,10 @@ export function createSdkLoader(
 
     // SRI gate runs BEFORE createStub() so a fail-closed refusal doesn't
     // leave a partially-installed stub that callers might queue against.
-    if (CONFIG.sdk.integrity) {
-      if (!/^(sha256|sha384|sha512)-[A-Za-z0-9+/=]+$/.test(CONFIG.sdk.integrity)) {
-        ppLib.log('error', '[ppBraze] integrity hash format invalid — expected sha256|sha384|sha512-<base64>; refusing to load');
-        return;
-      }
-    } else if (CONFIG.sdk.requireIntegrity) {
-      ppLib.log('error', '[ppBraze] requireIntegrity=true but no integrity hash configured — refusing to load');
-      return;
-    } else {
-      ppLib.log('warn', '[ppBraze] Loading SDK without SRI integrity — set CONFIG.sdk.integrity for hardening');
-    }
+    const sriResult = checkSriIntegrity(CONFIG.sdk.integrity, CONFIG.sdk.requireIntegrity);
+    if (sriResult === 'invalid-format') { ppLib.log('error', '[ppBraze] integrity hash format invalid — expected sha256|sha384|sha512-<base64>; refusing to load'); return; }
+    if (sriResult === 'missing-required') { ppLib.log('error', '[ppBraze] requireIntegrity=true but no integrity hash configured — refusing to load'); return; }
+    if (sriResult === 'missing-optional') { ppLib.log('warn', '[ppBraze] Loading SDK without SRI integrity — set CONFIG.sdk.integrity for hardening'); }
 
     createStub();
 

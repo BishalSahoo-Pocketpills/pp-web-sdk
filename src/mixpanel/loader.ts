@@ -23,6 +23,7 @@
 import type { PPLib } from '@src/types/common.types';
 import type { SharedMixpanelConfig } from '@src/types/mixpanel.types';
 import { DEFAULTS, M } from '@src/mixpanel/messages';
+import { checkSriIntegrity } from '@src/common/sri';
 
 let pp: PPLib | null = null;
 let shared: SharedMixpanelConfig | null = null;
@@ -62,17 +63,10 @@ export function loadMixpanelSDK(win: Window & typeof globalThis, doc: Document):
     // SRI gate runs BEFORE stub installation so a fail-closed refusal
     // doesn't leave window.mixpanel as a stub queue that callers silently
     // fill forever (mirrors the Braze loader; see sdk-loader.ts).
-    if (shared.integrity) {
-      if (!/^(sha256|sha384|sha512)-[A-Za-z0-9+/=]+$/.test(shared.integrity)) {
-        pp.log('error', M.SRI_INVALID_FORMAT);
-        return false;
-      }
-    } else if (shared.requireIntegrity) {
-      pp.log('error', M.SRI_REQUIRED_BUT_MISSING);
-      return false;
-    } else {
-      pp.log('warn', M.SRI_MISSING_WARN);
-    }
+    const sriResult = checkSriIntegrity(shared.integrity, shared.requireIntegrity);
+    if (sriResult === 'invalid-format') { pp.log('error', M.SRI_INVALID_FORMAT); return false; }
+    if (sriResult === 'missing-required') { pp.log('error', M.SRI_REQUIRED_BUT_MISSING); return false; }
+    if (sriResult === 'missing-optional') { pp.log('warn', M.SRI_MISSING_WARN); }
 
     let b: unknown = win;
     // `d` starts as the hash-state extractor (assigned in the try below),

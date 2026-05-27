@@ -11,6 +11,7 @@ import type { DeepPartial } from '@src/types/utility.types';
 import { trackViaMixpanel } from '@src/common/mixpanel-bridge';
 import { ensureDataLayer } from '@src/common/datalayer-guard';
 import { isConsentGranted } from '@src/common/consent-check';
+import { getElementDebounceKey } from '@src/common/element-key';
 import { createDebounceTracker } from '@src/common/debounce';
 import { createEventGuard } from '@src/common/event-guard';
 import { addInteractionListener } from '@src/common/dom-events';
@@ -69,12 +70,7 @@ import { cloneConfig } from '@src/common/clone-config';
   const eventGuard = createEventGuard(ppLib);
 
   function getElementKey(el: Element): string {
-    /*! v8 ignore start */
-    const item = el.getAttribute(CONFIG.attributes.item) || '';
-    const tag = el.tagName || '';
-    /*! v8 ignore stop */
-    const text = (el.textContent || '').substring(0, 50).trim();
-    return tag + ':' + item + ':' + text;
+    return getElementDebounceKey(el, el.getAttribute(CONFIG.attributes.item) || '');
   }
 
   // =====================================================
