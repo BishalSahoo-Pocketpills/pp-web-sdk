@@ -1344,10 +1344,63 @@ export function createEventPropertiesBuilder(
     };
   }
 
+  // ── Retroactive cookie repair ──────────────────────────────────────
+  // Cookies written before the truncation limits were added can exceed
+  // nginx's header-buffer limit and cause 400 errors on the Angular
+  // app. On boot we read both attribution cookies, truncate any
+  // oversized fields in-place, and rewrite only if something changed.
+  // This is intentionally separate from the normal capture path: it
+  // must run even when captureUtmTouches short-circuits (e.g. the
+  // cookie exists and nothing new is captured).
+  let repairRan = false;
+  function repairOversizedCookies(): void {
+    if (repairRan) return;
+    repairRan = true;
+    const keys = [UTM_FIRST_TOUCH_KEY, UTM_LAST_TOUCH_KEY];
+    for (let i = 0; i < keys.length; i++) {
+      try {
+        const raw = ppLib.getCookie(keys[i]);
+        if (!raw) continue;
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        let changed = false;
+        const urlFields = ['referrer', 'landingPage'];
+        for (let u = 0; u < urlFields.length; u++) {
+          const f = urlFields[u];
+          const val = parsed[f];
+          if (typeof val === 'string' && val.length > MAX_URL_FIELD_LENGTH) {
+            parsed[f] = val.slice(0, MAX_URL_FIELD_LENGTH);
+            changed = true;
+          }
+        }
+        const utmFields = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'source', 'medium', 'campaign'];
+        for (let u = 0; u < utmFields.length; u++) {
+          const f = utmFields[u];
+          const val = parsed[f];
+          if (typeof val === 'string' && val.length > MAX_UTM_PARAM_LENGTH) {
+            parsed[f] = val.slice(0, MAX_UTM_PARAM_LENGTH);
+            changed = true;
+          }
+        }
+        if (typeof parsed.clickId === 'string' && parsed.clickId.length > MAX_CLICK_ID_LENGTH) {
+          parsed.clickId = parsed.clickId.slice(0, MAX_CLICK_ID_LENGTH);
+          changed = true;
+        }
+        if (changed) {
+          const maxAge = keys[i] === UTM_FIRST_TOUCH_KEY
+            ? UTM_FIRST_TOUCH_MAX_AGE_SECONDS
+            : UTM_LAST_TOUCH_MAX_AGE_SECONDS;
+          ppLib.setCookie(keys[i], JSON.stringify(parsed), { maxAgeSeconds: maxAge });
+        }
+      } catch (e) { /* best-effort — don't break boot */ }
+    }
+  }
+
   let utmCaptured = false;
   function captureUtmTouches(): void {
     if (utmCaptured) return;
     utmCaptured = true;
+
+    repairOversizedCookies();
 
     // Step 0: fold any pre-consolidation pp_mktg_* data into the
     // pp_utm_*_touch normalized slice. Idempotent — only fires when the

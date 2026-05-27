@@ -1227,6 +1227,82 @@ describe('createEventPropertiesBuilder', () => {
       });
     });
 
+    describe('retroactive cookie repair (oversized existing cookies)', () => {
+      it('truncates oversized landingPage in an existing first-touch cookie on boot', () => {
+        const longLandingPage = 'https://www.pocketpills.com/page?' + 'x'.repeat(1000);
+        const oversized = JSON.stringify({
+          utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'spring',
+          utm_content: '', utm_term: '',
+          source: 'google', medium: 'cpc', campaign: 'spring',
+          platform: 'google_ads', clickId: '',
+          referrer: '', referrerDomain: '',
+          landingPage: longLandingPage,
+          timestamp: '2026-05-01T00:00:00Z', sessionTs: 0,
+        });
+        document.cookie = 'pp_utm_first_touch=' + encodeURIComponent(oversized) + ';path=/';
+
+        setHref('http://localhost/page');
+        createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+
+        const raw = decodeURIComponent(
+          document.cookie.split('; ').find(c => c.startsWith('pp_utm_first_touch='))?.split('=').slice(1).join('=') || ''
+        );
+        const parsed = JSON.parse(raw);
+        expect(parsed.landingPage.length).toBeLessThanOrEqual(MAX_URL_FIELD_LENGTH);
+        expect(parsed.utm_source).toBe('google');
+      });
+
+      it('truncates oversized referrer in an existing last-touch cookie on boot', () => {
+        const longReferrer = 'https://www.google.com/search?q=' + 'a'.repeat(1000);
+        const oversized = JSON.stringify({
+          utm_source: 'bing', utm_medium: 'organic', utm_campaign: '$direct',
+          utm_content: 'none', utm_term: 'none',
+          source: 'bing', medium: 'organic', campaign: '$direct',
+          platform: 'organic_search', clickId: '',
+          referrer: longReferrer, referrerDomain: 'www.google.com',
+          landingPage: 'http://localhost/',
+          timestamp: '2026-05-01T00:00:00Z', sessionTs: Date.now(),
+        });
+        document.cookie = 'pp_utm_last_touch=' + encodeURIComponent(oversized) + ';path=/';
+
+        setHref('http://localhost/page');
+        createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+
+        const raw = decodeURIComponent(
+          document.cookie.split('; ').find(c => c.startsWith('pp_utm_last_touch='))?.split('=').slice(1).join('=') || ''
+        );
+        const parsed = JSON.parse(raw);
+        expect(parsed.referrer.length).toBeLessThanOrEqual(MAX_URL_FIELD_LENGTH);
+        expect(parsed.referrerDomain).toBe('www.google.com');
+      });
+
+      it('leaves already-valid cookies untouched', () => {
+        const valid = JSON.stringify({
+          utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'spring',
+          utm_content: '', utm_term: '',
+          source: 'google', medium: 'cpc', campaign: 'spring',
+          platform: 'google_ads', clickId: 'abc123',
+          referrer: 'https://www.google.com/', referrerDomain: 'www.google.com',
+          landingPage: 'http://localhost/lp',
+          timestamp: '2026-05-01T00:00:00Z', sessionTs: Date.now(),
+        });
+        document.cookie = 'pp_utm_last_touch=' + encodeURIComponent(valid) + ';path=/';
+        const before = document.cookie;
+
+        setHref('http://localhost/page');
+        createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+
+        const afterRaw = decodeURIComponent(
+          document.cookie.split('; ').find(c => c.startsWith('pp_utm_last_touch='))?.split('=').slice(1).join('=') || ''
+        );
+        const parsed = JSON.parse(afterRaw);
+        expect(parsed.clickId).toBe('abc123');
+      });
+    });
+
     describe('cookie size truncation (nginx 400 defense)', () => {
       it('truncate helper returns input unchanged when within limit', () => {
         expect(truncate('short', 100)).toBe('short');
