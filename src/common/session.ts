@@ -19,6 +19,7 @@
  * for the lifetime of the session.
  */
 import type { PPLib } from '@src/types/common.types';
+import { generateUuid } from '@src/common/uuid';
 
 export interface SessionService {
   getOrCreateSessionId: () => string;
@@ -40,20 +41,6 @@ const LEGACY_LS_ACTIVITY_KEY = 'pp_analytics_last_activity';
 const TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const COOKIE_MAX_AGE_SECONDS = 30 * 60; // 30 minutes (sliding via every read)
 
-function generateId(): string {
-  try {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      return crypto.randomUUID();
-    }
-  } catch (e) { /* fallback */ }
-
-  // Manual v4 UUID for non-secure contexts
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0;
-    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-  });
-}
-
 // Fallback for legacy environments — when the common bootstrap doesn't pass
 // ppLib (older test harnesses), we degrade to pure-localStorage behavior so
 // the contract stays stable. Production always passes ppLib.
@@ -68,14 +55,14 @@ function legacyLocalStorageImpl(): SessionService {
       let sessionId = localStorage.getItem('_pps');
 
       if (!sessionId || (now - lastActivity) > TIMEOUT_MS) {
-        sessionId = generateId();
+        sessionId = generateUuid();
         localStorage.setItem('_pps', sessionId);
       }
 
       localStorage.setItem('_ppsa', String(now));
       return sessionId;
     } catch (e) {
-      return generateId();
+      return generateUuid();
     }
   }
 
@@ -192,7 +179,7 @@ export function createSessionService(
       let sessionId = readSessionId();
 
       if (!sessionId || (now - lastActivity) > TIMEOUT_MS) {
-        sessionId = generateId();
+        sessionId = generateUuid();
         writeSessionId(sessionId);
       } else {
         // Defensive: make sure the dual-write invariant holds even if
@@ -207,7 +194,7 @@ export function createSessionService(
     } catch (e) {
       // Storage unavailable — return an ephemeral ID so the caller can
       // still tag in-memory events without crashing.
-      return generateId();
+      return generateUuid();
     }
   }
 

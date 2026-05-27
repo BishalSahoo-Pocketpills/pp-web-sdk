@@ -40,7 +40,7 @@ function hostMatches(host: string, allowed: string): boolean {
 export function createSecurity(
   config: PPLibConfig,
   safeUtils: SafeUtils,
-  log: (level: string, message: string, data?: unknown) => void,
+  log: (level: import('@src/types/common.types').LogLevel, message: string, data?: unknown) => void,
   win: Window & typeof globalThis
 ): Security {
   // Single source of truth for "is this URL well-formed and within our
