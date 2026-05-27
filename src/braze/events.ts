@@ -2,6 +2,7 @@ import type { PPLib } from '@src/types/common.types';
 import type { BrazeConfig } from '@src/types/braze.types';
 import { createDebounceTracker } from '@src/common/debounce';
 import { addInteractionListener } from '@src/common/dom-events';
+import { isConsentGranted } from '@src/common/consent-check';
 
 export function createEventHandler(
   win: Window & typeof globalThis,
@@ -51,7 +52,7 @@ export function createEventHandler(
       // Consent gate — drop silently before any work (sanitization,
       // dedup, prop extraction). Braze's session-level consent fires at
       // SDK init; this handles mid-session revoke.
-      if (ppLib.consent && !ppLib.consent.isGranted()) return;
+      if (!isConsentGranted(ppLib)) return;
 
       const target = e.target as Element;
       const el = target.closest('[' + CONFIG.event.eventAttribute + ']');
