@@ -17,6 +17,7 @@ import { createPurchaseHandler } from '@src/braze/purchases';
 import { bootstrapModule } from '@src/common/bootstrap';
 import { checkModuleConsent } from '@src/common/consent-gate';
 import { cloneConfig } from '@src/common/clone-config';
+import { isConsentGranted } from '@src/common/consent-check';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -99,7 +100,7 @@ import { cloneConfig } from '@src/common/clone-config';
 
   function trackEvent(eventName: string, properties?: Record<string, unknown>): void {
     try {
-      if (ppLib.consent && !ppLib.consent.isGranted()) return;
+      if (!isConsentGranted(ppLib)) return;
       const sanitized = ppLib.Security.sanitize(eventName);
       /*! v8 ignore start */
       if (!sanitized) return;

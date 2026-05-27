@@ -1,5 +1,6 @@
 import type { PPLib } from '@src/types/common.types';
 import type { DataLayerConfig, DataLayerItem, DataLayerItemInput, DataLayerUser, DataLayerUserData, DataLayerPage } from '@src/types/datalayer.types';
+import { ensureDataLayer as initDataLayer } from '@src/common/datalayer-guard';
 
 export function createEventPusher(
   win: Window & typeof globalThis,
@@ -12,8 +13,7 @@ export function createEventPusher(
 ) {
 
   function ensureDataLayer(): unknown[] {
-    win.dataLayer = win.dataLayer || [];
-    return win.dataLayer;
+    return initDataLayer(win);
   }
 
   function merge(target: Record<string, unknown>, source: Record<string, unknown>): void {

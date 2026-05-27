@@ -9,6 +9,8 @@ import type { PPLib } from '@src/types/common.types';
 import type { EcommerceConfig, EcommerceItem, EcommerceData } from '@src/types/ecommerce.types';
 import type { DeepPartial } from '@src/types/utility.types';
 import { trackViaMixpanel } from '@src/common/mixpanel-bridge';
+import { ensureDataLayer } from '@src/common/datalayer-guard';
+import { isConsentGranted } from '@src/common/consent-check';
 import { createDebounceTracker } from '@src/common/debounce';
 import { createEventGuard } from '@src/common/event-guard';
 import { addInteractionListener } from '@src/common/dom-events';
@@ -258,8 +260,8 @@ import { cloneConfig } from '@src/common/clone-config';
       if (!CONFIG.platforms.gtm.enabled) return;
       /*! v8 ignore stop */
 
-      win.dataLayer = win.dataLayer || [];
-      win.dataLayer.splice(0, Math.max(0, win.dataLayer.length - 500));
+      const dl = ensureDataLayer(win);
+      dl.splice(0, Math.max(0, dl.length - 500));
 
       const payload: Record<string, unknown> = {
         event: eventName,
@@ -315,7 +317,7 @@ import { cloneConfig } from '@src/common/clone-config';
     // Consent gate — single check covers GTM + Mixpanel paths. Mixpanel
     // facade also self-gates, but stopping here avoids the redundant
     // GTM push (no point shipping ecommerce data to GTM if Mixpanel is denied).
-    if (ppLib.consent && !ppLib.consent.isGranted()) return;
+    if (!isConsentGranted(ppLib)) return;
     /*! v8 ignore start */
     sendToGTM(eventName, ecommerceData);
     sendToMixpanel(eventName, ecommerceData);

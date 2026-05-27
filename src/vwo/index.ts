@@ -13,6 +13,7 @@ import { createDebounceTracker } from '@src/common/debounce';
 import { pollUntil } from '@src/common/retry';
 import { bootstrapModule } from '@src/common/bootstrap';
 import { cloneConfig } from '@src/common/clone-config';
+import { ensureDataLayer } from '@src/common/datalayer-guard';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -267,9 +268,9 @@ import { cloneConfig } from '@src/common/clone-config';
 
     // Push to dataLayer (GA4/GTM)
     if (CONFIG.trackToDataLayer) {
-      win.dataLayer = win.dataLayer || [];
+      const dl = ensureDataLayer(win);
       for (let i = 0; i < experiments.length; i++) {
-        win.dataLayer.push({
+        dl.push({
           event: 'experiment_impression',
           experiment_id: experiments[i].campaignId,
           variation_id: experiments[i].variationId,

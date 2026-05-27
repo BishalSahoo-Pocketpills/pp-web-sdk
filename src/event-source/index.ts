@@ -12,6 +12,8 @@ import { trackViaMixpanel } from '@src/common/mixpanel-bridge';
 import { addInteractionListener } from '@src/common/dom-events';
 import { bootstrapModule } from '@src/common/bootstrap';
 import { cloneConfig } from '@src/common/clone-config';
+import { ensureDataLayer } from '@src/common/datalayer-guard';
+import { isConsentGranted } from '@src/common/consent-check';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -198,7 +200,7 @@ import { cloneConfig } from '@src/common/clone-config';
       if (!CONFIG.platforms.gtm.enabled) return;
       /*! v8 ignore stop */
 
-      win.dataLayer = win.dataLayer || [];
+      const dl = ensureDataLayer(win);
       const gtmData: Record<string, unknown> = { event: CONFIG.gtmEventName };
 
       for (const key in data) {
@@ -216,8 +218,8 @@ import { cloneConfig } from '@src/common/clone-config';
       }
       /*! v8 ignore stop */
 
-      win.dataLayer.splice(0, Math.max(0, win.dataLayer.length - 500));
-      win.dataLayer.push(gtmData);
+      dl.splice(0, Math.max(0, dl.length - 500));
+      dl.push(gtmData);
       ppLib.log('verbose', '[ppEventSource] Sent to GTM', gtmData);
     } catch (e) {
       ppLib.log('error', '[ppEventSource] GTM send error', ppLib.safeLogError(e));
@@ -263,7 +265,7 @@ import { cloneConfig } from '@src/common/clone-config';
     // Consent gate — single check covers all three platforms (Mixpanel
     // facade also self-gates, but stopping here avoids redundant GTM /
     // VWO sends on a denied session).
-    if (ppLib.consent && !ppLib.consent.isGranted()) return;
+    if (!isConsentGranted(ppLib)) return;
 
     sendToMixpanel(data);
     sendToGTM(data);

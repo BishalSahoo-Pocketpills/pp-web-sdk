@@ -2,6 +2,8 @@ import type { PPLib } from '@src/types/common.types';
 import type { BrazeConfig } from '@src/types/braze.types';
 import { createDebounceTracker } from '@src/common/debounce';
 import { addInteractionListener } from '@src/common/dom-events';
+import { ensureDataLayer } from '@src/common/datalayer-guard';
+import { isConsentGranted } from '@src/common/consent-check';
 
 export function createPurchaseHandler(
   win: Window & typeof globalThis,
@@ -24,7 +26,7 @@ export function createPurchaseHandler(
 
   function handlePurchaseClick(e: Event): void {
     try {
-      if (ppLib.consent && !ppLib.consent.isGranted()) return;
+      if (!isConsentGranted(ppLib)) return;
       const target = e.target as Element;
       const el = target.closest('[' + PURCHASE_ATTR + ']');
 
@@ -85,7 +87,7 @@ export function createPurchaseHandler(
     properties?: Record<string, unknown>
   ): void {
     try {
-      if (ppLib.consent && !ppLib.consent.isGranted()) return;
+      if (!isConsentGranted(ppLib)) return;
       const sanitizedId = ppLib.Security.sanitize(productId);
       /*! v8 ignore start */
       if (!sanitizedId) {
@@ -135,12 +137,11 @@ export function createPurchaseHandler(
     if (bridged) return;
     bridged = true;
 
-    const originalPush = win.dataLayer && win.dataLayer.push;
-    win.dataLayer = win.dataLayer || [];
+    const dl = ensureDataLayer(win);
 
     const origPush = Array.prototype.push;
-    win.dataLayer.push = function(this: unknown[], ...pushArgs: unknown[]): number {
-      const result = origPush.apply(win.dataLayer, pushArgs);
+    dl.push = function(this: unknown[], ...pushArgs: unknown[]): number {
+      const result = origPush.apply(dl, pushArgs);
 
       for (let i = 0; i < pushArgs.length; i++) {
         const entry = pushArgs[i] as { event?: string; ecommerce?: { items?: Array<Record<string, string | number>>; currency?: string } } | undefined;

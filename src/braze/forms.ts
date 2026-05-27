@@ -1,6 +1,7 @@
 import type { PPLib } from '@src/types/common.types';
 import type { BrazeConfig } from '@src/types/braze.types';
 import { createDebounceTracker } from '@src/common/debounce';
+import { isConsentGranted } from '@src/common/consent-check';
 
 export function createFormHandler(
   win: Window & typeof globalThis,
@@ -45,7 +46,7 @@ export function createFormHandler(
     try {
       // Consent gate — drop silently before identifying or sending. Form
       // identify-by-email is the highest-risk PII leak path; gate first.
-      if (ppLib.consent && !ppLib.consent.isGranted()) return;
+      if (!isConsentGranted(ppLib)) return;
 
       const target = e.target as Element;
       const form = target.closest('[' + CONFIG.form.formAttribute + ']') as HTMLFormElement;
