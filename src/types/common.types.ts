@@ -1,3 +1,5 @@
+export type LogLevel = 'error' | 'warn' | 'info' | 'verbose';
+
 export interface SecurityConfig {
   maxParamLength: number;
   maxStorageSize: number;
@@ -94,7 +96,7 @@ export interface PPLib {
    */
   setCookie: (name: string, value: string, options?: import('../common/cookies').SetCookieOptions) => void;
   getQueryParam: (url: string, findParam: string) => string;
-  log: (level: string, message: string, data?: unknown) => void;
+  log: (level: LogLevel, message: string, data?: unknown) => void;
   // PII-safe payload helper. Wraps untrusted user-attribute / event-property
   // bags before they reach console / DevTools / Sentry. See
   // src/common/log-sanitize.ts for the redaction rules.
