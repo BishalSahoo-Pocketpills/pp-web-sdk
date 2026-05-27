@@ -11,6 +11,7 @@ import type { DeepPartial } from '@src/types/utility.types';
 import { trackViaMixpanel } from '@src/common/mixpanel-bridge';
 import { addInteractionListener } from '@src/common/dom-events';
 import { bootstrapModule } from '@src/common/bootstrap';
+import { cloneConfig } from '@src/common/clone-config';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -411,7 +412,7 @@ import { bootstrapModule } from '@src/common/bootstrap';
     },
 
     getConfig: function() {
-      return JSON.parse(JSON.stringify(CONFIG));
+      return cloneConfig(CONFIG);
     }
   };
 

@@ -12,6 +12,7 @@ import { createLoginConfig } from '@src/login/config';
 import { createLogoutUser } from '@src/login/logout';
 import { createInitAuthState } from '@src/login/auth-state';
 import { bootstrapModule } from '@src/common/bootstrap';
+import { cloneConfig } from '@src/common/clone-config';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -126,7 +127,7 @@ import { bootstrapModule } from '@src/common/bootstrap';
     },
 
     getConfig: function(): LoginConfig {
-      return JSON.parse(JSON.stringify(CONFIG));
+      return cloneConfig(CONFIG);
     }
   };
 
