@@ -8,6 +8,7 @@
 import type { PPLib } from '@src/types/common.types';
 import type { EventSourceConfig, EventSourceData } from '@src/types/event-source.types';
 import type { DeepPartial } from '@src/types/utility.types';
+import { trackViaMixpanel } from '@src/common/mixpanel-bridge';
 import { addInteractionListener } from '@src/common/dom-events';
 import { bootstrapModule } from '@src/common/bootstrap';
 
@@ -181,16 +182,7 @@ import { bootstrapModule } from '@src/common/bootstrap';
       }
       /*! v8 ignore stop */
 
-      // Route through the SDK facade — fans out to both mixpanel
-      // instances when dual-instance is enabled. Fallback to direct
-      // win.mixpanel.track only when the mixpanel MODULE isn't loaded
-      // (minimal deployment); never bypasses secondary in that case
-      // because secondary lives inside the facade.
-      if (ppLib.mixpanel && ppLib.mixpanel.track) {
-        ppLib.mixpanel.track(CONFIG.mixpanelEventName, data as unknown as Record<string, unknown>);
-      } else if (win.mixpanel && typeof win.mixpanel.track === 'function') {
-        win.mixpanel.track(CONFIG.mixpanelEventName, data);
-      }
+      trackViaMixpanel(ppLib, win, CONFIG.mixpanelEventName, data as unknown as Record<string, unknown>);
       ppLib.log('verbose', '[ppEventSource] Sent to Mixpanel', data);
     /*! v8 ignore start */
     } catch (e) {
