@@ -70,7 +70,7 @@ import { safeLogPayload, safeLogError } from '@src/common/log-sanitize';
   // LOGGING
   // =====================================================
 
-  ppLib.log = function(level: string, message: string, data?: unknown) {
+  ppLib.log = function(level: import('@src/types/common.types').LogLevel, message: string, data?: unknown) {
     /*! v8 ignore start */
     if (level !== 'error' && level !== 'warn') {
       if (!ppLib.config.debug) return;
