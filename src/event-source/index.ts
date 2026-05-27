@@ -15,6 +15,7 @@ import { cloneConfig } from '@src/common/clone-config';
 import { ensureDataLayer } from '@src/common/datalayer-guard';
 import { isConsentGranted } from '@src/common/consent-check';
 import { createDebounceTracker } from '@src/common/debounce';
+import { getElementDebounceKey } from '@src/common/element-key';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -58,13 +59,7 @@ import { createDebounceTracker } from '@src/common/debounce';
   const debounce = createDebounceTracker(CONFIG);
 
   function getElementId(el: Element): string {
-    // Create a stable identifier for debounce purposes
-    const source = el.getAttribute(CONFIG.attribute) || '';
-    /*! v8 ignore start */
-    const tag = el.tagName || '';
-    /*! v8 ignore stop */
-    const text = (el.textContent || '').substring(0, 50).trim();
-    return tag + ':' + source + ':' + text;
+    return getElementDebounceKey(el, el.getAttribute(CONFIG.attribute) || '');
   }
 
   // =====================================================
