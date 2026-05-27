@@ -1400,8 +1400,6 @@ export function createEventPropertiesBuilder(
     if (utmCaptured) return;
     utmCaptured = true;
 
-    repairOversizedCookies();
-
     // Step 0: fold any pre-consolidation pp_mktg_* data into the
     // pp_utm_*_touch normalized slice. Idempotent — only fires when the
     // normalized slice is empty. Must run BEFORE we read existingLastExt
@@ -1767,6 +1765,11 @@ export function createEventPropertiesBuilder(
       attribution: stripEmptyProps(bundle.attribution as unknown as Record<string, unknown>),
     };
   }
+
+  // Run immediately at builder creation — not lazily inside
+  // captureUtmTouches — so cookies are truncated the instant the SDK
+  // loads, well before any user interaction or navigation.
+  repairOversizedCookies();
 
   return {
     configure: configure,
