@@ -20,7 +20,7 @@ export function createStorage(
   config: PPLibConfig,
   safeUtils: SafeUtils,
   security: Security,
-  log: (level: string, message: string, data?: unknown) => void
+  log: (level: import('@src/types/common.types').LogLevel, message: string, data?: unknown) => void
 ): Storage {
   // Self-referential object literal so internal calls go through the public
   // surface (`storage.isAvailable`, `storage.remove`) — preserves the contract

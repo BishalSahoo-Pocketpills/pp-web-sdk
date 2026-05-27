@@ -18,6 +18,7 @@ import type { InstanceState } from '@src/mixpanel/instance-state';
 import { getState } from '@src/mixpanel/instance-state';
 import { dispatch } from '@src/mixpanel/dispatch';
 import { DEFAULTS, M } from '@src/mixpanel/messages';
+import { generateUuid } from '@src/common/uuid';
 
 let pp: PPLib | null = null;
 let timeoutMs: number = DEFAULTS.SESSION_TIMEOUT_MS;
@@ -36,14 +37,6 @@ export function resetSession(): void {
   timeoutMs = DEFAULTS.SESSION_TIMEOUT_MS;
 }
 
-function generateId(): string {
-  function s4(): string {
-    return Math.floor((1 + Math.random()) * 0x10000)
-      .toString(16)
-      .substring(1);
-  }
-  return s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
-}
 
 /**
  * Mint a fresh session ID and fan it out to every enabled instance. Also
@@ -52,7 +45,7 @@ function generateId(): string {
  * idle timeout has elapsed.
  */
 function setId(): void {
-  sessionId = generateId();
+  sessionId = generateUuid();
   lastEventTime = Date.now();
   dispatch('register', [{ 'session ID': sessionId, 'last event time': lastEventTime }]);
 }
@@ -125,7 +118,7 @@ export const SessionManager = {
     timeoutMs = value > 0 ? value : DEFAULTS.SESSION_TIMEOUT_MS;
   },
   getSessionId: (): string | null => sessionId,
-  generateId,
+  generateId: generateUuid,
   setId,
   check,
 };

@@ -1,6 +1,6 @@
-import type { SafeUtils } from '@src/types/common.types';
+import type { LogLevel, SafeUtils } from '@src/types/common.types';
 
-export function createSafeUtils(log: (level: string, message: string, data?: unknown) => void): SafeUtils {
+export function createSafeUtils(log: (level: LogLevel, message: string, data?: unknown) => void): SafeUtils {
   // Implementation type for `get` covers all overloads; the public interface
   // narrows return type via the overloaded call signatures (literal-typed
   // defaults widen to their primitives).

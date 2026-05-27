@@ -21,6 +21,7 @@ import {
   MARKETING_ATTRIBUTION_KEY,
 } from '@src/common/super-property-keys';
 import { createPersistentValue, createLocalStorageValue } from '@src/common/persistent-storage';
+import { generateUuid } from '@src/common/uuid';
 
 export interface EventPropertiesBuilderCookieNames {
   userId: string;
@@ -434,21 +435,6 @@ function parseLegacyMktgTouch(raw: string): NormalizedTouch | null {
   }
 }
 
-function generateDeviceUuid(win: Window & typeof globalThis): string {
-  try {
-    if (typeof win.crypto !== 'undefined' && typeof win.crypto.randomUUID === 'function') {
-      return win.crypto.randomUUID();
-    }
-  } catch (e) { /* fallback below */ }
-  try {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      const r = Math.random() * 16 | 0;
-      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-    });
-  } catch (e) {
-    return Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 11);
-  }
-}
 
 function emptyUtm(): RawUtmTouch {
   return { utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '' };
@@ -857,7 +843,7 @@ export function createEventPropertiesBuilder(
     maxAgeSeconds: DEVICE_ID_MAX_AGE_SECONDS,
     serialize: (s) => s,
     deserialize: (s) => (typeof s === 'string' && s.length > 0) ? s : null,
-    generate: () => generateDeviceUuid(win),
+    generate: () => generateUuid(),
     legacyLocalStorageKey: DEVICE_ID_KEY
   });
 
