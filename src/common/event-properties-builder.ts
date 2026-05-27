@@ -20,7 +20,7 @@ import {
   UTM_LAST_TOUCH,
   MARKETING_ATTRIBUTION_KEY,
 } from '@src/common/super-property-keys';
-import { createPersistentValue } from '@src/common/persistent-storage';
+import { createPersistentValue, createLocalStorageValue } from '@src/common/persistent-storage';
 
 export interface EventPropertiesBuilderCookieNames {
   userId: string;
@@ -1012,25 +1012,27 @@ export function createEventPropertiesBuilder(
     }
   }
 
-  // Cross-subdomain UTM touch storage. First-touch + last-touch attribution
-  // must travel with the user across try.pocketpills.com ↔ www.pocketpills.com
-  // so the persisted source/medium/campaign matches the visit that actually
-  // attributed the conversion. Read-first: if a cookie exists, it wins; the
-  // legacy localStorage JSON is migrated on first access and purged.
-  const utmFirstTouchStore = createPersistentValue<ExtendedUtmTouch>(win, ppLib, {
-    cookieName: UTM_FIRST_TOUCH_KEY,
-    maxAgeSeconds: UTM_FIRST_TOUCH_MAX_AGE_SECONDS,
+  // UTM touch storage — localStorage-primary. Attribution data is only read
+  // by client-side JS (the SDK), never by the server. Storing it in cookies
+  // added ~1 KB of URL-encoded JSON to every HTTP request header, which
+  // combined with Mixpanel + Angular auth cookies exceeded nginx's
+  // large_client_header_buffers and caused 400 errors.
+  //
+  // On first read, any existing cookie value is migrated into localStorage
+  // and the cookie is deleted to free header budget. Cross-subdomain access
+  // (try ↔ www) is not needed — the SDK only runs on Webflow pages.
+  const utmFirstTouchStore = createLocalStorageValue<ExtendedUtmTouch>(win, ppLib, {
+    key: UTM_FIRST_TOUCH_KEY,
     serialize: (v) => JSON.stringify(v),
     deserialize: parseUtmTouch,
-    legacyLocalStorageKey: UTM_FIRST_TOUCH_KEY
+    legacyCookieName: UTM_FIRST_TOUCH_KEY,
   });
 
-  const utmLastTouchStore = createPersistentValue<ExtendedUtmTouch>(win, ppLib, {
-    cookieName: UTM_LAST_TOUCH_KEY,
-    maxAgeSeconds: UTM_LAST_TOUCH_MAX_AGE_SECONDS,
+  const utmLastTouchStore = createLocalStorageValue<ExtendedUtmTouch>(win, ppLib, {
+    key: UTM_LAST_TOUCH_KEY,
     serialize: (v) => JSON.stringify(v),
     deserialize: parseUtmTouch,
-    legacyLocalStorageKey: UTM_LAST_TOUCH_KEY
+    legacyCookieName: UTM_LAST_TOUCH_KEY,
   });
 
   function storeForKey(storageKey: string) {
@@ -1342,57 +1344,6 @@ export function createEventPropertiesBuilder(
       landingPage: existingLastExt.landingPage,
       timestamp: existingLastExt.timestamp,
     };
-  }
-
-  // ── Retroactive cookie repair ──────────────────────────────────────
-  // Cookies written before the truncation limits were added can exceed
-  // nginx's header-buffer limit and cause 400 errors on the Angular
-  // app. On boot we read both attribution cookies, truncate any
-  // oversized fields in-place, and rewrite only if something changed.
-  // This is intentionally separate from the normal capture path: it
-  // must run even when captureUtmTouches short-circuits (e.g. the
-  // cookie exists and nothing new is captured).
-  let repairRan = false;
-  function repairOversizedCookies(): void {
-    if (repairRan) return;
-    repairRan = true;
-    const keys = [UTM_FIRST_TOUCH_KEY, UTM_LAST_TOUCH_KEY];
-    for (let i = 0; i < keys.length; i++) {
-      try {
-        const raw = ppLib.getCookie(keys[i]);
-        if (!raw) continue;
-        const parsed = JSON.parse(raw) as Record<string, unknown>;
-        let changed = false;
-        const urlFields = ['referrer', 'landingPage'];
-        for (let u = 0; u < urlFields.length; u++) {
-          const f = urlFields[u];
-          const val = parsed[f];
-          if (typeof val === 'string' && val.length > MAX_URL_FIELD_LENGTH) {
-            parsed[f] = val.slice(0, MAX_URL_FIELD_LENGTH);
-            changed = true;
-          }
-        }
-        const utmFields = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'source', 'medium', 'campaign'];
-        for (let u = 0; u < utmFields.length; u++) {
-          const f = utmFields[u];
-          const val = parsed[f];
-          if (typeof val === 'string' && val.length > MAX_UTM_PARAM_LENGTH) {
-            parsed[f] = val.slice(0, MAX_UTM_PARAM_LENGTH);
-            changed = true;
-          }
-        }
-        if (typeof parsed.clickId === 'string' && parsed.clickId.length > MAX_CLICK_ID_LENGTH) {
-          parsed.clickId = parsed.clickId.slice(0, MAX_CLICK_ID_LENGTH);
-          changed = true;
-        }
-        if (changed) {
-          const maxAge = keys[i] === UTM_FIRST_TOUCH_KEY
-            ? UTM_FIRST_TOUCH_MAX_AGE_SECONDS
-            : UTM_LAST_TOUCH_MAX_AGE_SECONDS;
-          ppLib.setCookie(keys[i], JSON.stringify(parsed), { maxAgeSeconds: maxAge });
-        }
-      } catch (e) { /* best-effort — don't break boot */ }
-    }
   }
 
   let utmCaptured = false;
@@ -1766,10 +1717,12 @@ export function createEventPropertiesBuilder(
     };
   }
 
-  // Run immediately at builder creation — not lazily inside
-  // captureUtmTouches — so cookies are truncated the instant the SDK
-  // loads, well before any user interaction or navigation.
-  repairOversizedCookies();
+  // Eagerly trigger the cookie → localStorage migration for UTM touches.
+  // createLocalStorageValue's read() migrates the cookie on first access
+  // and deletes it — running this at builder creation ensures the cookies
+  // are removed from the header before any user navigation.
+  utmFirstTouchStore.read();
+  utmLastTouchStore.read();
 
   return {
     configure: configure,

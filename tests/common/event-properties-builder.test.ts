@@ -59,19 +59,16 @@ function makePPLib(opts?: {
   const attribution = opts?.attribution ?? undefined;
   const session = opts?.session === null ? undefined : (opts?.session || { id: 'test-session-id' });
 
-  // Pre-seed the consolidated pp_utm_*_touch cookies from the fixture's
-  // first/last touches. last-touch's sessionTs is set to Date.now() so
-  // captureUtmTouches's session-veto carries the fixture data forward
-  // instead of rotating to the implicit "direct" current visit. (Pre-v3.3.0
-  // this was a separate pp_utm_session cookie.)
+  // Pre-seed UTM touch data in localStorage (the primary store since the
+  // cookie→localStorage migration). last-touch's sessionTs is set to
+  // Date.now() so captureUtmTouches's session-veto carries the fixture
+  // data forward instead of rotating to the implicit "direct" current visit.
   if (attribution) {
     if (attribution.first) {
-      document.cookie = 'pp_utm_first_touch=' +
-        encodeURIComponent(fixtureToExtendedCookie(attribution.first)) + ';path=/';
+      window.localStorage.setItem('pp_utm_first_touch', fixtureToExtendedCookie(attribution.first));
     }
     if (attribution.last) {
-      document.cookie = 'pp_utm_last_touch=' +
-        encodeURIComponent(fixtureToExtendedCookie(attribution.last, Date.now())) + ';path=/';
+      window.localStorage.setItem('pp_utm_last_touch', fixtureToExtendedCookie(attribution.last, Date.now()));
     }
   }
 
@@ -422,40 +419,26 @@ describe('createEventPropertiesBuilder', () => {
       });
     });
 
-    it('migrates legacy localStorage UTM first/last touch to cookies on first read', () => {
-      // Seed legacy localStorage UTM touches — JSON-encoded per the old contract.
+    it('reads UTM first/last touch from localStorage (primary store)', () => {
       const legacyFirst = { utm_source: 'facebook', utm_medium: 'social', utm_campaign: 'launch', utm_content: '', utm_term: '' };
       const legacyLast = { utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'spring', utm_content: '', utm_term: '' };
       window.localStorage.setItem('pp_utm_first_touch', JSON.stringify(legacyFirst));
       window.localStorage.setItem('pp_utm_last_touch', JSON.stringify(legacyLast));
 
-      // attribution:null suppresses makePPLib's default fixture cookie seeding —
-      // we want a clean slate so the localStorage entries are the only source.
       const ppLib = makePPLib({ attribution: null });
       const builder = createEventPropertiesBuilder(window, ppLib);
       const bundle = builder.build();
 
-      // Values carried over into event properties
       expect(bundle.eventProperties['utm_source [first touch]']).toBe('facebook');
       expect(bundle.eventProperties['utm_medium [first touch]']).toBe('social');
       expect(bundle.eventProperties['utm_source [last touch]']).toBe('google');
       expect(bundle.eventProperties['utm_medium [last touch]']).toBe('cpc');
 
-      // Cookies seeded with JSON payloads (URL-encoded). The cookie carries
-      // the ExtendedUtmTouch shape — literal utm_* fields from the legacy
-      // localStorage entry, plus the normalized slice filled by per-slice
-      // first-touch immutability: the literal slice was already present
-      // (locked), but the empty normalized slice got the current direct
-      // visit captured into it.
-      expect(document.cookie).toContain('pp_utm_first_touch=');
-      expect(document.cookie).toContain('pp_utm_last_touch=');
-      const decodedFirst = decodeURIComponent((document.cookie.match(/pp_utm_first_touch=([^;]+)/) as RegExpMatchArray)[1]);
-      expect(JSON.parse(decodedFirst)).toMatchObject(legacyFirst);
-      expect(JSON.parse(decodedFirst)).toMatchObject({ platform: 'direct', source: 'direct', medium: 'none' });
-
-      // Legacy localStorage entries purged
-      expect(window.localStorage.getItem('pp_utm_first_touch')).toBeNull();
-      expect(window.localStorage.getItem('pp_utm_last_touch')).toBeNull();
+      // Data lives in localStorage, NOT cookies.
+      expect(document.cookie).not.toContain('pp_utm_first_touch=');
+      expect(document.cookie).not.toContain('pp_utm_last_touch=');
+      const storedFirst = JSON.parse(window.localStorage.getItem('pp_utm_first_touch')!);
+      expect(storedFirst).toMatchObject(legacyFirst);
     });
 
     it('migrates a legacy localStorage device_id to the cookie on first read', () => {
@@ -768,18 +751,14 @@ describe('createEventPropertiesBuilder', () => {
     function expireUtmSession(): void {
       // v3.3.0 inlined the session marker into pp_utm_last_touch.sessionTs.
       // Set it to 1 (effectively "captured at unix epoch") to put the session
-      // well past the 30-min window without dropping the cookie itself —
-      // dropping the cookie would clear the rest of the seeded last-touch
-      // data and break the test's setup. Match-and-rewrite parses the cookie
-      // value, overrides sessionTs, and writes the modified payload back.
-      const m = document.cookie.match(/pp_utm_last_touch=([^;]+)/);
-      if (!m) return;
+      // well past the 30-min window. UTM data now lives in localStorage.
+      const raw = window.localStorage.getItem('pp_utm_last_touch');
+      if (!raw) return;
       try {
-        const parsed = JSON.parse(decodeURIComponent(m[1]));
+        const parsed = JSON.parse(raw);
         parsed.sessionTs = 1;
-        document.cookie = 'pp_utm_last_touch=' +
-          encodeURIComponent(JSON.stringify(parsed)) + ';path=/';
-      } catch (e) { /* leave cookie alone if unparseable */ }
+        window.localStorage.setItem('pp_utm_last_touch', JSON.stringify(parsed));
+      } catch (e) { /* leave alone if unparseable */ }
     }
 
     beforeEach(() => {
@@ -1045,10 +1024,12 @@ describe('createEventPropertiesBuilder', () => {
         // empty (the mktg cookies never carried utm_* literals). On the
         // next visit with URL utm params, the literal slice should fill
         // WHILE the normalized slice stays locked.
+        // Clear all cookies and localStorage for a fresh scenario B.
         document.cookie.split(';').forEach(c => {
           const name = c.split('=')[0].trim();
           if (name) document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
         });
+        window.localStorage.clear();
         const partialFirstNormalizedOnly = {
           utm_source: '', utm_medium: '', utm_campaign: '', utm_content: '', utm_term: '',
           source: 'pinterest', medium: 'social', campaign: 'mktg-era',
@@ -1056,8 +1037,7 @@ describe('createEventPropertiesBuilder', () => {
           referrer: 'https://www.pinterest.com/', referrerDomain: 'www.pinterest.com',
           landingPage: 'http://localhost/old-lp', timestamp: '2024-01-01T00:00:00.000Z',
         };
-        document.cookie = 'pp_utm_first_touch=' +
-          encodeURIComponent(JSON.stringify(partialFirstNormalizedOnly)) + ';path=/';
+        window.localStorage.setItem('pp_utm_first_touch', JSON.stringify(partialFirstNormalizedOnly));
 
         setHref('http://localhost/lp?utm_source=newcampaign&utm_medium=email&utm_campaign=q2');
         setReferrer('');
@@ -1161,13 +1141,10 @@ describe('createEventPropertiesBuilder', () => {
         // pp_utm_session cookie cleaned up.
         expect(document.cookie).not.toMatch(/pp_utm_session=[^;]+/);
 
-        // sessionTs folded into pp_utm_last_touch — read the cookie back
-        // and verify the ts survived the handoff. (Exact equality is hard
-        // because captureUtmTouches refreshes sessionTs to Date.now() AFTER
-        // the migration on the same builder instance — so we check the
-        // fold-then-refresh path landed on a fresh ts, not the legacy one.)
-        const m = document.cookie.match(/pp_utm_last_touch=([^;]+)/) as RegExpMatchArray;
-        const parsed = JSON.parse(decodeURIComponent(m[1]));
+        // sessionTs folded into pp_utm_last_touch — now in localStorage.
+        const raw = window.localStorage.getItem('pp_utm_last_touch');
+        expect(raw).not.toBeNull();
+        const parsed = JSON.parse(raw!);
         expect(typeof parsed.sessionTs).toBe('number');
         expect(parsed.sessionTs).toBeGreaterThan(sessionTs);
       });
@@ -1227,59 +1204,54 @@ describe('createEventPropertiesBuilder', () => {
       });
     });
 
-    describe('retroactive cookie repair (oversized existing cookies)', () => {
-      it('truncates oversized landingPage in an existing first-touch cookie on boot', () => {
-        const longLandingPage = 'https://www.pocketpills.com/page?' + 'x'.repeat(1000);
-        const oversized = JSON.stringify({
+    describe('cookie → localStorage migration on boot', () => {
+      it('migrates existing first-touch cookie to localStorage and deletes the cookie', () => {
+        const cookieData = JSON.stringify({
           utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'spring',
           utm_content: '', utm_term: '',
           source: 'google', medium: 'cpc', campaign: 'spring',
           platform: 'google_ads', clickId: '',
           referrer: '', referrerDomain: '',
-          landingPage: longLandingPage,
+          landingPage: 'https://www.pocketpills.com/page',
           timestamp: '2026-05-01T00:00:00Z', sessionTs: 0,
         });
-        document.cookie = 'pp_utm_first_touch=' + encodeURIComponent(oversized) + ';path=/';
+        document.cookie = 'pp_utm_first_touch=' + encodeURIComponent(cookieData) + ';path=/';
 
         setHref('http://localhost/page');
         createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
           .getMarketingAttribution();
 
-        const raw = decodeURIComponent(
-          document.cookie.split('; ').find(c => c.startsWith('pp_utm_first_touch='))?.split('=').slice(1).join('=') || ''
-        );
-        const parsed = JSON.parse(raw);
-        expect(parsed.landingPage.length).toBeLessThanOrEqual(MAX_URL_FIELD_LENGTH);
-        expect(parsed.utm_source).toBe('google');
+        // Cookie deleted.
+        expect(document.cookie).not.toContain('pp_utm_first_touch=');
+        // Data migrated to localStorage.
+        const stored = JSON.parse(window.localStorage.getItem('pp_utm_first_touch')!);
+        expect(stored.utm_source).toBe('google');
       });
 
-      it('truncates oversized referrer in an existing last-touch cookie on boot', () => {
-        const longReferrer = 'https://www.google.com/search?q=' + 'a'.repeat(1000);
-        const oversized = JSON.stringify({
+      it('migrates existing last-touch cookie to localStorage and deletes the cookie', () => {
+        const cookieData = JSON.stringify({
           utm_source: 'bing', utm_medium: 'organic', utm_campaign: '$direct',
           utm_content: 'none', utm_term: 'none',
           source: 'bing', medium: 'organic', campaign: '$direct',
           platform: 'organic_search', clickId: '',
-          referrer: longReferrer, referrerDomain: 'www.google.com',
+          referrer: 'https://www.google.com/', referrerDomain: 'www.google.com',
           landingPage: 'http://localhost/',
           timestamp: '2026-05-01T00:00:00Z', sessionTs: Date.now(),
         });
-        document.cookie = 'pp_utm_last_touch=' + encodeURIComponent(oversized) + ';path=/';
+        document.cookie = 'pp_utm_last_touch=' + encodeURIComponent(cookieData) + ';path=/';
 
         setHref('http://localhost/page');
         createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
           .getMarketingAttribution();
 
-        const raw = decodeURIComponent(
-          document.cookie.split('; ').find(c => c.startsWith('pp_utm_last_touch='))?.split('=').slice(1).join('=') || ''
-        );
-        const parsed = JSON.parse(raw);
-        expect(parsed.referrer.length).toBeLessThanOrEqual(MAX_URL_FIELD_LENGTH);
-        expect(parsed.referrerDomain).toBe('www.google.com');
+        expect(document.cookie).not.toContain('pp_utm_last_touch=');
+        const stored = JSON.parse(window.localStorage.getItem('pp_utm_last_touch')!);
+        expect(stored.utm_source).toBe('bing');
+        expect(stored.referrerDomain).toBe('www.google.com');
       });
 
-      it('leaves already-valid cookies untouched', () => {
-        const valid = JSON.stringify({
+      it('does not create cookies when data only exists in localStorage', () => {
+        const lsData = JSON.stringify({
           utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'spring',
           utm_content: '', utm_term: '',
           source: 'google', medium: 'cpc', campaign: 'spring',
@@ -1288,18 +1260,15 @@ describe('createEventPropertiesBuilder', () => {
           landingPage: 'http://localhost/lp',
           timestamp: '2026-05-01T00:00:00Z', sessionTs: Date.now(),
         });
-        document.cookie = 'pp_utm_last_touch=' + encodeURIComponent(valid) + ';path=/';
-        const before = document.cookie;
+        window.localStorage.setItem('pp_utm_last_touch', lsData);
 
         setHref('http://localhost/page');
         createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
           .getMarketingAttribution();
 
-        const afterRaw = decodeURIComponent(
-          document.cookie.split('; ').find(c => c.startsWith('pp_utm_last_touch='))?.split('=').slice(1).join('=') || ''
-        );
-        const parsed = JSON.parse(afterRaw);
-        expect(parsed.clickId).toBe('abc123');
+        expect(document.cookie).not.toContain('pp_utm_last_touch=');
+        const stored = JSON.parse(window.localStorage.getItem('pp_utm_last_touch')!);
+        expect(stored.clickId).toBe('abc123');
       });
     });
 

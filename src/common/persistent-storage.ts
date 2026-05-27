@@ -208,3 +208,86 @@ export function createPersistentValue<T>(
 
   return { read: read, write: write, clear: clear };
 }
+
+// ── localStorage-primary storage ──────────────────────────────────────
+// For values that only need to be read by client-side JS (not sent with
+// HTTP requests). On first read, migrates any existing cookie value into
+// localStorage and deletes the cookie to free header budget.
+
+export interface LocalStorageValueOptions<T> {
+  key: string;
+  serialize: (value: T) => string;
+  deserialize: (raw: string) => T | null;
+  generate?: () => T;
+  /** Cookie name to migrate FROM (one-time). Deleted after migration. */
+  legacyCookieName?: string;
+}
+
+export function createLocalStorageValue<T>(
+  win: Window & typeof globalThis,
+  ppLib: PPLib,
+  opts: LocalStorageValueOptions<T>
+): PersistentValue<T> {
+
+  function deleteLegacyCookie(): void {
+    if (!opts.legacyCookieName) return;
+    try {
+      ppLib.setCookie(opts.legacyCookieName, '', {
+        domain: ppLib.config.cookieDomain,
+        path: '/',
+        maxAgeSeconds: 0,
+        sameSite: 'Lax'
+      });
+    } catch (_e) { /* best-effort */ }
+    try { ppLib.deleteCookie(opts.legacyCookieName); } catch (_e) { /* best-effort */ }
+  }
+
+  function write(value: T): void {
+    try {
+      win.localStorage.setItem(opts.key, opts.serialize(value));
+    } catch (_e) {
+      ppLib.log('error', 'localStorageValue.write error', { key: opts.key });
+    }
+  }
+
+  function read(): T | null {
+    // 1. localStorage — primary source.
+    try {
+      const raw = win.localStorage.getItem(opts.key);
+      if (raw !== null && raw !== '') {
+        const parsed = opts.deserialize(raw);
+        if (parsed !== null) return parsed;
+      }
+    } catch (_e) { /* disabled localStorage — fall through */ }
+
+    // 2. Legacy cookie — one-time migration into localStorage.
+    if (opts.legacyCookieName) {
+      const cookieRaw = ppLib.getCookie(opts.legacyCookieName);
+      if (cookieRaw !== null && cookieRaw !== '') {
+        const parsed = opts.deserialize(cookieRaw);
+        if (parsed !== null) {
+          write(parsed);
+          deleteLegacyCookie();
+          return parsed;
+        }
+      }
+      deleteLegacyCookie();
+    }
+
+    // 3. Generate if caller provided a generator.
+    if (opts.generate) {
+      const generated = opts.generate();
+      write(generated);
+      return generated;
+    }
+
+    return null;
+  }
+
+  function clear(): void {
+    try { win.localStorage.removeItem(opts.key); } catch (_e) { /* best-effort */ }
+    deleteLegacyCookie();
+  }
+
+  return { read: read, write: write, clear: clear };
+}
