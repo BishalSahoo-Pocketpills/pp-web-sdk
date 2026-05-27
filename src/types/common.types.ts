@@ -72,7 +72,7 @@ export interface Storage {
   isAvailable: (type?: string) => boolean;
   getKey: (key: string) => string;
   set: (key: string, value: unknown, persistent?: boolean) => boolean;
-  get: <T = unknown>(key: string, persistent?: boolean) => T | null;
+  get: <T = unknown>(key: string, persistent?: boolean, validate?: (v: unknown) => v is T) => T | null;
   remove: (key: string, persistent?: boolean) => void;
   clear: () => void;
 }

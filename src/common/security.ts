@@ -176,7 +176,7 @@ export function createSecurity(
 
       stringify(obj: unknown): string | null {
         try {
-          if (!obj) return null;
+          if (obj === null || obj === undefined) return null;
 
           const str = JSON.stringify(obj);
 
@@ -195,7 +195,8 @@ export function createSecurity(
 
     validateData(data: unknown): boolean {
       try {
-        if (!data || typeof data !== 'object') return false;
+        if (data === null || data === undefined) return false;
+        if (typeof data !== 'object') return true;
 
         const jsonStr = JSON.stringify(data);
         const dangerousPatterns = [
