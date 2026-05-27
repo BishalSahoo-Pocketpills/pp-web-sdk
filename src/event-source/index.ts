@@ -14,6 +14,7 @@ import { bootstrapModule } from '@src/common/bootstrap';
 import { cloneConfig } from '@src/common/clone-config';
 import { ensureDataLayer } from '@src/common/datalayer-guard';
 import { isConsentGranted } from '@src/common/consent-check';
+import { createDebounceTracker } from '@src/common/debounce';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -54,32 +55,7 @@ import { isConsentGranted } from '@src/common/consent-check';
     vwoRevenueAttribute: 'data-vwo-revenue'
   };
 
-  // =====================================================
-  // DEBOUNCE TRACKER
-  // =====================================================
-
-  const lastEventMap: Record<string, number> = {};
-  let debounceWriteCount = 0;
-
-  function isDuplicate(elementId: string): boolean {
-    const now = Date.now();
-    /*! v8 ignore start */
-    // Prune stale entries every 100 writes to prevent unbounded growth
-    if (++debounceWriteCount >= 100) {
-      debounceWriteCount = 0;
-      for (const k in lastEventMap) {
-        if ((now - lastEventMap[k]) >= CONFIG.debounceMs) {
-          delete lastEventMap[k];
-        }
-      }
-    }
-    if (lastEventMap[elementId] && (now - lastEventMap[elementId]) < CONFIG.debounceMs) {
-      return true;
-    }
-    /*! v8 ignore stop */
-    lastEventMap[elementId] = now;
-    return false;
-  }
+  const debounce = createDebounceTracker(CONFIG);
 
   function getElementId(el: Element): string {
     // Create a stable identifier for debounce purposes
@@ -289,7 +265,7 @@ import { isConsentGranted } from '@src/common/consent-check';
       // Debounce to prevent duplicate click + touchend
       /*! v8 ignore start */
       const elId = getElementId(el);
-      if (isDuplicate(elId)) return;
+      if (debounce.isDuplicate(elId)) return;
       /*! v8 ignore stop */
 
       const data = extractEventData(el);
