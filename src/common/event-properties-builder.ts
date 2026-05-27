@@ -319,25 +319,6 @@ export function getRootDomain(hostname: string): string {
   return parts.slice(-2).join('.');
 }
 
-// ── Cookie size budget ──────────────────────────────────────────────
-// nginx's default large_client_header_buffers is 4×8 KB. With ~12
-// cookies on .pocketpills.com (2 SDK attribution, 2 Mixpanel, ~8
-// Angular auth/profile), each attribution cookie gets roughly 1.5 KB
-// of headroom before the total header exceeds the buffer. JSON +
-// encodeURIComponent inflates by ~1.4×, so raw JSON must stay under
-// ~1 KB. The two biggest fields — landingPage and referrer — are full
-// URLs that can easily reach 500+ bytes each. Truncating them keeps
-// the encoded cookie well within budget while preserving the
-// analytically meaningful prefix (origin + path + first N chars of
-// query string).
-export const MAX_URL_FIELD_LENGTH = 512;
-export const MAX_UTM_PARAM_LENGTH = 200;
-export const MAX_CLICK_ID_LENGTH = 100;
-
-export function truncate(value: string, maxLen: number): string {
-  return value.length <= maxLen ? value : value.slice(0, maxLen);
-}
-
 // Two-year max-age — device_id is a long-lived anonymous identifier; matches
 // the prior localStorage durability (effectively permanent until cleared).
 const DEVICE_ID_MAX_AGE_SECONDS = 63072000;
@@ -829,13 +810,13 @@ export function buildNormalizedTouch(
   const platform = detectPlatform(params, referrerClass);
 
   return {
-    source: truncate(source || (platform !== 'direct' ? platform.replace('_ads', '').replace('_', '') : 'direct'), MAX_UTM_PARAM_LENGTH),
-    medium: truncate(medium || inferMedium(params, platform), MAX_UTM_PARAM_LENGTH),
-    campaign: truncate(campaign, MAX_UTM_PARAM_LENGTH),
+    source: source || (platform !== 'direct' ? platform.replace('_ads', '').replace('_', '') : 'direct'),
+    medium: medium || inferMedium(params, platform),
+    campaign: campaign,
     platform: platform,
-    clickId: truncate(extractClickId(params), MAX_CLICK_ID_LENGTH),
-    landingPage: truncate(sanitizeLandingPage((win.location && win.location.href) || '/'), MAX_URL_FIELD_LENGTH),
-    referrer: truncate(referrerUrl, MAX_URL_FIELD_LENGTH),
+    clickId: extractClickId(params),
+    landingPage: sanitizeLandingPage((win.location && win.location.href) || '/'),
+    referrer: referrerUrl,
     referrerDomain: referrerDomain,
     timestamp: new Date().toISOString(),
   };
@@ -1002,7 +983,7 @@ export function createEventPropertiesBuilder(
       const result = emptyUtm();
       for (let i = 0; i < UTM_KEYS.length; i++) {
         const k = UTM_KEYS[i];
-        result[k] = truncate(params.get(k) || '', MAX_UTM_PARAM_LENGTH);
+        result[k] = params.get(k) || '';
       }
       cachedUtm = result;
       return result;

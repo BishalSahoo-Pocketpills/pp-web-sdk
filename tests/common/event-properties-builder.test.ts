@@ -4,10 +4,10 @@
  * The builder is the single source of truth for per-event context. Both the
  * dataLayer enricher and the mixpanel.track facade rely on it.
  */
-import { createEventPropertiesBuilder, MAX_URL_FIELD_LENGTH, MAX_UTM_PARAM_LENGTH, MAX_CLICK_ID_LENGTH, truncate } from '../../src/common/event-properties-builder';
-import { createGetQueryParam } from '../../src/common/url';
-import { createSetCookie, createDeleteCookie } from '../../src/common/cookies';
-import type { PPLib } from '../../src/types/common.types';
+import { createEventPropertiesBuilder } from '@src/common/event-properties-builder';
+import { createGetQueryParam } from '@src/common/url';
+import { createSetCookie, createDeleteCookie } from '@src/common/cookies';
+import type { PPLib } from '@src/types/common.types';
 
 type FixtureTouch = {
   source: string;
@@ -1272,50 +1272,5 @@ describe('createEventPropertiesBuilder', () => {
       });
     });
 
-    describe('cookie size truncation (nginx 400 defense)', () => {
-      it('truncate helper returns input unchanged when within limit', () => {
-        expect(truncate('short', 100)).toBe('short');
-      });
-
-      it('truncate helper slices at maxLen', () => {
-        const long = 'x'.repeat(300);
-        expect(truncate(long, 200)).toBe('x'.repeat(200));
-      });
-
-      it('truncates landingPage to MAX_URL_FIELD_LENGTH', () => {
-        const longQuery = 'a'.repeat(1000);
-        setHref('http://localhost/page?q=' + longQuery + '&utm_source=test');
-        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
-          .getMarketingAttribution();
-        expect(ma!.landingPage.length).toBeLessThanOrEqual(MAX_URL_FIELD_LENGTH);
-      });
-
-      it('truncates referrer to MAX_URL_FIELD_LENGTH', () => {
-        const longRef = 'https://www.google.com/search?q=' + 'a'.repeat(1000);
-        setHref('http://localhost/page?utm_source=test');
-        setReferrer(longRef);
-        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
-          .getMarketingAttribution();
-        expect(ma!.referrer.length).toBeLessThanOrEqual(MAX_URL_FIELD_LENGTH);
-        expect(ma!.referrerDomain).toBe('www.google.com');
-      });
-
-      it('truncates utm_campaign to MAX_UTM_PARAM_LENGTH', () => {
-        const longCampaign = 'c'.repeat(500);
-        setHref('http://localhost/page?utm_source=test&utm_campaign=' + longCampaign);
-        const builder = createEventPropertiesBuilder(window, makePPLib({ attribution: null }));
-        const flat = builder.buildFlat();
-        const campaignVal = flat['utm_campaign [last touch]'] as string;
-        expect(campaignVal.length).toBeLessThanOrEqual(MAX_UTM_PARAM_LENGTH);
-      });
-
-      it('truncates clickId to MAX_CLICK_ID_LENGTH', () => {
-        const longGclid = 'g'.repeat(300);
-        setHref('http://localhost/page?utm_source=test&gclid=' + longGclid);
-        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
-          .getMarketingAttribution();
-        expect(ma!.clickId.length).toBeLessThanOrEqual(MAX_CLICK_ID_LENGTH);
-      });
-    });
   });
 });
