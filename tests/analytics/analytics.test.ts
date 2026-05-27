@@ -915,14 +915,14 @@ describe('Session', () => {
     expect(window.ppAnalytics).toBeDefined();
   });
 
-  it('start attempts to store timestamp (Storage.set fails for numbers due to validateData)', () => {
+  it('start stores session timestamp via Storage.set', () => {
     setUrl('https://example.com/?utm_source=google');
     window.requestIdleCallback = vi.fn((cb) => cb());
     loadWithCommon('analytics', { coverable: false });
-    // Session.start() calls Storage.set('session_start', timestamp)
-    // but validateData rejects non-objects, so it's not stored
+    // Session.start() stores Date.now() — validateData now accepts primitives
     const stored = sessionStorage.getItem('pp_attr_session_start');
-    expect(stored).toBeNull();
+    expect(stored).not.toBeNull();
+    expect(Number(JSON.parse(stored!))).toBeGreaterThan(0);
   });
 
   it('isValid returns false when Storage.get throws for session_start (line 338)', () => {
@@ -1521,24 +1521,21 @@ describe('Tracker.init', () => {
     expect(attr.firstTouch.utm_source).toBe('google');
   });
 
-  it('overwrites first touch on re-init because session_start is not stored (validateData rejects numbers)', () => {
+  it('preserves first touch on re-init when session is still valid', () => {
     setUrl('https://example.com/?utm_source=original');
     window.requestIdleCallback = vi.fn((cb) => cb());
     loadWithCommon('analytics', { coverable: false });
 
-    // Verify first touch is set
     const attr1 = window.ppAnalytics.getAttribution();
     expect(attr1.firstTouch.utm_source).toBe('original');
 
-    // Session.start() calls Storage.set('session_start', timestamp) but
-    // validateData rejects non-objects, so session_start is never stored.
-    // This means Session.isValid() always returns false, so first_touch
-    // is overwritten on each init with new params.
+    // Session.start() stores the timestamp via Storage.set — with the
+    // validateData fix, numeric values are correctly persisted. Session
+    // is valid → first-touch is preserved.
     setUrl('https://example.com/?utm_source=second_visit');
     window.ppAnalytics.init();
     const attr2 = window.ppAnalytics.getAttribution();
-    // First touch IS overwritten since session is always invalid
-    expect(attr2.firstTouch.utm_source).toBe('second_visit');
+    expect(attr2.firstTouch.utm_source).toBe('original');
     expect(attr2.lastTouch.utm_source).toBe('second_visit');
   });
 
@@ -1575,15 +1572,16 @@ describe('Tracker.init', () => {
     expect(attr.firstTouch.utm_source).toBe('new_session');
   });
 
-  it('calls Session.start during init (session_start not persisted since validateData rejects numbers)', () => {
+  it('persists session_start timestamp via Storage.set during init', () => {
     setUrl('https://example.com/?utm_source=google');
     window.requestIdleCallback = vi.fn((cb) => cb());
     loadWithCommon('analytics', { coverable: false });
 
-    // Session.start() calls Storage.set('session_start', Date.now())
-    // but Storage.set -> validateData(number) returns false, so nothing stored
+    // Session.start() stores Date.now() — validateData now correctly
+    // accepts numeric primitives, so the timestamp is persisted.
     const stored = sessionStorage.getItem('pp_attr_session_start');
-    expect(stored).toBeNull();
+    expect(stored).not.toBeNull();
+    expect(Number(JSON.parse(stored!))).toBeGreaterThan(0);
   });
 
   it('sends attribution data', () => {

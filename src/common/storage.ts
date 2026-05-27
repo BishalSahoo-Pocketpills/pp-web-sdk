@@ -76,7 +76,7 @@ export function createStorage(
       }
     },
 
-    get<T = unknown>(key: string, persistent?: boolean): T | null {
+    get<T = unknown>(key: string, persistent?: boolean, validate?: (v: unknown) => v is T): T | null {
       try {
         if (!safeUtils.exists(key)) return null;
 
@@ -96,6 +96,8 @@ export function createStorage(
           storage.remove(key, persistent);
           return null;
         }
+
+        if (typeof validate === 'function' && !validate(parsed)) return null;
 
         return parsed as T | null;
       } catch (e) {

@@ -1151,16 +1151,10 @@ describe('Security.json.stringify()', () => {
     expect(ppLib.Security.json.stringify(undefined)).toBeNull();
   });
 
-  it('should return null for falsy input (0)', () => {
-    expect(ppLib.Security.json.stringify(0)).toBeNull();
-  });
-
-  it('should return null for falsy input (empty string)', () => {
-    expect(ppLib.Security.json.stringify('')).toBeNull();
-  });
-
-  it('should return null for falsy input (false)', () => {
-    expect(ppLib.Security.json.stringify(false)).toBeNull();
+  it('should stringify falsy-but-valid values (0, empty string, false)', () => {
+    expect(ppLib.Security.json.stringify(0)).toBe('0');
+    expect(ppLib.Security.json.stringify('')).toBe('""');
+    expect(ppLib.Security.json.stringify(false)).toBe('false');
   });
 
   it('should return null when stringified data exceeds maxStorageSize', () => {
@@ -1205,12 +1199,10 @@ describe('Security.validateData()', () => {
     expect(ppLib.Security.validateData(null)).toBe(false);
   });
 
-  it('should return false for non-object (string)', () => {
-    expect(ppLib.Security.validateData('string')).toBe(false);
-  });
-
-  it('should return false for non-object (number)', () => {
-    expect(ppLib.Security.validateData(42)).toBe(false);
+  it('should return true for safe primitives (string, number)', () => {
+    expect(ppLib.Security.validateData('hello')).toBe(true);
+    expect(ppLib.Security.validateData(42)).toBe(true);
+    expect(ppLib.Security.validateData(true)).toBe(true);
   });
 
   it('should detect <script> tag', () => {

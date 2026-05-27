@@ -840,10 +840,11 @@ describe('Common native coverage', () => {
         expect(window.ppLib.Security.json.stringify(undefined as any)).toBeNull();
       });
 
-      it('returns null for falsy input (0, empty string)', async () => {
+      it('stringifies falsy-but-valid values (0, empty string, false)', async () => {
         await freshLoad();
-        expect(window.ppLib.Security.json.stringify(0 as any)).toBeNull();
-        expect(window.ppLib.Security.json.stringify('' as any)).toBeNull();
+        expect(window.ppLib.Security.json.stringify(0 as any)).toBe('0');
+        expect(window.ppLib.Security.json.stringify('' as any)).toBe('""');
+        expect(window.ppLib.Security.json.stringify(false as any)).toBe('false');
       });
 
       it('rejects data exceeding maxStorageSize', async () => {
@@ -877,14 +878,10 @@ describe('Common native coverage', () => {
         expect(window.ppLib.Security.validateData(null)).toBe(false);
       });
 
-      it('returns false for non-object input (string)', async () => {
+      it('returns true for safe primitives (string, number)', async () => {
         await freshLoad();
-        expect(window.ppLib.Security.validateData('string')).toBe(false);
-      });
-
-      it('returns false for non-object input (number)', async () => {
-        await freshLoad();
-        expect(window.ppLib.Security.validateData(42)).toBe(false);
+        expect(window.ppLib.Security.validateData('hello')).toBe(true);
+        expect(window.ppLib.Security.validateData(42)).toBe(true);
       });
 
       it('returns false for non-object input (undefined)', async () => {
