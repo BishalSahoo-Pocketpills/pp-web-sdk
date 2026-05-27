@@ -21,6 +21,7 @@
  * Exposes: window.ppLib.mixpanel
  */
 import type { PPLib } from '@src/types/common.types';
+import { cloneConfig } from '@src/common/clone-config';
 import type {
   DualMixpanelConfig,
   InstanceName,
@@ -190,7 +191,7 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
      * object cannot leak back into the internal CONFIG.
      */
     function legacyProjectionFromDual(cfg: DualMixpanelConfig): DualMixpanelConfig {
-      const cloned = JSON.parse(JSON.stringify(cfg)) as DualMixpanelConfig;
+      const cloned = cloneConfig(cfg);
       const projection = cloned as DualMixpanelConfig & Record<string, unknown>;
       // Top-level primary fields (token, apiHost, projectName, initOptions, enabled).
       const primKeys = Object.keys(cloned.primary) as Array<keyof MixpanelInstanceConfig>;

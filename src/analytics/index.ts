@@ -10,6 +10,7 @@ import type { AnalyticsConfig, QueueEvent, RateLimitEntry, TrackedParams, Custom
 import type { DeepPartial } from '@src/types/utility.types';
 import { pollUntil } from '@src/common/retry';
 import { bootstrapModule } from '@src/common/bootstrap';
+import { cloneConfig } from '@src/common/clone-config';
 
 // Internal Mixpanel-platform queue payload — discriminator decides whether
 // the upstream call goes to mixpanel.register or mixpanel.track.
@@ -1066,10 +1067,10 @@ type MixpanelQueueData = {
           cachedParamNames = null;
           Utils.log('info', 'Configuration updated');
         }
-        return JSON.parse(JSON.stringify(CONFIG));
+        return cloneConfig(CONFIG);
       } catch (e) {
         Utils.log('error', 'Config error', e);
-        return JSON.parse(JSON.stringify(CONFIG));
+        return cloneConfig(CONFIG);
       }
     },
 

@@ -16,6 +16,7 @@ import { createEventHandler } from '@src/braze/events';
 import { createPurchaseHandler } from '@src/braze/purchases';
 import { bootstrapModule } from '@src/common/bootstrap';
 import { checkModuleConsent } from '@src/common/consent-gate';
+import { cloneConfig } from '@src/common/clone-config';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -93,7 +94,7 @@ import { checkModuleConsent } from '@src/common/consent-gate';
   }
 
   function getConfig(): BrazeConfig {
-    return JSON.parse(JSON.stringify(CONFIG));
+    return cloneConfig(CONFIG);
   }
 
   function trackEvent(eventName: string, properties?: Record<string, unknown>): void {

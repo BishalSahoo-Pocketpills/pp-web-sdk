@@ -22,6 +22,7 @@ import {
 import { createSegmentResolver } from '@src/voucherify/segment-resolver';
 import { createPricingEngine } from '@src/voucherify/pricing-engine';
 import { createOffersManager } from '@src/voucherify/offers-manager';
+import { cloneConfig } from '@src/common/clone-config';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -447,7 +448,7 @@ import { createOffersManager } from '@src/voucherify/offers-manager';
     },
 
     getConfig: function() {
-      return JSON.parse(JSON.stringify(CONFIG));
+      return cloneConfig(CONFIG);
     },
 
     getSegment: function() {

@@ -14,6 +14,7 @@ import type {
   MixpanelInstanceFacade,
 } from '@src/types/mixpanel.types';
 import type { MixpanelGlobal } from '@src/types/window';
+import { cloneConfig } from '@src/common/clone-config';
 
 export interface InstanceState {
   name: InstanceName;

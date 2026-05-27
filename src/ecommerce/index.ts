@@ -13,6 +13,7 @@ import { createDebounceTracker } from '@src/common/debounce';
 import { createEventGuard } from '@src/common/event-guard';
 import { addInteractionListener } from '@src/common/dom-events';
 import { bootstrapModule } from '@src/common/bootstrap';
+import { cloneConfig } from '@src/common/clone-config';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -476,7 +477,7 @@ import { bootstrapModule } from '@src/common/bootstrap';
     },
 
     getConfig: function() {
-      return JSON.parse(JSON.stringify(CONFIG));
+      return cloneConfig(CONFIG);
     }
   };
 

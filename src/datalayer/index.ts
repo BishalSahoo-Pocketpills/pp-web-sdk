@@ -17,6 +17,7 @@ import { createEventPusher } from '@src/datalayer/events';
 import { createDomBinder } from '@src/datalayer/dom';
 import { createEventPropertiesEnricher } from '@src/datalayer/enrichers/event-properties';
 import { bootstrapModule } from '@src/common/bootstrap';
+import { cloneConfig } from '@src/common/clone-config';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -236,7 +237,7 @@ import { bootstrapModule } from '@src/common/bootstrap';
     scanViewItems: domBinder.scanViewItems,
 
     getConfig: function(): DataLayerConfig {
-      return JSON.parse(JSON.stringify(CONFIG));
+      return cloneConfig(CONFIG);
     }
   };
 
