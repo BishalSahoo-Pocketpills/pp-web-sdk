@@ -51,6 +51,12 @@ describe('Integration: ecommerce → mixpanel + dataLayer', () => {
   });
 
   it('add_to_cart fires a Mixpanel track + GA4 dataLayer push with canonical context', () => {
+    // Mixpanel is the source of truth for $device_id; the mixpanel module
+    // syncs it into pp_device_id on its loaded callback. Seed the cookie
+    // to simulate post-sync state — this test installs a stub mixpanel
+    // and bypasses the real load flow, so the sync wouldn't fire.
+    document.cookie = 'pp_device_id=mp-sourced-uuid;path=/';
+
     loadModule('common');
     loadModule('mixpanel');
     loadModule('ecommerce');

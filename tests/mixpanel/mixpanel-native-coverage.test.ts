@@ -723,17 +723,22 @@ describe('Mixpanel native coverage', () => {
     });
 
     it('unifies Mixpanel distinct_id with SDK device_id for anonymous users', async () => {
+      // Mixpanel is the source of truth for $device_id (synced into the
+      // pp_device_id cookie by onAllLoaded). Pre-seed the cookie to
+      // mirror that post-sync state since this test stubs the loaded
+      // callback rather than running the real load flow.
+      setCookie('pp_device_id', 'mp-sourced-device-uuid');
+
       const loadedCallback = await initAndGetLoadedCallback();
       const mp = createMockMixpanel();
       mp.get_distinct_id = vi.fn(() => '$device:auto-mp-id');
       invokeLoadedCallback(loadedCallback, mp);
 
-      // Anonymous: pp_distinct_id falls back to device_id (the SDK's stored
-      // UUID), so identify() should be called with that exact value.
-      // device_id now lives in a cross-subdomain cookie (pp_device_id) — read
-      // via ppLib.getCookie so the assertion travels with the storage location.
+      // Anonymous: pp_distinct_id falls back to device_id (read from the
+      // pp_device_id cookie), so identify() should be called with that
+      // exact value.
       const ppDeviceId = window.ppLib.getCookie('pp_device_id');
-      expect(ppDeviceId).toBeTruthy();
+      expect(ppDeviceId).toBe('mp-sourced-device-uuid');
       expect(mp.identify).toHaveBeenCalledWith(ppDeviceId);
     });
 

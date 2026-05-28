@@ -161,6 +161,11 @@ describe('ppLib.mixpanel.track facade', () => {
   });
 
   it('treats missing properties argument as empty', () => {
+    // Mixpanel is now the source of truth for $device_id (synced to
+    // pp_device_id cookie on mp.init loaded). Seed the cookie to mirror
+    // the post-sync state so pp_distinct_id has a value to carry.
+    document.cookie = 'pp_device_id=mp-sourced-uuid;path=/';
+
     loadWithCommon('mixpanel');
     (window as any).ppLib.mixpanel.configure({ token: 'tok' });
     (window as any).mixpanel = createMockMixpanel();
@@ -170,9 +175,11 @@ describe('ppLib.mixpanel.track facade', () => {
     expect(result).toBe(true);
     const [eventName, mergedProps] = (window as any).mixpanel.track.mock.calls[0];
     expect(eventName).toBe('pageview');
-    // Builder context still attached — device_id is stripped, but
+    // Builder context still attached — device_id is stripped from the
+    // Mixpanel payload (Mixpanel auto-collects $device_id), but
     // pp_distinct_id carries the same pp_device_id value.
     expect(typeof mergedProps.pp_distinct_id).toBe('string');
+    expect(mergedProps.pp_distinct_id).toBe('mp-sourced-uuid');
   });
 
   describe('emitMode dispatch', () => {
