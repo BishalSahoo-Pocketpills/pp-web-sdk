@@ -195,7 +195,9 @@ import { safeLogPayload, safeLogError } from '@src/common/log-sanitize';
   // destinations (Mixpanel + dataLayer + Braze) should await
   // ppLib.mixpanelReady before dispatching their initial auto-events.
   // The mixpanel module resolves this after mp.init's loaded callback
-  // fires AND $device_id has been synced to the pp_device_id cookie.
+  // fires — at that point window.mixpanel.get_property('$device_id') is
+  // readable, and the event-properties builder reads it live for every
+  // destination (no SDK-side mirror cookie).
   //
   // Timeout fallback: if Mixpanel never loads (minimal deployments,
   // ad-blocker, CDN failure), the gate releases after 3 seconds so

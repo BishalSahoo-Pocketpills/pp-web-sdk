@@ -723,23 +723,20 @@ describe('Mixpanel native coverage', () => {
     });
 
     it('unifies Mixpanel distinct_id with SDK device_id for anonymous users', async () => {
-      // Mixpanel is the source of truth for $device_id (synced into the
-      // pp_device_id cookie by onAllLoaded). Pre-seed the cookie to
-      // mirror that post-sync state since this test stubs the loaded
-      // callback rather than running the real load flow.
-      setCookie('pp_device_id', 'mp-sourced-device-uuid');
-
+      // Mixpanel is the source of truth for $device_id; the builder reads
+      // it live via window.mixpanel.get_property('$device_id'). Pre-seed
+      // the property on the mock so the builder's anonymous-path resolves
+      // pp_distinct_id to that value.
       const loadedCallback = await initAndGetLoadedCallback();
-      const mp = createMockMixpanel();
+      const mp = createMockMixpanel({
+        initialProperties: { $device_id: 'mp-sourced-device-uuid' },
+      });
       mp.get_distinct_id = vi.fn(() => '$device:auto-mp-id');
       invokeLoadedCallback(loadedCallback, mp);
 
-      // Anonymous: pp_distinct_id falls back to device_id (read from the
-      // pp_device_id cookie), so identify() should be called with that
-      // exact value.
-      const ppDeviceId = window.ppLib.getCookie('pp_device_id');
-      expect(ppDeviceId).toBe('mp-sourced-device-uuid');
-      expect(mp.identify).toHaveBeenCalledWith(ppDeviceId);
+      // Anonymous: pp_distinct_id falls back to device_id (read live from
+      // Mixpanel), so identify() should be called with that exact value.
+      expect(mp.identify).toHaveBeenCalledWith('mp-sourced-device-uuid');
     });
 
     it('skips unification when Mixpanel distinct_id already equals pp_distinct_id', async () => {

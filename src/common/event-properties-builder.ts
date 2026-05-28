@@ -9,9 +9,11 @@
  * GTM and Mixpanel carries the same context (UTM touch attribution,
  * device/session/login state, page, click IDs, marketing attribution).
  *
- * Stable per-session fields (browser, device_type, country, device_id) are
- * memoized; volatile fields (URL, referrer, login state, attribution) are
- * recomputed on each build() call.
+ * Stable per-session fields (browser, device_type, country) are memoized;
+ * volatile fields (URL, referrer, login state, attribution, device_id) are
+ * recomputed on each build() call. `device_id` is read live from Mixpanel
+ * (`$device_id`) so it picks up the new value after `mp.reset()` without a
+ * page reload.
  */
 import type { PPLib } from '@src/types/common.types';
 import type { DeepPartial } from '@src/types/utility.types';
@@ -20,7 +22,7 @@ import {
   UTM_LAST_TOUCH,
   MARKETING_ATTRIBUTION_KEY,
 } from '@src/common/super-property-keys';
-import { createPersistentValue, createLocalStorageValue } from '@src/common/persistent-storage';
+import { createLocalStorageValue } from '@src/common/persistent-storage';
 import { utmFallback } from '@src/common/utm-fallback';
 import {
   type RawUtmTouch,
@@ -228,9 +230,11 @@ export const MIXPANEL_DUPLICATE_KEYS: ReadonlySet<string> = new Set([
   // browser — Mixpanel auto: $browser ("Browser") provides the same value.
   'browser',
   // device_id — Mixpanel auto: $device_id ("Device ID") is Mixpanel's
-  // anonymous tracking UUID. Different VALUE from our pp_device_id but
-  // user asked to dedupe the column. The pp_device_id value still rides
-  // as pp_distinct_id and surfaces as "Distinct ID Before Identity".
+  // anonymous tracking UUID. We read OUR `device_id` directly from
+  // Mixpanel's `$device_id` at event-build time, so the values are now
+  // identical — stripping the snake_case copy avoids two columns showing
+  // the same value. The same value still rides as `pp_distinct_id` for
+  // anonymous visitors (surfaces as "Distinct ID Before Identity").
   'device_id',
   // current_url — Mixpanel auto: $current_url ("Current URL") shows the
   // full URL. Ours is path-only, but visually duplicates the column.
@@ -255,14 +259,10 @@ export const MIXPANEL_DUPLICATE_KEYS: ReadonlySet<string> = new Set([
   //     "tablet" is unique to our SDK.
 ]);
 
-const DEVICE_ID_KEY = 'pp_device_id';
 const UTM_FIRST_TOUCH_KEY = 'pp_utm_first_touch';
 const UTM_LAST_TOUCH_KEY = 'pp_utm_last_touch';
 
-// Two-year max-age — device_id is a long-lived anonymous identifier; matches
-// the prior localStorage durability (effectively permanent until cleared).
-const DEVICE_ID_MAX_AGE_SECONDS = 63072000;
-// First touch UTM — 2 years, mirrors the device_id horizon. First-touch
+// First touch UTM — 2 years. First-touch
 // attribution is by definition long-lived and we want it to survive
 // re-engagement campaigns.
 const UTM_FIRST_TOUCH_MAX_AGE_SECONDS = 63072000;
@@ -343,7 +343,10 @@ export function createEventPropertiesBuilder(
   let defaultPlatform: string = 'web';
 
   // Stable per-session fields — derived once, reset on configure().
-  let stableCache: { browser: string; device_type: string; device: string; country: string; device_id: string } | null = null;
+  // device_id is intentionally NOT cached here: it's read live from
+  // Mixpanel each build() so post-reset rotations are picked up without
+  // a page reload.
+  let stableCache: { browser: string; device_type: string; device: string; country: string } | null = null;
 
   function configure(next: EventPropertiesBuilderOpts): void {
     if (next.cookieNames) {
@@ -361,27 +364,22 @@ export function createEventPropertiesBuilder(
     stableCache = null; // invalidate — country cookie name may have changed
   }
 
-  // Cross-subdomain device_id storage. Cookie-first read with one-time
-  // migration from the legacy localStorage entry, so users hopping between
-  // try.pocketpills.com and www.pocketpills.com keep the same anonymous ID.
+  // Mixpanel's `$device_id` is the single source of truth for the anonymous
+  // device identifier. Mixpanel persists it in its own cross-subdomain
+  // cookie/localStorage; we read it live at event-build time. No SDK-side
+  // cookie mirror — non-Mixpanel destinations (dataLayer, Braze) read the
+  // same value Mixpanel uses by calling here.
   //
-  // Source of truth is Mixpanel's $device_id. The mixpanel module's
-  // onAllLoaded() callback writes that value into this cookie via
-  // syncDeviceIdFromMixpanel() so non-Mixpanel destinations (dataLayer,
-  // Braze) read the same identifier Mixpanel uses. No generate() —
-  // returning users keep their existing cookie value until mp.init's
-  // loaded callback overwrites it; new users get '' until then.
-  const deviceIdStore = createPersistentValue<string>(win, ppLib, {
-    cookieName: DEVICE_ID_KEY,
-    maxAgeSeconds: DEVICE_ID_MAX_AGE_SECONDS,
-    serialize: (s) => s,
-    deserialize: (s) => (typeof s === 'string' && s.length > 0) ? s : null,
-    legacyLocalStorageKey: DEVICE_ID_KEY,
-  });
-
+  // The mixpanelReady gate in common/index.ts holds non-Mixpanel auto-events
+  // until `$device_id` is readable (3s timeout fallback for deployments where
+  // Mixpanel never loads — those visitors get an empty device_id, which is
+  // industry-standard for blocked-SDK situations).
   function getOrCreateDeviceId(): string {
     try {
-      return deviceIdStore.read() || '';
+      const mp = win.mixpanel;
+      if (!mp || typeof mp.get_property !== 'function') return '';
+      const id = mp.get_property('$device_id');
+      return typeof id === 'string' ? id : '';
     } catch (e) {
       return '';
     }
@@ -1038,7 +1036,6 @@ export function createEventPropertiesBuilder(
       device_type: parseDeviceType(ua),
       device: parseDevice(ua),
       country: ppLib.getCookie(cookieNames.country) || '',
-      device_id: getOrCreateDeviceId()
     };
     return stableCache;
   }
@@ -1067,6 +1064,7 @@ export function createEventPropertiesBuilder(
 
   function build(): BuiltEventBundle {
     const stable = buildStable();
+    const deviceId = getOrCreateDeviceId();
     captureUtmTouches();
 
     const { userId, patientId, isLoggedIn } = determineLoginState();
@@ -1084,7 +1082,7 @@ export function createEventPropertiesBuilder(
     const userProperties: BuiltUserProperties = {
       userId: userId,
       patientId: patientId,
-      pp_distinct_id: isLoggedIn ? userId : stable.device_id
+      pp_distinct_id: isLoggedIn ? userId : deviceId
     };
 
     const eventProperties: BuiltEventProperties = {
@@ -1095,7 +1093,7 @@ export function createEventPropertiesBuilder(
       // contract sample shape.
       url: win.location.href,
       current_url: win.location.pathname || '/',
-      device_id: stable.device_id,
+      device_id: deviceId,
       // Anonymous visitors get the '-1' sentinel (matches the convention
       // used by `isLoggedIn` above and the main app's cookie format) so
       // these fields survive 3E's empty-string strip and remain queryable

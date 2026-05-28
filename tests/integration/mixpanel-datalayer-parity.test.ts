@@ -20,6 +20,7 @@ interface MixpanelStub {
   register: ReturnType<typeof vi.fn>;
   people: { set: ReturnType<typeof vi.fn> };
   get_distinct_id: () => string;
+  get_property: (name: string) => unknown;
   identify: ReturnType<typeof vi.fn>;
   opt_in_tracking: ReturnType<typeof vi.fn>;
 }
@@ -30,6 +31,7 @@ function installMixpanelStub(): MixpanelStub {
     register: vi.fn(),
     people: { set: vi.fn() },
     get_distinct_id: () => 'test-distinct-id',
+    get_property: (name: string) => (name === '$device_id' ? 'mp-sourced-uuid' : undefined),
     identify: vi.fn(),
     opt_in_tracking: vi.fn()
   };

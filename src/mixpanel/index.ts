@@ -226,11 +226,11 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       SessionManager.timeout = CONFIG.shared.sessionTimeout;
       // Mint initial session — fans to all enabled-and-ready instances.
       SessionManager.check();
-      // Sync Mixpanel's $device_id into pp_device_id cookie BEFORE we
-      // release the readiness gate. Mixpanel is the source of truth for
-      // the anonymous device identifier; the cookie is a cross-subdomain
-      // mirror so Angular and the dataLayer enricher see the same value.
-      syncDeviceIdFromMixpanel();
+      // Sweep any legacy pp_device_id cookie left by older SDK versions
+      // that mirrored Mixpanel's $device_id into our own cookie. Mixpanel
+      // is now the only source of truth — non-Mixpanel destinations read
+      // $device_id live via the event-properties builder.
+      deleteLegacyPpDeviceIdCookie();
       // Shared super-props (base, cookies, experiments, UTM, marketing, VWO).
       registerSharedContext(win, doc);
       // Replay any pre-init buffered ops through the full enrichment path.
@@ -271,37 +271,27 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
     }
 
     /**
-     * Read $device_id from primary (preferred) or secondary (fallback)
-     * and write it to the pp_device_id cookie. Primary is the source of
-     * truth — syncIdentityFromPrimary has already pinned secondary to
-     * primary's value, so they should match; we still try primary first
-     * because that's the contract.
+     * One-time sweep of the legacy `pp_device_id` cookie. Earlier SDK
+     * versions mirrored Mixpanel's `$device_id` into this cross-subdomain
+     * cookie so non-Mixpanel destinations (dataLayer, Braze, Angular)
+     * could read it. The event-properties builder now reads `$device_id`
+     * live from Mixpanel, so the mirror is dead weight in HTTP headers.
      *
-     * The cookie is a 2-year cross-subdomain mirror so Angular and the
-     * dataLayer enricher can read the same value without depending on
-     * the Mixpanel cookie's token-suffixed name.
+     * Belt-and-braces: clears on the configured cross-subdomain scope
+     * (matches how the SDK wrote it) and on the host-only path in case
+     * any subdomain wrote it without a domain attribute.
      */
-    function syncDeviceIdFromMixpanel(): void {
+    function deleteLegacyPpDeviceIdCookie(): void {
       try {
-        const primary = getState('primary');
-        const secondary = getState('secondary');
-        const source =
-          primary.enabled && primary.mpRef
-            ? primary.mpRef
-            : secondary.enabled && secondary.mpRef
-              ? secondary.mpRef
-              : null;
-        if (source === null || typeof source.get_property !== 'function') return;
-        const deviceId = source.get_property('$device_id');
-        if (typeof deviceId !== 'string' || deviceId.length === 0) return;
-        ppLib.setCookie('pp_device_id', deviceId, {
-          domain: ppLib.config.cookieDomain,
-          path: '/',
-          maxAgeSeconds: 63072000,
-          sameSite: 'Lax',
-        });
+        const name = 'pp_device_id';
+        const expired = 'Thu, 01 Jan 1970 00:00:00 GMT';
+        const domain = ppLib.config?.cookieDomain;
+        if (typeof domain === 'string' && domain.length > 0) {
+          document.cookie = `${name}=; expires=${expired}; path=/; domain=${domain}`;
+        }
+        document.cookie = `${name}=; expires=${expired}; path=/`;
       } catch (e) {
-        ppLib.log('warn', 'syncDeviceIdFromMixpanel failed', ppLib.safeLogError(e));
+        ppLib.log('warn', 'deleteLegacyPpDeviceIdCookie failed', ppLib.safeLogError(e));
       }
     }
 

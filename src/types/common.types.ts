@@ -83,15 +83,19 @@ export interface PPLib {
   version: string;
   _isReady: boolean;
   /**
-   * Resolves after the Mixpanel module's `mp.init` loaded callback fires
-   * AND `$device_id` has been synced into the `pp_device_id` cookie.
+   * Resolves after the Mixpanel module's `mp.init` loaded callback fires.
+   * At that point `window.mixpanel.get_property('$device_id')` is readable,
+   * so the event-properties builder can attach a consistent `device_id`
+   * to events on every destination (Mixpanel, dataLayer, Braze).
+   *
    * Modules that need consistent identifiers across destinations
    * (analytics auto-pageview, ecommerce auto-events) should await this
    * before dispatching their initial events.
    *
    * On environments without the mixpanel module loaded, or when the
    * Mixpanel CDN is blocked, this resolves via a 3-second timeout
-   * fallback so non-Mixpanel destinations still function.
+   * fallback so non-Mixpanel destinations still function (with empty
+   * `device_id` — industry-standard behavior for blocked SDKs).
    */
   mixpanelReady: Promise<void>;
   /** Internal — invoked by mixpanel module's onAllLoaded callback. */

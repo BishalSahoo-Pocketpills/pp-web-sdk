@@ -17,16 +17,21 @@ interface MixpanelStub {
   register: ReturnType<typeof vi.fn>;
   people: { set: ReturnType<typeof vi.fn> };
   get_distinct_id: () => string;
+  get_property: (name: string) => unknown;
   identify: ReturnType<typeof vi.fn>;
   opt_in_tracking: ReturnType<typeof vi.fn>;
 }
 
 function installMixpanelStub(): MixpanelStub {
+  // Stub the minimum surface the SDK reads. $device_id is read live by
+  // the event-properties builder; expose it via get_property so anonymous
+  // visitors get a non-empty pp_distinct_id / device_id on dataLayer.
   const stub: MixpanelStub = {
     track: vi.fn(),
     register: vi.fn(),
     people: { set: vi.fn() },
     get_distinct_id: () => 'test-distinct-id',
+    get_property: (name: string) => (name === '$device_id' ? 'mp-sourced-uuid' : undefined),
     identify: vi.fn(),
     opt_in_tracking: vi.fn()
   };
@@ -51,12 +56,9 @@ describe('Integration: ecommerce → mixpanel + dataLayer', () => {
   });
 
   it('add_to_cart fires a Mixpanel track + GA4 dataLayer push with canonical context', () => {
-    // Mixpanel is the source of truth for $device_id; the mixpanel module
-    // syncs it into pp_device_id on its loaded callback. Seed the cookie
-    // to simulate post-sync state — this test installs a stub mixpanel
-    // and bypasses the real load flow, so the sync wouldn't fire.
-    document.cookie = 'pp_device_id=mp-sourced-uuid;path=/';
-
+    // Mixpanel is the source of truth for $device_id; the event-properties
+    // builder reads window.mixpanel.get_property('$device_id') live each
+    // build(). installMixpanelStub() below installs the stub.
     loadModule('common');
     loadModule('mixpanel');
     loadModule('ecommerce');
@@ -86,8 +88,10 @@ describe('Integration: ecommerce → mixpanel + dataLayer', () => {
     // enrichTrack path. If the facade stops calling the builder, OR the
     // builder drops a field, this fails.
     const propsObj = props as Record<string, unknown>;
-    // pp_device_id rides via pp_distinct_id; the snake_case `device_id`
-    // duplicate is stripped from the Mixpanel payload.
+    // Mixpanel's $device_id is read live by the builder and rides as
+    // pp_distinct_id for anonymous visitors; the snake_case `device_id`
+    // duplicate is stripped from the Mixpanel-bound payload (Mixpanel
+    // attaches $device_id itself).
     expect(typeof propsObj.pp_distinct_id).toBe('string');
     expect((propsObj.pp_distinct_id as string).length).toBeGreaterThan(0);
     // 3E strips empty-string fields when jsdom's UA doesn't match any

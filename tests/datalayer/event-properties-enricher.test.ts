@@ -45,7 +45,7 @@ function makePPLib(cookies?: Record<string, string>): PPLib {
   const log = vi.fn();
   // Read-through getCookie: serves the seeded cookies map first, then falls
   // back to live document.cookie so PersistentValue-managed entries (e.g.
-  // pp_device_id, pp_utm_*) round-trip.
+  // pp_utm_*) round-trip.
   const getCookieReal = (name: string): string | null => {
     if (cookies && Object.prototype.hasOwnProperty.call(cookies, name)) return cookies[name];
     try {
@@ -101,16 +101,25 @@ describe('createEventPropertiesEnricher', () => {
 
   beforeEach(() => {
     localStorage.clear();
-    // Clear cookies — PersistentValue now uses cookies for pp_device_id and
-    // pp_utm_*, so test isolation needs them wiped alongside localStorage.
+    // Clear cookies — pp_utm_* uses cookies, so test isolation needs them
+    // wiped alongside localStorage. device_id is read live from
+    // window.mixpanel — reset it to absent so tests opt in via the stub.
     document.cookie.split(';').forEach(c => {
       const name = c.split('=')[0].trim();
       if (name) document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
     });
+    delete (window as any).mixpanel;
     Object.defineProperty(document, 'URL', {
       value: baselineURL, writable: true, configurable: true,
     });
   });
+
+  // Install a window.mixpanel stub for the device_id live-read path.
+  function stubMixpanelDeviceId(deviceId: string): void {
+    (window as any).mixpanel = {
+      get_property: (name: string) => (name === '$device_id' ? deviceId : undefined),
+    };
+  }
 
   it('adds all required eventProperties to events', () => {
     // utm_* keys are sourced literally from URL (not from attribution
@@ -135,10 +144,10 @@ describe('createEventPropertiesEnricher', () => {
       referrer: 'google.com',
     });
     seedActiveSession();
-    // Mixpanel is the source of truth for $device_id; the mixpanel
-    // module syncs it into pp_device_id on its loaded callback. Seed
-    // the cookie directly to simulate post-sync state.
-    document.cookie = 'pp_device_id=mp-sourced-uuid;path=/';
+    // Mixpanel is the source of truth for $device_id; the builder reads
+    // window.mixpanel.get_property('$device_id') live each build(). Install
+    // the stub to simulate the post-loaded-callback state.
+    stubMixpanelDeviceId('mp-sourced-uuid');
 
     const ppLib = makePPLib({ userId: '42', patientId: '99', app_is_authenticated: 'true', country: 'CA' });
     const enricher = createEventPropertiesEnricher(window, ppLib, makeConfig());
@@ -265,12 +274,11 @@ describe('createEventPropertiesEnricher', () => {
     expect(ep.pp_session_id).toBe('');
   });
 
-  it('reads the same Mixpanel-sourced device_id from pp_device_id cookie across calls', () => {
-    // Mixpanel is now the source of truth for $device_id; the mixpanel
-    // module syncs it into pp_device_id on mp.init's loaded callback.
-    // The enricher just reads that cookie.
+  it('reads the same Mixpanel-sourced device_id across calls', () => {
+    // Mixpanel is the source of truth for $device_id; the builder reads
+    // window.mixpanel.get_property('$device_id') live on every build().
     const seededId = 'mp-sourced-device-uuid';
-    document.cookie = 'pp_device_id=' + encodeURIComponent(seededId) + ';path=/';
+    stubMixpanelDeviceId(seededId);
 
     const enricher = createEventPropertiesEnricher(window, makePPLib(), makeConfig());
     const mockPush = vi.fn(() => 1);
@@ -284,7 +292,8 @@ describe('createEventPropertiesEnricher', () => {
 
     expect(id1).toBe(seededId);
     expect(id2).toBe(seededId);
-    expect(localStorage.getItem('pp_device_id')).toBeNull();
+    // No mirror cookie is written — Mixpanel is the only persistence.
+    expect(document.cookie).not.toContain('pp_device_id=');
   });
 
   it('reads cookies fresh on each call', () => {

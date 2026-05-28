@@ -103,8 +103,8 @@ describe('ppLib.mixpanel.track facade', () => {
     expect(mergedProps.logged_in).toBe('true');
     // device_id and current_url are stripped from the Mixpanel payload
     // (duplicates of Mixpanel's auto $device_id / $current_url). The
-    // pp_device_id value still rides as `pp_distinct_id`, and the full
-    // URL still rides as `url`.
+    // $device_id value (read live from Mixpanel by the builder) still
+    // rides as `pp_distinct_id`, and the full URL still rides as `url`.
     expect(typeof mergedProps.pp_distinct_id).toBe('string');
     expect(typeof mergedProps.url).toBe('string');
     expect(typeof mergedProps.pp_timestamp).toBe('number');
@@ -161,23 +161,25 @@ describe('ppLib.mixpanel.track facade', () => {
   });
 
   it('treats missing properties argument as empty', () => {
-    // Mixpanel is now the source of truth for $device_id (synced to
-    // pp_device_id cookie on mp.init loaded). Seed the cookie to mirror
-    // the post-sync state so pp_distinct_id has a value to carry.
-    document.cookie = 'pp_device_id=mp-sourced-uuid;path=/';
-
     loadWithCommon('mixpanel');
     (window as any).ppLib.mixpanel.configure({ token: 'tok' });
-    (window as any).mixpanel = createMockMixpanel();
+    // Mixpanel is the source of truth for $device_id; the builder reads
+    // window.mixpanel.get_property('$device_id') live each build(). Use
+    // createMockMixpanel with an initial $device_id property so
+    // pp_distinct_id has a value to carry.
+    (window as any).mixpanel = createMockMixpanel({
+      initialProperties: { $device_id: 'mp-sourced-uuid' },
+    });
 
     const result = (window as any).ppLib.mixpanel.track('pageview');
 
     expect(result).toBe(true);
     const [eventName, mergedProps] = (window as any).mixpanel.track.mock.calls[0];
     expect(eventName).toBe('pageview');
-    // Builder context still attached — device_id is stripped from the
+    // Builder context still attached — `device_id` is stripped from the
     // Mixpanel payload (Mixpanel auto-collects $device_id), but
-    // pp_distinct_id carries the same pp_device_id value.
+    // pp_distinct_id carries the same $device_id value for anonymous
+    // visitors.
     expect(typeof mergedProps.pp_distinct_id).toBe('string');
     expect(mergedProps.pp_distinct_id).toBe('mp-sourced-uuid');
   });

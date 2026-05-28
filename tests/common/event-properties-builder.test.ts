@@ -74,8 +74,8 @@ function makePPLib(opts?: {
 
   const log = vi.fn();
   // Cookie reader serves the seeded map first, then falls back to live
-  // document.cookie so PersistentValue-managed entries (pp_device_id,
-  // pp_utm_*) round-trip cleanly through write→read.
+  // document.cookie so PersistentValue-managed entries (pp_utm_*) round-trip
+  // cleanly through write→read.
   const getCookieReal = (name: string): string | null => {
     if (Object.prototype.hasOwnProperty.call(cookies, name)) return cookies[name];
     try {
@@ -108,12 +108,27 @@ function makePPLib(opts?: {
 describe('createEventPropertiesBuilder', () => {
   beforeEach(() => {
     localStorage.clear();
-    // device_id / UTM touch now live in cookies — wipe both layers for isolation.
+    // UTM touch lives in localStorage (already cleared above) + cookies —
+    // wipe document.cookie too for full isolation. device_id is no longer
+    // mirrored anywhere; the builder reads window.mixpanel.get_property
+    // live, so per-test mixpanel stubbing is what controls device_id.
     document.cookie.split(';').forEach(c => {
       const name = c.split('=')[0].trim();
       if (name) document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
     });
+    // Reset window.mixpanel to a known-absent state before each test.
+    // Individual tests install their own stub when they need a device_id.
+    delete (window as any).mixpanel;
   });
+
+  // Install a window.mixpanel stub with a `get_property` returning the given
+  // value for `$device_id`. Mirrors what the real Mixpanel SDK exposes after
+  // its loaded callback fires.
+  function stubMixpanelDeviceId(deviceId: string | null): void {
+    (window as any).mixpanel = {
+      get_property: (name: string) => (name === '$device_id' ? deviceId : undefined),
+    };
+  }
 
   describe('build()', () => {
     it('produces userProperties / eventProperties / page / attribution blocks', () => {
@@ -277,40 +292,59 @@ describe('createEventPropertiesBuilder', () => {
       expect(bundle.eventProperties.pp_session_id).toBe('');
     });
 
-    it('returns the pp_device_id cookie value (Mixpanel-sourced, mirrored by SDK) consistently across calls', () => {
-      // Mixpanel is the source of truth for $device_id; the mixpanel
-      // module syncs it into the pp_device_id cookie on mp.init's loaded
-      // callback. The builder just reads that cookie.
-      const seededId = 'mp-sourced-device-uuid-abc';
-      document.cookie = 'pp_device_id=' + encodeURIComponent(seededId) + ';path=/';
+    it('reads $device_id live from window.mixpanel.get_property on every build', () => {
+      // Mixpanel is the source of truth for $device_id; the builder reads
+      // it live each call so post-reset rotations are picked up without a
+      // page reload. No SDK-side cookie mirror anymore.
+      stubMixpanelDeviceId('mp-sourced-device-uuid-abc');
 
       const ppLib = makePPLib();
       const builder = createEventPropertiesBuilder(window, ppLib);
       const a = builder.build().eventProperties.device_id;
       const b = builder.build().eventProperties.device_id;
 
-      expect(a).toBe(seededId);
+      expect(a).toBe('mp-sourced-device-uuid-abc');
       expect(a).toBe(b);
     });
 
-    it('returns empty device_id when pp_device_id cookie is absent (pre mp.init / first visit)', () => {
-      // No cookie seeded — simulates first visit before mp.init loaded
-      // callback has fired. Industry-standard graceful degradation.
+    it('picks up a new $device_id after Mixpanel rotates it (e.g. mp.reset)', () => {
+      // Mixpanel's reset() mints a new $device_id. With live reads the
+      // builder reflects it on the next build() call — no cached value.
+      stubMixpanelDeviceId('uuid-before-reset');
+      const ppLib = makePPLib();
+      const builder = createEventPropertiesBuilder(window, ppLib);
+      expect(builder.build().eventProperties.device_id).toBe('uuid-before-reset');
+
+      stubMixpanelDeviceId('uuid-after-reset');
+      expect(builder.build().eventProperties.device_id).toBe('uuid-after-reset');
+    });
+
+    it('returns empty device_id when window.mixpanel is not installed (pre mp.init / first visit)', () => {
+      // No mixpanel stub — simulates first visit before mp.init loaded
+      // callback has fired, or a minimal deployment where the mixpanel
+      // module isn't bundled. Industry-standard graceful degradation.
       const ppLib = makePPLib();
       const builder = createEventPropertiesBuilder(window, ppLib);
       const id = builder.build().eventProperties.device_id;
       expect(id).toBe('');
     });
 
-    it('keeps device_id stable across UTM-changed re-visits (branch 2 / audit P7+T5)', () => {
+    it('returns empty device_id when Mixpanel returns a non-string $device_id', () => {
+      // Defensive — if get_property returns null/undefined/object the
+      // builder coerces to '' rather than propagating non-strings.
+      stubMixpanelDeviceId(null);
+      const ppLib = makePPLib();
+      const builder = createEventPropertiesBuilder(window, ppLib);
+      expect(builder.build().eventProperties.device_id).toBe('');
+    });
+
+    it('keeps device_id stable across UTM-changed re-visits (audit P7+T5)', () => {
       // Audit P7/T5: same browser hitting the site with different UTMs
-      // (e.g. google → facebook campaign) was generating a new device_id,
-      // breaking cross-session user joins. The cross-subdomain cookie from
-      // branch 1B owns the fix; this test locks in the contract so a
-      // regression can't slip through.
+      // (e.g. google → facebook campaign) must report the same device_id
+      // (Mixpanel persists $device_id in its own cookie/localStorage).
       const originalURL = document.URL;
       try {
-        document.cookie = 'pp_device_id=known-device-uuid-v1; path=/';
+        stubMixpanelDeviceId('known-device-uuid-v1');
 
         // First visit: google UTM.
         Object.defineProperty(document, 'URL', {
@@ -322,7 +356,7 @@ describe('createEventPropertiesBuilder', () => {
         expect(idA).toBe('known-device-uuid-v1');
 
         // Second visit (fresh builder, fresh ppLib): facebook UTM.
-        // The cookie is still set; device_id MUST read through.
+        // Mixpanel still holds the same $device_id; device_id MUST match.
         Object.defineProperty(document, 'URL', {
           value: 'http://localhost/lp?utm_source=facebook&utm_medium=social',
           writable: true, configurable: true,
@@ -456,20 +490,6 @@ describe('createEventPropertiesBuilder', () => {
       expect(storedFirst).toMatchObject(legacyFirst);
     });
 
-    it('migrates a legacy localStorage device_id to the cookie on first read', () => {
-      // Seed legacy localStorage as if a user pre-dates the rollout.
-      window.localStorage.setItem('pp_device_id', 'legacy-device-uuid');
-      const ppLib = makePPLib();
-
-      const id = createEventPropertiesBuilder(window, ppLib).build().eventProperties.device_id;
-
-      // Same value carried over
-      expect(id).toBe('legacy-device-uuid');
-      // Cookie now holds it (the cross-subdomain source of truth)
-      expect(document.cookie).toContain('pp_device_id=legacy-device-uuid');
-      // Legacy localStorage entry was purged (one-time migration)
-      expect(window.localStorage.getItem('pp_device_id')).toBeNull();
-    });
   });
 
   describe('configure()', () => {
@@ -521,8 +541,8 @@ describe('createEventPropertiesBuilder', () => {
       expect(flat.pp_user_id).toBe('42');
       expect(flat.logged_in).toBe('true');
       // device_id is in MIXPANEL_DUPLICATE_KEYS — Mixpanel auto-collects
-      // it as $device_id / "Device ID". The cross-subdomain pp_device_id
-      // value still rides as `pp_distinct_id` (asserted above).
+      // it as $device_id / "Device ID". The same value still rides as
+      // `pp_distinct_id` for anonymous visitors (asserted above).
       expect(flat.device_id).toBeUndefined();
       // current_url is in MIXPANEL_DUPLICATE_KEYS — Mixpanel auto-collects
       // it as $current_url. The flat (Mixpanel) shape strips it. The full
