@@ -13,10 +13,10 @@
  * Common is loaded via IIFE (not native import) to avoid corrupting common's
  * coverage data through merge of IIFE + native V8 evaluations.
  */
-import { loadModule } from '../helpers/iife-loader.ts';
-import { createMockMixpanel } from '../helpers/mock-mixpanel.ts';
-import { createMockDataLayer } from '../helpers/mock-datalayer.ts';
-import { setSessionItem, setLocalItem } from '../helpers/mock-storage.ts';
+import { loadModule, flushMixpanelReady } from '@tests/helpers/iife-loader';
+import { createMockMixpanel } from '@tests/helpers/mock-mixpanel';
+import { createMockDataLayer } from '@tests/helpers/mock-datalayer';
+import { setSessionItem, setLocalItem } from '@tests/helpers/mock-storage';
 
 let originalLocation: Location;
 
@@ -59,7 +59,12 @@ async function freshLoad() {
   loadModule('common');
   window.ppLib.config.debug = true;
   window.ppLib.config.verbose = true;
-  await import('../../src/analytics/index.ts');
+  await import('@src/analytics/index');
+
+  // Release the mixpanelReady gate so analytics auto-pageview dispatch
+  // (now wrapped in ppLib.mixpanelReady.then(...)) runs synchronously
+  // relative to the test's next assertion.
+  await flushMixpanelReady();
 
   // Capture the interval ID for cleanup in the next freshLoad
   if (window.ppAnalyticsDebug?.platforms?.Mixpanel?._intervalId) {
@@ -93,7 +98,11 @@ async function freshLoadConsentRequired() {
   // it via ppLib.config so the IIFE picks it up... but the analytics module
   // reads its own CONFIG at evaluation time. Instead we'll configure after
   // load and re-init manually where needed.
-  await import('../../src/analytics/index.ts');
+  await import('@src/analytics/index');
+  // Release the mixpanelReady gate so any pending auto-init dispatch
+  // completes before the test asserts (the gate runs the body in a
+  // microtask even when consent is denied, just no events fire).
+  await flushMixpanelReady();
   // Now disable auto-tracking by requiring consent
   window.ppAnalytics.config({
     consent: { required: true, defaultState: 'denied' } as any
@@ -408,6 +417,10 @@ describe('Analytics native coverage', () => {
   it('consent: setConsent(true) triggers Tracker.init()', async () => {
     await freshLoadConsentRequired();
     window.ppAnalytics.consent.grant();
+    // The grant callback calls tracker.init() which gates dispatch on
+    // mixpanelReady. The gate was already resolved by freshLoadConsentRequired,
+    // but the .then() body runs in a microtask — flush before asserting.
+    await Promise.resolve();
     expect(window.ppAnalyticsDebug.tracker.initialized).toBe(true);
   });
 
@@ -955,6 +968,8 @@ describe('Analytics native coverage', () => {
     await freshLoad();
     window.ppAnalyticsDebug.tracker.initialized = false;
     window.ppAnalytics.init();
+    // init() schedules the dispatch in a microtask via mixpanelReady.then()
+    await Promise.resolve();
     expect(window.ppAnalyticsDebug.tracker.initialized).toBe(true);
   });
 
@@ -975,12 +990,15 @@ describe('Analytics native coverage', () => {
 
     loadModule('common');
     window.ppLib.config.debug = true;
-    await import('../../src/analytics/index.ts');
+    await import('@src/analytics/index');
 
     const dclCall = addEventSpy.mock.calls.find(c => c[0] === 'DOMContentLoaded');
     expect(dclCall).toBeDefined();
     // Fire the callback
     (dclCall![1] as Function)();
+    // DOMContentLoaded handler calls tracker.init() which gates dispatch
+    // on mixpanelReady — release the gate and flush microtasks.
+    await flushMixpanelReady();
     expect(window.ppAnalyticsDebug.tracker.initialized).toBe(true);
 
     Object.defineProperty(document, 'readyState', {

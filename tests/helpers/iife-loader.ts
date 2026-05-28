@@ -54,3 +54,21 @@ export function loadWithCommon(moduleName, opts?: { coverable?: boolean }) {
   loadModule('common');
   loadModule(moduleName, opts);
 }
+
+/**
+ * Resolve `ppLib.mixpanelReady` and flush the microtask queue so any
+ * `.then(...)` callbacks scheduled by module init (analytics auto-pageview,
+ * etc.) run before the next test assertion.
+ *
+ * Production releases the gate when the mixpanel module's onAllLoaded()
+ * fires (after `mp.init` loaded callback). Tests that don't load the
+ * mixpanel module need to release it explicitly, or wait for the 3s
+ * timeout fallback (impractical for fast unit tests).
+ */
+export async function flushMixpanelReady(): Promise<void> {
+  const pp = (globalThis as unknown as { ppLib?: { _resolveMixpanelReady?: () => void } }).ppLib;
+  if (pp && typeof pp._resolveMixpanelReady === 'function') {
+    pp._resolveMixpanelReady();
+  }
+  await Promise.resolve();
+}
