@@ -722,11 +722,13 @@ describe('Mixpanel native coverage', () => {
       expect(mp.identify).toHaveBeenCalledWith('pp-user-42');
     });
 
-    it('unifies Mixpanel distinct_id with SDK device_id for anonymous users', async () => {
-      // Mixpanel is the source of truth for $device_id; the builder reads
-      // it live via window.mixpanel.get_property('$device_id'). Pre-seed
-      // the property on the mock so the builder's anonymous-path resolves
-      // pp_distinct_id to that value.
+    it('does NOT identify anonymous visitors (Simplified ID Merge contract)', async () => {
+      // Per Mixpanel's Simplified ID Merge guidance, anonymous visitors
+      // must keep their auto-generated `$device:<uuid>` distinct_id.
+      // Calling identify(deviceId) creates a Mixpanel user profile per
+      // anonymous visitor — inflates user counts and forces a redundant
+      // merge when they later authenticate. No auth cookies are seeded,
+      // so the SDK treats this visitor as anonymous.
       const loadedCallback = await initAndGetLoadedCallback();
       const mp = createMockMixpanel({
         initialProperties: { $device_id: 'mp-sourced-device-uuid' },
@@ -734,9 +736,9 @@ describe('Mixpanel native coverage', () => {
       mp.get_distinct_id = vi.fn(() => '$device:auto-mp-id');
       invokeLoadedCallback(loadedCallback, mp);
 
-      // Anonymous: pp_distinct_id falls back to device_id (read live from
-      // Mixpanel), so identify() should be called with that exact value.
-      expect(mp.identify).toHaveBeenCalledWith('mp-sourced-device-uuid');
+      // No identify call should fire — Mixpanel keeps `$device:auto-mp-id`
+      // as the anonymous distinct_id, and $user_id stays unset.
+      expect(mp.identify).not.toHaveBeenCalled();
     });
 
     it('skips unification when Mixpanel distinct_id already equals pp_distinct_id', async () => {
