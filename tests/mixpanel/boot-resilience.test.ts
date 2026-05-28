@@ -88,6 +88,7 @@ describe('H3 — initOptions reserved-key denylist', () => {
     'track_pageview',
     'api_transport',
     'api_host',
+    'persistence',
   ])('refuses to override `%s` and warns', (reservedKey) => {
     loadWithCommon('mixpanel');
     const logSpy = vi.spyOn(window.ppLib, 'log');
@@ -151,6 +152,88 @@ describe('H3 — initOptions reserved-key denylist', () => {
     );
     // One warn per instance.
     expect(warnings.length).toBe(2);
+  });
+});
+
+describe('Per-instance boot profile — persistence + legacy cookie sweep', () => {
+  it('primary inits with `persistence: "cookie"`', () => {
+    loadWithCommon('mixpanel');
+    (window as any).ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'p-tok' },
+    });
+    setupScriptEnv();
+    (window as any).ppLib.mixpanel.init();
+
+    const queued = (window as any).mixpanel._i;
+    const primaryEntry = queued.find(
+      (e: any[]) => e[0] === 'p-tok' && (e[2] === undefined || e[2] === 'mixpanel'),
+    );
+    expect(primaryEntry).toBeTruthy();
+    expect(primaryEntry[1].persistence).toBe('cookie');
+  });
+
+  it('secondary inits with `persistence: "localStorage"` so only primary writes a cookie', () => {
+    loadWithCommon('mixpanel');
+    (window as any).ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'p-tok' },
+      secondary: { enabled: true, token: 's-tok' },
+    });
+    setupScriptEnv();
+    (window as any).ppLib.mixpanel.init();
+
+    const queued = (window as any).mixpanel._i;
+    const secondaryEntry = queued.find((e: any[]) => e[2] === 'secondary');
+    expect(secondaryEntry).toBeTruthy();
+    expect(secondaryEntry[1].persistence).toBe('localStorage');
+  });
+
+  it('deletes legacy `mp_<secondary_token>_mixpanel` cookie on secondary init', () => {
+    // Seed a leftover cookie from the dual-cookie era.
+    document.cookie = 'mp_s-tok_mixpanel=stale-blob; path=/';
+    expect(document.cookie).toContain('mp_s-tok_mixpanel=stale-blob');
+
+    loadWithCommon('mixpanel');
+    (window as any).ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'p-tok' },
+      secondary: { enabled: true, token: 's-tok' },
+    });
+    setupScriptEnv();
+    (window as any).ppLib.mixpanel.init();
+
+    expect(document.cookie).not.toContain('mp_s-tok_mixpanel=stale-blob');
+  });
+
+  it('legacy cookie sweep is a no-op when secondary cookie is absent (idempotent)', () => {
+    // No mp_*_mixpanel cookie seeded.
+    loadWithCommon('mixpanel');
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+
+    (window as any).ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'p-tok' },
+      secondary: { enabled: true, token: 's-tok' },
+    });
+    setupScriptEnv();
+    (window as any).ppLib.mixpanel.init();
+
+    // No warning surface — sweep ran cleanly.
+    const sweepWarn = logSpy.mock.calls.find(
+      (c) => c[0] === 'warn' && /deleteLegacyInstanceCookie failed/.test(String(c[1])),
+    );
+    expect(sweepWarn).toBeFalsy();
+  });
+
+  it('does NOT delete primary cookie (primary stays the persisted source)', () => {
+    document.cookie = 'mp_p-tok_mixpanel=primary-state; path=/';
+
+    loadWithCommon('mixpanel');
+    (window as any).ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'p-tok' },
+      secondary: { enabled: true, token: 's-tok' },
+    });
+    setupScriptEnv();
+    (window as any).ppLib.mixpanel.init();
+
+    expect(document.cookie).toContain('mp_p-tok_mixpanel=primary-state');
   });
 });
 
