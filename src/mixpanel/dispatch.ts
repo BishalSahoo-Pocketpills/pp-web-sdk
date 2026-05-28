@@ -50,12 +50,6 @@ export function configureDispatcher(ppLib: PPLib, sharedConfig: SharedMixpanelCo
   });
 }
 
-/** Test-only — re-blank module state so IIFE-reloads start clean. */
-export function resetDispatcher(): void {
-  pp = null;
-  shared = null;
-}
-
 // =====================================================
 // OP TABLE
 // Maps each MixpanelOp to (a) the actual SDK invocation and (b) its

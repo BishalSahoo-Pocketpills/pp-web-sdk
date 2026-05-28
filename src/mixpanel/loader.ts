@@ -33,11 +33,6 @@ export function configureLoader(ppLib: PPLib, sharedConfig: SharedMixpanelConfig
   shared = sharedConfig;
 }
 
-export function resetLoader(): void {
-  pp = null;
-  shared = null;
-}
-
 /**
  * Idempotent. The vendored stub guards re-entry via `__SV`. Returns true
  * when the stub is (or now is) installed and ready to accept `mp.init`

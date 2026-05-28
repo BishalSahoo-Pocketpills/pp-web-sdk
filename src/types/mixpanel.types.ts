@@ -56,17 +56,6 @@ export interface DispatchOptions {
   force?: boolean;
 }
 
-export interface DispatchResult {
-  instance: InstanceName;
-  ok: boolean;
-  /** Populated only when ok === false. Sanitized error class label. */
-  error?: string;
-  /** True when the call was buffered into the pre-init queue instead of dispatched. */
-  buffered?: boolean;
-  /** True when this instance was skipped (disabled or excluded by routing rules). */
-  skipped?: boolean;
-}
-
 // =====================================================
 // Configuration shapes
 // =====================================================
