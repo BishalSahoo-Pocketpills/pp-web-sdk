@@ -805,6 +805,21 @@ export function createEventPropertiesBuilder(
    *     normalizedFirstEver branch and get the direct touch.
    * Otherwise carries the prior normalized slice forward unchanged.
    */
+  function shouldRotateLastTouch(
+    normalizedFirstEver: boolean,
+    hasNewParams: boolean,
+    sessionActive: boolean,
+    selfReferral: boolean,
+    currentHasNoSignal: boolean,
+  ): boolean {
+    if (normalizedFirstEver) return true;
+    if (hasNewParams) return true;
+    if (sessionActive) return false;
+    if (selfReferral) return false;
+    if (currentHasNoSignal) return false;
+    return true;
+  }
+
   function resolveNormalizedSlice(
     existingLastExt: ExtendedUtmTouch,
     currentTouch: NormalizedTouch,
@@ -824,7 +839,7 @@ export function createEventPropertiesBuilder(
     // default, by data-team direction: privacy-mode browsers shouldn't
     // silently flip established last-touch to direct.
     const currentHasNoSignal = !currentTouch.referrer && !hasNewParams;
-    if (normalizedFirstEver || hasNewParams || (!sessionActive && !selfReferral && !currentHasNoSignal)) {
+    if (shouldRotateLastTouch(normalizedFirstEver, hasNewParams, sessionActive, selfReferral, currentHasNoSignal)) {
       return currentTouch;
     }
     return {
@@ -920,24 +935,23 @@ export function createEventPropertiesBuilder(
     const literalSliceEmpty = isFirstEverCapture(projectToRaw(existingFirstExt));
     const normalizedSliceEmpty = !existingFirstExt.platform;
     if (literalSliceEmpty || normalizedSliceEmpty) {
+      const literalSource = literalSliceEmpty ? resolvedLastExt : existingFirstExt;
+      const normalizedSource = normalizedSliceEmpty ? resolvedLastExt : existingFirstExt;
       persistExtended(UTM_FIRST_TOUCH_KEY, {
-        utm_source: literalSliceEmpty ? resolvedLastExt.utm_source : existingFirstExt.utm_source,
-        utm_medium: literalSliceEmpty ? resolvedLastExt.utm_medium : existingFirstExt.utm_medium,
-        utm_campaign: literalSliceEmpty ? resolvedLastExt.utm_campaign : existingFirstExt.utm_campaign,
-        utm_content: literalSliceEmpty ? resolvedLastExt.utm_content : existingFirstExt.utm_content,
-        utm_term: literalSliceEmpty ? resolvedLastExt.utm_term : existingFirstExt.utm_term,
-        source: normalizedSliceEmpty ? resolvedLastExt.source : existingFirstExt.source,
-        medium: normalizedSliceEmpty ? resolvedLastExt.medium : existingFirstExt.medium,
-        campaign: normalizedSliceEmpty ? resolvedLastExt.campaign : existingFirstExt.campaign,
-        platform: normalizedSliceEmpty ? resolvedLastExt.platform : existingFirstExt.platform,
-        clickId: normalizedSliceEmpty ? resolvedLastExt.clickId : existingFirstExt.clickId,
-        referrer: normalizedSliceEmpty ? resolvedLastExt.referrer : existingFirstExt.referrer,
-        referrerDomain: normalizedSliceEmpty ? resolvedLastExt.referrerDomain : existingFirstExt.referrerDomain,
-        landingPage: normalizedSliceEmpty ? resolvedLastExt.landingPage : existingFirstExt.landingPage,
-        timestamp: normalizedSliceEmpty ? resolvedLastExt.timestamp : existingFirstExt.timestamp,
-        // First-touch never participates in session-veto rotation (the cookie
-        // is locked by per-slice immutability above), so sessionTs is
-        // persisted as 0 — schema-uniform but semantically inert.
+        utm_source: literalSource.utm_source,
+        utm_medium: literalSource.utm_medium,
+        utm_campaign: literalSource.utm_campaign,
+        utm_content: literalSource.utm_content,
+        utm_term: literalSource.utm_term,
+        source: normalizedSource.source,
+        medium: normalizedSource.medium,
+        campaign: normalizedSource.campaign,
+        platform: normalizedSource.platform,
+        clickId: normalizedSource.clickId,
+        referrer: normalizedSource.referrer,
+        referrerDomain: normalizedSource.referrerDomain,
+        landingPage: normalizedSource.landingPage,
+        timestamp: normalizedSource.timestamp,
         sessionTs: 0,
       });
     }
