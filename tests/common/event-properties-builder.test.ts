@@ -269,7 +269,7 @@ describe('createEventPropertiesBuilder', () => {
       // No pre-seeded touch cookies → captureUtmTouches creates a fresh
       // direct-visit touch (utm_* = $direct, normalized platform = 'direct').
       // initial_referrer / referrer_domain stay empty because document.referrer
-      // is empty in jsdom by default. marketing_attribution is the resolved
+      // is empty in jsdom by default. marketingAttribution is the resolved
       // direct touch, NOT null — the builder always captures on first use,
       // so a non-null normalized last-touch is the steady state.
       const ppLib = makePPLib({ attribution: null });
@@ -277,7 +277,7 @@ describe('createEventPropertiesBuilder', () => {
 
       expect(bundle.eventProperties['utm_source [first touch]']).toBe('$direct');
       expect(bundle.eventProperties['utm_source [last touch]']).toBe('$direct');
-      expect(bundle.eventProperties.marketing_attribution).toMatchObject({
+      expect(bundle.eventProperties.marketingAttribution).toMatchObject({
         platform: 'direct',
         source: 'direct',
         medium: 'none',
@@ -441,7 +441,7 @@ describe('createEventPropertiesBuilder', () => {
           Object.defineProperty(navigator, 'userAgent', { value: c.ua, configurable: true });
           const ppLib = makePPLib();
           const bundle = createEventPropertiesBuilder(window, ppLib).build();
-          expect(bundle.eventProperties.device).toBe(c.expected);
+          expect(bundle.eventProperties.Device).toBe(c.expected);
         });
       }
 
@@ -453,7 +453,7 @@ describe('createEventPropertiesBuilder', () => {
         const ppLib = makePPLib();
         const bundle = createEventPropertiesBuilder(window, ppLib).build();
         // device (model) is iPhone; device_type (form-factor) is mobile.
-        expect(bundle.eventProperties.device).toBe('iPhone');
+        expect(bundle.eventProperties.Device).toBe('iPhone');
         expect(bundle.eventProperties.device_type).toBe('mobile');
       });
 
@@ -464,7 +464,7 @@ describe('createEventPropertiesBuilder', () => {
         });
         const ppLib = makePPLib();
         const bundle = createEventPropertiesBuilder(window, ppLib).build();
-        expect(bundle.eventProperties.device).toBe('iPhone');
+        expect(bundle.eventProperties.Device).toBe('iPhone');
       });
     });
 
@@ -574,7 +574,7 @@ describe('createEventPropertiesBuilder', () => {
       expect(flat['landing_page_url [last touch]']).toBe('http://localhost/b?utm_source=google');
     });
 
-    it('includes utm_* [first/last touch] and marketing_attribution per-event (parity with dataLayer)', () => {
+    it('includes utm_* [first/last touch] and marketingAttribution per-event (parity with dataLayer)', () => {
       const ppLib = makePPLib();
       const flat = createEventPropertiesBuilder(window, ppLib).buildFlat();
 
@@ -587,11 +587,11 @@ describe('createEventPropertiesBuilder', () => {
       expect(flat['utm_source [last touch]']).toBe('$direct');
       expect(flat['utm_medium [last touch]']).toBe('$direct');
       expect(flat['utm_campaign [last touch]']).toBe('$direct');
-      // marketing_attribution rides per-event as the resolved normalized
+      // marketingAttribution rides per-event as the resolved normalized
       // last-touch. With no seeded fixture, captureUtmTouches
       // builds a direct-visit touch — match-object lets us assert the key
       // dimensions without binding to the full 9-field shape.
-      expect(flat.marketing_attribution).toMatchObject({
+      expect(flat.marketingAttribution).toMatchObject({
         platform: 'direct',
         source: 'direct',
         medium: 'none',
@@ -639,7 +639,7 @@ describe('createEventPropertiesBuilder', () => {
 
       // dataLayer still sees these in build().
       expect(bundle.eventProperties).toHaveProperty('browser');
-      expect(bundle.eventProperties).toHaveProperty('device');
+      expect(bundle.eventProperties).toHaveProperty('Device');
       expect(bundle.eventProperties).toHaveProperty('device_type');
       expect(bundle.eventProperties).toHaveProperty('device_id');
       expect(bundle.eventProperties).toHaveProperty('current_url');
@@ -746,7 +746,7 @@ describe('createEventPropertiesBuilder', () => {
       expect('logged_in' in nested).toBe(false);
       expect('utm_source' in nested).toBe(false);
       expect('utm_source [first touch]' in nested).toBe(false);
-      expect('marketing_attribution' in nested).toBe(false);
+      expect('marketingAttribution' in nested).toBe(false);
     });
   });
 
@@ -802,7 +802,7 @@ describe('createEventPropertiesBuilder', () => {
     });
 
     describe('normalized touch schema', () => {
-      it('stores the FULL referrer URL in marketing_attribution, not a classifier label', () => {
+      it('stores the FULL referrer URL in marketingAttribution, not a classifier label', () => {
         setReferrer('https://www.google.com/search?q=pocketpills');
         setHref('http://localhost/lp/x?utm_source=google&utm_medium=cpc');
 

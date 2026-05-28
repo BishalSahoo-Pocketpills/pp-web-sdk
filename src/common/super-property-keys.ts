@@ -32,7 +32,7 @@ export const UTM_LAST_TOUCH = {
   term: 'utm_term [last touch]',
 } as const;
 
-export const MARKETING_ATTRIBUTION_KEY = 'marketing_attribution';
+export const MARKETING_ATTRIBUTION_KEY = 'marketingAttribution';
 
 /**
  * The full set of keys that are registered as Mixpanel super-properties

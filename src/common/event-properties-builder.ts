@@ -130,13 +130,14 @@ export interface BuiltEventProperties {
    * Device MODEL — `iPhone` / `iPad` / `iPod` / `Android` / `MacBook` /
    * `Windows` / `Linux` / `''`. Parsed from user-agent. Distinct from
    * `device_type` (mobile / tablet / desktop). Per the data-team contract,
-   * analysts use `device` for the model breakdown and `device_type` for
-   * the form-factor breakdown — both are needed.
+   * analysts use `Device` for the model breakdown and `device_type` for
+   * the form-factor breakdown — both are needed. Capitalized to match
+   * `Country` (same convention: human-readable proper-noun dimensions).
    */
-  device: string;
+  Device: string;
   referrer: string;
   initial_referrer: string;
-  marketing_attribution: unknown;
+  marketingAttribution: NormalizedTouch | null;
   // 1C touch attributes — captured by the attribution service. Full URL,
   // its hostname, and the full landing URL, for both first and last touch.
   'referrer [first touch]': string;
@@ -252,8 +253,8 @@ export const MIXPANEL_DUPLICATE_KEYS: ReadonlySet<string> = new Set([
   //     `$direct` fallback for direct visits) for cross-tool parity with
   //     dataLayer / GA4. Same key, same value — Mixpanel merges without
   //     duplication.
-  //   - `device`: Mixpanel's $device only fills on mobile (device model
-  //     like "iPhone"/"Android"); on desktop it's empty. Our `device`
+  //   - `Device`: Mixpanel's $device only fills on mobile (device model
+  //     like "iPhone"/"Android"); on desktop it's empty. Our `Device`
   //     fills both ("MacBook" / "Android") so it covers the gap.
   //   - `device_type`: no Mixpanel equivalent — "desktop"/"mobile"/
   //     "tablet" is unique to our SDK.
@@ -965,7 +966,7 @@ export function createEventPropertiesBuilder(
   }
 
   /**
-   * Build the `marketing_attribution` super-property / event-property value
+   * Build the `marketingAttribution` super-property / event-property value
    * from a resolved extended last-touch cookie. Returns null when the
    * normalized slice is empty (canary: `platform`), which happens before
    * captureUtmTouches has run on the current builder instance. Mirrors the
@@ -1072,7 +1073,7 @@ export function createEventPropertiesBuilder(
     // Literal utm_* params — intentionally NOT routed through the normalized
     // resolver, so e.g. `?source=febpt` does NOT populate utm_source. The
     // normalized slice of the same extended cookie carries the alias-resolved
-    // view for marketing_attribution / referrer / landing_page bracket props.
+    // view for marketingAttribution / referrer / landing_page bracket props.
     const currentUtm = readUtmFromUrl();
     const firstExt = readStoredExtended(UTM_FIRST_TOUCH_KEY);
     const lastExt = readStoredExtended(UTM_LAST_TOUCH_KEY);
@@ -1132,7 +1133,7 @@ export function createEventPropertiesBuilder(
       Country: stable.country,
       browser: stable.browser,
       device_type: stable.device_type,
-      device: stable.device,
+      Device: stable.device,
       referrer: extractDomain(win.document.referrer),
       // initial_referrer comes from the first-touch cookie's normalized slice
       // (referrer is not a UTM concept). Empty string when first-touch hasn't
@@ -1182,7 +1183,7 @@ export function createEventPropertiesBuilder(
       flat[userKeys[i]] = userObj[userKeys[i]];
     }
     // Per the data-team contract, every event payload carries the full
-    // property bag — including utm_* [first/last touch] and marketing_attribution.
+    // property bag — including utm_* [first/last touch] and marketingAttribution.
     // Mixpanel also registers these as super-properties; the redundancy is
     // intentional so dataLayer / GTM / BigQuery consumers see the same data
     // as Mixpanel reports without depending on the super-property side channel.

@@ -124,7 +124,7 @@ describe('ppLib.mixpanel.track facade', () => {
     expect(mergedProps.current_url).toBe('/override');
   });
 
-  it('includes utm_* [first/last touch] and marketing_attribution in the per-event payload (parity with dataLayer)', () => {
+  it('includes utm_* [first/last touch] and marketingAttribution in the per-event payload (parity with dataLayer)', () => {
     loadWithCommon('mixpanel');
     (window as any).ppLib.mixpanel.configure({ token: 'tok' });
     (window as any).mixpanel = createMockMixpanel();
@@ -142,7 +142,7 @@ describe('ppLib.mixpanel.track facade', () => {
     expect(mergedProps['utm_source [last touch]']).toBe('$direct');
     expect(mergedProps['utm_medium [last touch]']).toBe('$direct');
     expect(mergedProps['utm_campaign [last touch]']).toBe('$direct');
-    // marketing_attribution rides only when the attribution service has
+    // marketingAttribution rides only when the attribution service has
     // a non-null normalized view; with no attribution service wired in
     // this unit test, 3E strips it.
   });
