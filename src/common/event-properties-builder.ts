@@ -1037,14 +1037,33 @@ export function createEventPropertiesBuilder(
     return stableCache;
   }
 
+  function determineLoginState(): { userId: string; patientId: string; isLoggedIn: boolean } {
+    const userId = ppLib.getCookie(cookieNames.userId) || '';
+    const patientId = ppLib.getCookie(cookieNames.patientId) || '';
+    const appAuth = ppLib.getCookie(cookieNames.appAuth) || '';
+    const isLoggedIn = appAuth === 'true' || (userId !== '' && userId !== '-1' && patientId !== '');
+    return { userId: userId, patientId: patientId, isLoggedIn: isLoggedIn };
+  }
+
+  function buildClickIdAttribution(params: URLSearchParams): BuiltAttribution {
+    return {
+      fbclid: params.get('fbclid') || null,
+      fbc: ppLib.getCookie('_fbc') || null,
+      fbp: ppLib.getCookie('_fbp') || null,
+      gclid: params.get('gclid') || null,
+      gbraid: params.get('gbraid') || null,
+      wbraid: params.get('wbraid') || null,
+      ttclid: params.get('ttclid') || null,
+      epik: params.get('epik') || null,
+      rdt_cid: params.get('rdt_cid') || null,
+    };
+  }
+
   function build(): BuiltEventBundle {
     const stable = buildStable();
     captureUtmTouches();
 
-    const userId = ppLib.getCookie(cookieNames.userId) || '';
-    const patientId = ppLib.getCookie(cookieNames.patientId) || '';
-    const appAuth = ppLib.getCookie(cookieNames.appAuth) || '';
-    const isLoggedIn = appAuth === 'true' || (!!userId && userId !== '-1' && !!patientId);
+    const { userId, patientId, isLoggedIn } = determineLoginState();
 
     // Literal utm_* params — intentionally NOT routed through the normalized
     // resolver, so e.g. `?source=febpt` does NOT populate utm_source. The
@@ -1142,17 +1161,7 @@ export function createEventPropertiesBuilder(
     // Reuse the memoized URLSearchParams from getSearchParams — keyed on
     // the raw URL so navigation invalidates correctly.
     const params = getSearchParams((win.document && win.document.URL) || win.location.href || '');
-    const attribution: BuiltAttribution = {
-      fbclid: params.get('fbclid') || null,
-      fbc: ppLib.getCookie('_fbc') || null,
-      fbp: ppLib.getCookie('_fbp') || null,
-      gclid: params.get('gclid') || null,
-      gbraid: params.get('gbraid') || null,
-      wbraid: params.get('wbraid') || null,
-      ttclid: params.get('ttclid') || null,
-      epik: params.get('epik') || null,
-      rdt_cid: params.get('rdt_cid') || null
-    };
+    const attribution = buildClickIdAttribution(params);
 
     return { userProperties: userProperties, eventProperties: eventProperties, page: page, attribution: attribution };
   }
