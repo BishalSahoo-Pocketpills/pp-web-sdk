@@ -82,6 +82,20 @@ export interface Storage {
 export interface PPLib {
   version: string;
   _isReady: boolean;
+  /**
+   * Resolves after the Mixpanel module's `mp.init` loaded callback fires
+   * AND `$device_id` has been synced into the `pp_device_id` cookie.
+   * Modules that need consistent identifiers across destinations
+   * (analytics auto-pageview, ecommerce auto-events) should await this
+   * before dispatching their initial events.
+   *
+   * On environments without the mixpanel module loaded, or when the
+   * Mixpanel CDN is blocked, this resolves via a 3-second timeout
+   * fallback so non-Mixpanel destinations still function.
+   */
+  mixpanelReady: Promise<void>;
+  /** Internal — invoked by mixpanel module's onAllLoaded callback. */
+  _resolveMixpanelReady?: () => void;
   config: PPLibConfig;
   SafeUtils: SafeUtils;
   Security: Security;
