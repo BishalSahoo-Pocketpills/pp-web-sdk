@@ -100,16 +100,20 @@ export function createTracker(
         }
       }
 
-      sendAttribution();
-
-      /*! v8 ignore start */
-      if (SafeUtils.get(CONFIG, 'attribution.trackPageViews', true)) {
-      /*! v8 ignore stop */
-        trackPageView();
-      }
-
-      tracker.initialized = true;
-      utils.log('info', 'Tracker initialized successfully');
+      // Gate auto-event dispatch on Mixpanel readiness so all destinations
+      // (Mixpanel, dataLayer/GTM, custom platforms) see the same
+      // pp_device_id at event time. Synchronous Storage writes above
+      // (first_touch, last_touch, session.start) already ran. The gate
+      // auto-releases via 3s timeout fallback when Mixpanel is blocked
+      // (see ppLib.mixpanelReady in common/index.ts).
+      ppLib.mixpanelReady.then(function() {
+        sendAttribution();
+        if (SafeUtils.get(CONFIG, 'attribution.trackPageViews', true)) {
+          trackPageView();
+        }
+        tracker.initialized = true;
+        utils.log('info', 'Tracker initialized successfully');
+      });
 
     } catch (e) {
       utils.log('error', 'Tracker initialization error', e);

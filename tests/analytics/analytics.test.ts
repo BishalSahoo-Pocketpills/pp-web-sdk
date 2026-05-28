@@ -1,4 +1,4 @@
-import { loadModule, loadWithCommon } from '../helpers/iife-loader.ts';
+import { loadModule, loadWithCommon, flushMixpanelReady } from '@tests/helpers/iife-loader';
 import { createMockMixpanel } from '../helpers/mock-mixpanel.ts';
 import { createMockDataLayer } from '../helpers/mock-datalayer.ts';
 import { setSessionItem, setLocalItem } from '../helpers/mock-storage.ts';
@@ -1584,29 +1584,32 @@ describe('Tracker.init', () => {
     expect(Number(JSON.parse(stored!))).toBeGreaterThan(0);
   });
 
-  it('sends attribution data', () => {
+  it('sends attribution data', async () => {
     setUrl('https://example.com/?utm_source=google');
     window.requestIdleCallback = vi.fn((cb) => cb());
     const dataLayer = createMockDataLayer();
     loadWithCommon('analytics', { coverable: false });
+    await flushMixpanelReady();
 
     // Should have first_touch_attribution and last_touch_attribution events
     expect(dataLayer.some(e => e.event === 'first_touch_attribution')).toBe(true);
     expect(dataLayer.some(e => e.event === 'last_touch_attribution')).toBe(true);
   });
 
-  it('tracks page view', () => {
+  it('tracks page view', async () => {
     setUrl('https://example.com/?utm_source=google');
     window.requestIdleCallback = vi.fn((cb) => cb());
     const dataLayer = createMockDataLayer();
     loadWithCommon('analytics', { coverable: false });
+    await flushMixpanelReady();
 
     expect(dataLayer.some(e => e.event === 'attribution_page_view')).toBe(true);
   });
 
-  it('sets initialized flag', () => {
+  it('sets initialized flag', async () => {
     window.requestIdleCallback = vi.fn((cb) => cb());
     loadWithDebug();
+    await flushMixpanelReady();
     expect(window.ppAnalyticsDebug.tracker.initialized).toBe(true);
   });
 
@@ -1664,11 +1667,12 @@ describe('Tracker.sendAttribution', () => {
     restoreLocation();
   });
 
-  it('pushes first touch GTM event with correct fields', () => {
+  it('pushes first touch GTM event with correct fields', async () => {
     setUrl('https://example.com/?utm_source=google&utm_medium=cpc&utm_campaign=spring&utm_term=shoes&utm_content=ad1&gclid=abc&fbclid=xyz');
     window.requestIdleCallback = vi.fn((cb) => cb());
     const dataLayer = createMockDataLayer();
     loadWithCommon('analytics', { coverable: false });
+    await flushMixpanelReady();
 
     const ftEvent = dataLayer.find(e => e.event === 'first_touch_attribution');
     expect(ftEvent).toBeDefined();
@@ -1684,11 +1688,12 @@ describe('Tracker.sendAttribution', () => {
     expect(ftEvent.first_touch_timestamp).toBeDefined();
   });
 
-  it('pushes last touch GTM event', () => {
+  it('pushes last touch GTM event', async () => {
     setUrl('https://example.com/?utm_source=bing');
     window.requestIdleCallback = vi.fn((cb) => cb());
     const dataLayer = createMockDataLayer();
     loadWithCommon('analytics', { coverable: false });
+    await flushMixpanelReady();
 
     const ltEvent = dataLayer.find(e => e.event === 'last_touch_attribution');
     expect(ltEvent).toBeDefined();
@@ -1710,7 +1715,7 @@ describe('Tracker.sendAttribution', () => {
     expect(dataLayer.some(e => e.event === 'last_touch_attribution')).toBe(false);
   });
 
-  it('dispatches Mixpanel register() with First Touch / Last Touch attribution props', () => {
+  it('dispatches Mixpanel register() with First Touch / Last Touch attribution props', async () => {
     // v3.6.0: assert against the live mp.register call rather than the
     // (removed) platforms.Mixpanel.queue.
     setUrl('https://example.com/?utm_source=google&utm_medium=cpc&utm_campaign=test');
@@ -1718,6 +1723,7 @@ describe('Tracker.sendAttribution', () => {
     const mp = createMockMixpanel();
     window.mixpanel = mp;
     loadWithDebug();
+    await flushMixpanelReady();
 
     const registerCalls = mp.register.mock.calls
       .map((call: any[]) => call[0])
@@ -2402,7 +2408,7 @@ describe('Integration: full attribution flow', () => {
     Object.defineProperty(document, 'referrer', { value: '', configurable: true });
   });
 
-  it('captures UTM params, stores attribution, sends to GTM and Mixpanel, tracks page view', () => {
+  it('captures UTM params, stores attribution, sends to GTM and Mixpanel, tracks page view', async () => {
     setUrl('https://example.com/landing?utm_source=google&utm_medium=cpc&utm_campaign=spring&gclid=click123');
     Object.defineProperty(document, 'referrer', {
       value: 'https://google.com/search',
@@ -2414,6 +2420,7 @@ describe('Integration: full attribution flow', () => {
     window.mixpanel = mp;
 
     loadWithCommon('analytics', { coverable: false });
+    await flushMixpanelReady();
 
     // Verify attribution stored
     const attr = window.ppAnalytics.getAttribution();
