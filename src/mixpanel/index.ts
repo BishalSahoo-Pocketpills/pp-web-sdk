@@ -255,6 +255,32 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
      * dataLayer enricher can read the same value without depending on
      * the Mixpanel cookie's token-suffixed name.
      */
+    /**
+     * Delete any pre-existing `mp_<token>_mixpanel` cookie left over from
+     * a prior cookie-based persistence deployment (used today only for
+     * secondary, which moved to `persistence: 'localStorage'`). Without
+     * explicit cleanup the cookie sits in HTTP headers for up to 365
+     * days. Idempotent — no-op when absent.
+     *
+     * Belt-and-braces: clears on the configured cross-subdomain scope
+     * (matches how Mixpanel wrote the cookie) and on the host-only path
+     * in case any subdomain ever wrote it without a domain attribute.
+     */
+    function deleteLegacyInstanceCookie(token: string): void {
+      if (!token) return;
+      try {
+        const name = `mp_${token}_mixpanel`;
+        const expired = 'Thu, 01 Jan 1970 00:00:00 GMT';
+        const domain = ppLib.config?.cookieDomain;
+        if (typeof domain === 'string' && domain.length > 0) {
+          document.cookie = `${name}=; expires=${expired}; path=/; domain=${domain}`;
+        }
+        document.cookie = `${name}=; expires=${expired}; path=/`;
+      } catch (e) {
+        ppLib.log('warn', 'deleteLegacyInstanceCookie failed', ppLib.safeLogError(e));
+      }
+    }
+
     function syncDeviceIdFromMixpanel(): void {
       try {
         const primary = getState('primary');
@@ -284,6 +310,9 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
     // pre-init queue never drains, watchdog fires at 15s. The other
     // reserved keys are load-time semantics the dispatcher relies on
     // (consent gating, dual-pageview suppression, beacon transport).
+    // `persistence` is reserved because INSTANCE_BOOT_PROFILE pins each
+    // instance's storage choice — primary owns the Mixpanel cookie,
+    // secondary uses localStorage so only one cookie is written.
     const RESERVED_INIT_OPTS = [
       'loaded',
       'cross_subdomain_cookie',
@@ -291,12 +320,38 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       'track_pageview',
       'api_transport',
       'api_host',
+      'persistence',
     ];
 
+    /**
+     * Per-instance boot profile. Declarative source of truth for
+     * orchestrator-owned behavior that differs between primary and
+     * secondary — keeps `buildInitOptions` / `initInstance` free of
+     * name-equality branches.
+     *
+     * - `persistence`: Mixpanel SDK persistence backend. Primary uses the
+     *   default `cookie` (cross-subdomain, restored cleanly across hops);
+     *   secondary uses `localStorage` so HTTP headers carry only primary's
+     *   `mp_<token>_mixpanel`. Identity stays consistent via
+     *   `syncIdentityFromPrimary` re-pinning secondary on every page load.
+     * - `sweepLegacyCookie`: delete the pre-localStorage `mp_<token>_mixpanel`
+     *   cookie left over from the dual-cookie era (idempotent — no-op when
+     *   absent). Primary owns its cookie so the sweep stays off.
+     */
+    const INSTANCE_BOOT_PROFILE: Record<
+      InstanceName,
+      { persistence: 'cookie' | 'localStorage'; sweepLegacyCookie: boolean }
+    > = {
+      primary: { persistence: 'cookie', sweepLegacyCookie: false },
+      secondary: { persistence: 'localStorage', sweepLegacyCookie: true },
+    };
+
     function buildInitOptions(
+      name: InstanceName,
       instanceCfg: MixpanelInstanceConfig,
       loaded: (mp: MixpanelGlobal) => void,
     ): Record<string, unknown> {
+      const profile = INSTANCE_BOOT_PROFILE[name];
       const opts: Record<string, unknown> = {
         cross_subdomain_cookie: CONFIG.shared.crossSubdomainCookie,
         opt_out_tracking_by_default: CONFIG.shared.optOutByDefault,
@@ -305,6 +360,7 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
         // analytics module fires its own enriched pageview event. Two
         // pageviews per visit otherwise.
         track_pageview: false,
+        persistence: profile.persistence,
         loaded,
       };
       // Per-instance passthrough — empty by default since Simplified ID
@@ -333,9 +389,17 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       if (state.initCalled) return;
       state.initCalled = true;
 
-      const opts = buildInitOptions(state.config, function loadedCb(mp: MixpanelGlobal) {
+      const opts = buildInitOptions(name, state.config, function loadedCb(mp: MixpanelGlobal) {
         onInstanceLoaded(name, mp);
       });
+
+      // One-shot sweep of the legacy `mp_<token>_mixpanel` cookie for any
+      // instance whose boot profile opts in. Pre-`persistence: 'localStorage'`
+      // deployments wrote a secondary cookie that now sits orphaned in HTTP
+      // headers for up to 365 days. Idempotent — no-op when absent.
+      if (INSTANCE_BOOT_PROFILE[name].sweepLegacyCookie) {
+        deleteLegacyInstanceCookie(state.config.token);
+      }
 
       // For primary, mp.init(token, opts) writes to window.mixpanel itself.
       // For secondary, mp.init(token, opts, 'secondary') queues onto the
