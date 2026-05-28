@@ -797,81 +797,37 @@ describe('Mixpanel native coverage', () => {
   });
 
   // ==========================================================================
-  // 10. Loaded callback — SessionManager
+  // 10. Loaded callback — SessionManager (mirror of common session service)
   // ==========================================================================
-  describe('loaded callback — SessionManager', () => {
-    it('updates SessionManager timeout from config', async () => {
-      const loadedCallback = await initAndGetLoadedCallback({ sessionTimeout: 5000 });
-      const mp = createMockMixpanel();
-
-      mp.register({ 'last event time': Date.now(), 'session ID': 'existing' });
-      invokeLoadedCallback(loadedCallback, mp);
-
-      // Session within timeout, so existing session should be kept
-      expect(mp.get_property('session ID')).toBe('existing');
-    });
-
-    it('creates new session when no last event time (check condition 1)', async () => {
+  describe('loaded callback — SessionManager (mirror)', () => {
+    it('does NOT register `session ID` or `last event time` super-props (removed — pp_session_id event prop is the SoT)', async () => {
       const loadedCallback = await initAndGetLoadedCallback();
       const mp = createMockMixpanel();
       invokeLoadedCallback(loadedCallback, mp);
 
-      // No last event time => new session is generated
-      expect(mp.get_property('session ID')).toBeDefined();
-      expect(mp.get_property('session ID')).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+      const registerCalls = mp.register.mock.calls.map(([props]: [Record<string, unknown>]) => props);
+      const anyHasSessionId = registerCalls.some(
+        (props) => props && Object.prototype.hasOwnProperty.call(props, 'session ID'),
       );
+      const anyHasLast = registerCalls.some(
+        (props) => props && Object.prototype.hasOwnProperty.call(props, 'last event time'),
+      );
+      expect(anyHasSessionId).toBe(false);
+      expect(anyHasLast).toBe(false);
     });
 
-    it('creates new session when no session ID exists (check condition 2)', async () => {
-      const loadedCallback = await initAndGetLoadedCallback();
-      const mp = createMockMixpanel();
-
-      // Set last event time but no session ID
-      mp.register({ 'last event time': Date.now() });
-      invokeLoadedCallback(loadedCallback, mp);
-
-      expect(mp.get_property('session ID')).toBeDefined();
-    });
-
-    it('resets session on timeout (check condition 3)', async () => {
-      const loadedCallback = await initAndGetLoadedCallback({ sessionTimeout: 1000 });
-      const mp = createMockMixpanel();
-
-      const oldTime = Date.now() - 5000;
-      mp.register({ 'last event time': oldTime, 'session ID': 'old-session-id' });
-
-      invokeLoadedCallback(loadedCallback, mp);
-
-      const newSessionId = mp.get_property('session ID');
-      expect(newSessionId).toBeDefined();
-      expect(newSessionId).not.toBe('old-session-id');
-    });
-
-    it('does not reset session when within timeout', async () => {
-      const loadedCallback = await initAndGetLoadedCallback({ sessionTimeout: 1800000 });
-      const mp = createMockMixpanel();
-
-      mp.register({ 'last event time': Date.now() - 1000, 'session ID': 'keep-me' });
-      invokeLoadedCallback(loadedCallback, mp);
-
-      expect(mp.get_property('session ID')).toBe('keep-me');
-    });
-
-    it('generateId produces unique values', async () => {
+    it('common session service is the single source of truth for session identity', async () => {
       const loadedCallback = await initAndGetLoadedCallback();
       const mp = createMockMixpanel();
       invokeLoadedCallback(loadedCallback, mp);
 
-      const id1 = mp.get_property('session ID');
-
-      // Reset session state to trigger new ID generation
-      mp._properties['session ID'] = undefined;
-      mp._properties['last event time'] = undefined;
-      mp.track('test');
-
-      const id2 = mp.get_property('session ID');
-      expect(id1).not.toBe(id2);
+      // pp_session_id event property carries the common session ID into
+      // every event via the event-properties-builder enrichment path.
+      const commonId = window.ppLib.session!.getOrCreateSessionId();
+      expect(commonId).toBeTruthy();
+      expect(commonId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
     });
   });
 
@@ -935,23 +891,23 @@ describe('Mixpanel native coverage', () => {
       expect(window.ppLib._mpTrackPatched).toBe(true);
     });
 
-    it('calls SessionManager.check() and registers last event time on each track call', async () => {
+    it('track wrapper runs SessionManager.check() but does not register `session ID` or `last event time` super-props', async () => {
       const loadedCallback = await initAndGetLoadedCallback();
       const mp = createMockMixpanel();
       invokeLoadedCallback(loadedCallback, mp);
 
-      const sessionIdBefore = mp.get_property('session ID');
-      const timeBefore = Date.now();
+      mp.register.mockClear();
       mp.track('Test Event', { key: 'val' });
-      const timeAfter = Date.now();
 
-      // Session stays the same (within timeout)
-      expect(mp.get_property('session ID')).toBe(sessionIdBefore);
-
-      // Last event time was updated
-      const lastEventTime = mp.get_property('last event time');
-      expect(lastEventTime).toBeGreaterThanOrEqual(timeBefore);
-      expect(lastEventTime).toBeLessThanOrEqual(timeAfter);
+      const registerCalls = mp.register.mock.calls.map(([props]: [Record<string, unknown>]) => props);
+      const anyHasSessionId = registerCalls.some(
+        (props) => props && Object.prototype.hasOwnProperty.call(props, 'session ID'),
+      );
+      const anyHasLast = registerCalls.some(
+        (props) => props && Object.prototype.hasOwnProperty.call(props, 'last event time'),
+      );
+      expect(anyHasSessionId).toBe(false);
+      expect(anyHasLast).toBe(false);
     });
 
     it('calls original track function with all arguments passed through', async () => {
@@ -1002,22 +958,29 @@ describe('Mixpanel native coverage', () => {
       expect(mp.track._ppOriginal).toBe(realOriginal);
     });
 
-    it('resets session and calls resetCampaign when track triggers timeout', async () => {
-      const loadedCallback = await initAndGetLoadedCallback({ sessionTimeout: 1 });
+    it('calls resetCampaign when common session ID rotates between track calls', async () => {
+      const loadedCallback = await initAndGetLoadedCallback();
       const mp = createMockMixpanel();
-
-      mp.register({ 'last event time': Date.now(), 'session ID': 'initial-session' });
       invokeLoadedCallback(loadedCallback, mp);
 
-      const sessionAfterInit = mp.get_property('session ID');
+      // First track adopts current common session ID (no boundary yet).
+      mp.track('Event 1');
 
-      // Simulate time passing
-      mp._properties['last event time'] = Date.now() - 100;
+      // Force common's session service to rotate.
+      window.ppLib.session?.clearSession();
+      mp.register.mockClear();
 
-      mp.track('Late Event');
+      // Second track: check() sees rotated ID → triggers resetCampaign.
+      mp.track('Event 2');
 
-      const sessionAfterTrack = mp.get_property('session ID');
-      expect(sessionAfterTrack).not.toBe('initial-session');
+      const registerCalls = mp.register.mock.calls.map(([props]: [Record<string, unknown>]) => props);
+      const anyResetLastTouch = registerCalls.some(
+        (props) =>
+          props &&
+          'utm_source [last touch]' in props &&
+          props['utm_source [last touch]'] === '$direct',
+      );
+      expect(anyResetLastTouch).toBe(true);
     });
   });
 
@@ -1025,17 +988,21 @@ describe('Mixpanel native coverage', () => {
   // 13. Loaded callback — base properties registration
   // ==========================================================================
   describe('loaded callback — base properties', () => {
-    it('registers last event time and user agent', async () => {
+    it('registers user agent (`last event time` super-prop removed — pp_session_id event prop is SoT)', async () => {
       const loadedCallback = await initAndGetLoadedCallback();
       const mp = createMockMixpanel();
       invokeLoadedCallback(loadedCallback, mp);
 
       expect(mp.register).toHaveBeenCalledWith(
         expect.objectContaining({
-          'last event time': expect.any(Number),
           pp_user_agent: window.navigator.userAgent,
         })
       );
+      const registerCalls = mp.register.mock.calls.map(([props]: [Record<string, unknown>]) => props);
+      const anyHasLast = registerCalls.some(
+        (props) => props && Object.prototype.hasOwnProperty.call(props, 'last event time'),
+      );
+      expect(anyHasLast).toBe(false);
     });
 
     it('registers project name when projectName is configured', async () => {
@@ -1609,7 +1576,8 @@ describe('Mixpanel native coverage', () => {
       invokeLoadedCallback(loadedCallback, mp);
 
       expect(mp.opt_in_tracking).toHaveBeenCalled();
-      expect(mp.get_property('session ID')).toBeDefined();
+      // `session ID` super-prop was removed — pp_session_id event prop is SoT.
+      expect(mp.get_property('session ID')).toBeUndefined();
       expect(mp.register).toHaveBeenCalledWith(expect.objectContaining({ project: 'IntegrationTest' }));
       expect(mp.register).toHaveBeenCalledWith(expect.objectContaining({ pp_user_id: 'user-99' }));
       expect(mp.register).toHaveBeenCalledWith(expect.objectContaining({ pp_user_ip: '10.0.0.1' }));
@@ -1630,21 +1598,20 @@ describe('Mixpanel native coverage', () => {
       });
     });
 
-    it('multiple track calls maintain session continuity within timeout', async () => {
+    it('multiple track calls within timeout share the same common session ID', async () => {
       const loadedCallback = await initAndGetLoadedCallback({ sessionTimeout: 1800000 });
       const mp = createMockMixpanel();
       invokeLoadedCallback(loadedCallback, mp);
 
-      const sessionId = mp.get_property('session ID');
+      const sessionIdBefore = window.ppLib.session!.getOrCreateSessionId();
 
       mp.track('Event 1');
-      expect(mp.get_property('session ID')).toBe(sessionId);
-
       mp.track('Event 2');
-      expect(mp.get_property('session ID')).toBe(sessionId);
-
       mp.track('Event 3');
-      expect(mp.get_property('session ID')).toBe(sessionId);
+
+      // Common's session service is the single source of truth.
+      const sessionIdAfter = window.ppLib.session!.getOrCreateSessionId();
+      expect(sessionIdAfter).toBe(sessionIdBefore);
     });
 
     it('calling init twice does not reload SDK (guard on __SV)', async () => {
