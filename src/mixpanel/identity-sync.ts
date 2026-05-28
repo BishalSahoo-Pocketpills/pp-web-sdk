@@ -32,10 +32,6 @@ export function configureIdentitySync(ppLib: PPLib): void {
   pp = ppLib;
 }
 
-export function resetIdentitySync(): void {
-  pp = null;
-}
-
 /**
  * Read primary's anonymous + identified state and apply it to the
  * secondary instance. Safe to call multiple times — `register` overwrites

@@ -28,10 +28,6 @@ export function configureSharedContext(ppLib: PPLib, cookies: MixpanelCookieName
   cookieNames = cookies;
 }
 
-export function resetSharedContext(): void {
-  pp = null;
-  cookieNames = null;
-}
 
 export function registerSharedContext(win: Window & typeof globalThis, doc: Document): void {
   if (!pp || !cookieNames) return;

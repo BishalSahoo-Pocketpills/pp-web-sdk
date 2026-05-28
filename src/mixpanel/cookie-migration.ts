@@ -30,10 +30,6 @@ export function configureCookieMigration(ppLib: PPLib): void {
   pp = ppLib;
 }
 
-export function resetCookieMigration(): void {
-  pp = null;
-}
-
 export interface MigrationContext {
   preInitDistinctId: string | null;
 }

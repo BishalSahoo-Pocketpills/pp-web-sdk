@@ -60,6 +60,3 @@ export function resetQueue(): void {
   overflowWarned = false;
 }
 
-export function getCap(): number {
-  return PRE_INIT_QUEUE_MAX;
-}

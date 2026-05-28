@@ -88,16 +88,16 @@ export function createSessionService(
   const w: Window & typeof globalThis = win;
   const pp: PPLib = ppLib;
 
-  const cookieOpts = {
-    domain: pp.config.cookieDomain,
-    path: '/',
-    maxAgeSeconds: COOKIE_MAX_AGE_SECONDS,
-    sameSite: 'Lax' as const,
-  };
-
   function writeCookie(name: string, value: string): void {
     try {
-      pp.setCookie!(name, value, cookieOpts);
+      // Read cookieDomain dynamically so post-boot updates to ppLib.config
+      // take effect immediately — matches the pattern in persistent-storage.
+      pp.setCookie!(name, value, {
+        domain: pp.config.cookieDomain,
+        path: '/',
+        maxAgeSeconds: COOKIE_MAX_AGE_SECONDS,
+        sameSite: 'Lax',
+      });
     } catch (_e) {
       // best-effort persistence — surface via the existing log channel
       pp.log('error', 'session.writeCookie error', { cookieName: name });

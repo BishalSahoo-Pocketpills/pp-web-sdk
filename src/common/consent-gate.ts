@@ -22,11 +22,12 @@
 
 import type { PPLib } from '@src/types/common.types';
 
-export type ConsentMode = 'analytics' | 'custom';
+/** Per-module consent mode (legacy, transitioning to the unified ppLib.consent service). */
+export type ModuleConsentMode = 'analytics' | 'custom';
 
 export interface ModuleConsentConfig {
   required: boolean;
-  mode: ConsentMode;
+  mode: ModuleConsentMode;
   checkFunction: () => boolean;
 }
 

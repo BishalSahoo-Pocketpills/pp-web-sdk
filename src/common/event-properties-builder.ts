@@ -398,8 +398,9 @@ export function createEventPropertiesBuilder(
     const lower = ua.toLowerCase();
     if (lower.indexOf('ipad') !== -1) return 'tablet';
     if (lower.indexOf('tablet') !== -1 || lower.indexOf('kindle') !== -1) return 'tablet';
-    if (lower.indexOf('mobi') !== -1 || lower.indexOf('android') !== -1 && lower.indexOf('mobile') !== -1) return 'mobile';
-    if (lower.indexOf('android') !== -1) return 'tablet';
+    // 'mobi' catches both 'Mobile' and 'Mobi' (Android Chrome, iPhone, etc.)
+    if (lower.indexOf('mobi') !== -1) return 'mobile';
+    if (lower.indexOf('android') !== -1) return 'tablet'; // Android without 'mobile' = tablet
     return 'desktop';
   }
 
