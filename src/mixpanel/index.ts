@@ -245,17 +245,6 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
     }
 
     /**
-     * Read $device_id from primary (preferred) or secondary (fallback)
-     * and write it to the pp_device_id cookie. Primary is the source of
-     * truth — syncIdentityFromPrimary has already pinned secondary to
-     * primary's value, so they should match; we still try primary first
-     * because that's the contract.
-     *
-     * The cookie is a 2-year cross-subdomain mirror so Angular and the
-     * dataLayer enricher can read the same value without depending on
-     * the Mixpanel cookie's token-suffixed name.
-     */
-    /**
      * Delete any pre-existing `mp_<token>_mixpanel` cookie left over from
      * a prior cookie-based persistence deployment (used today only for
      * secondary, which moved to `persistence: 'localStorage'`). Without
@@ -281,6 +270,17 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       }
     }
 
+    /**
+     * Read $device_id from primary (preferred) or secondary (fallback)
+     * and write it to the pp_device_id cookie. Primary is the source of
+     * truth — syncIdentityFromPrimary has already pinned secondary to
+     * primary's value, so they should match; we still try primary first
+     * because that's the contract.
+     *
+     * The cookie is a 2-year cross-subdomain mirror so Angular and the
+     * dataLayer enricher can read the same value without depending on
+     * the Mixpanel cookie's token-suffixed name.
+     */
     function syncDeviceIdFromMixpanel(): void {
       try {
         const primary = getState('primary');
