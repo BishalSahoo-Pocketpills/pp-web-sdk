@@ -41,9 +41,12 @@ export function registerSharedContext(win: Window & typeof globalThis, doc: Docu
 }
 
 function registerBaseProps(win: Window & typeof globalThis): void {
+  // `session ID` / `last event time` super-props were removed — they
+  // duplicated pp_session_id (event property from event-properties-builder)
+  // and drifted because each was generated independently. pp_session_id
+  // is the single source of truth for session identity on Mixpanel events.
   dispatch('register', [
     {
-      'last event time': Date.now(),
       pp_user_agent: win.navigator.userAgent,
     },
   ]);

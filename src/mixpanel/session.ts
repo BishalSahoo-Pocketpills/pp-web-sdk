@@ -1,11 +1,17 @@
 /**
- * Session management — ONE shared session ID across both instances.
+ * Mixpanel session boundary detector.
  *
- * Two projects reporting different session IDs for the same user activity
- * would make cross-project parity validation impossible. The SessionManager
- * owns the canonical session ID and last-event timestamp; both values fan
- * out to every enabled instance via dispatch.register, so each Mixpanel
- * project gets identical session super-props.
+ * **Single source of truth: `pp_analytics_session_id` cookie**, owned by
+ * `src/common/session.ts` and surfaced in events as the `pp_session_id`
+ * event property by the event-properties-builder. The `session ID` and
+ * `last event time` super-properties that this module USED to register
+ * have been removed — they duplicated `pp_session_id` and drifted because
+ * each was generated independently.
+ *
+ * This module's only remaining job is detecting a session boundary so
+ * `resetSessionCampaign` can clear stale last-touch UTM super-props on
+ * the new session. It tracks the previously-seen session ID locally and
+ * fires on first change.
  *
  * `makeTrackWrapper(state)` returns a per-instance wrapper that runs
  * `SessionManager.check()` before forwarding to the underlying SDK. The
@@ -15,15 +21,11 @@ import type { PPLib } from '@src/types/common.types';
 import type { InstanceName } from '@src/types/mixpanel.types';
 import type { MixpanelGlobal } from '@src/types/window';
 import type { InstanceState } from '@src/mixpanel/instance-state';
-import { getState } from '@src/mixpanel/instance-state';
-import { dispatch } from '@src/mixpanel/dispatch';
 import { DEFAULTS, M } from '@src/mixpanel/messages';
-import { generateUuid } from '@src/common/uuid';
 
 let pp: PPLib | null = null;
 let timeoutMs: number = DEFAULTS.SESSION_TIMEOUT_MS;
-let sessionId: string | null = null;
-let lastEventTime = 0;
+let lastSeenSessionId: string | null = null;
 
 export function configureSession(ppLib: PPLib, sessionTimeout: number): void {
   pp = ppLib;
@@ -32,82 +34,42 @@ export function configureSession(ppLib: PPLib, sessionTimeout: number): void {
 
 export function resetSession(): void {
   pp = null;
-  sessionId = null;
-  lastEventTime = 0;
+  lastSeenSessionId = null;
   timeoutMs = DEFAULTS.SESSION_TIMEOUT_MS;
 }
 
-
 /**
- * Mint a fresh session ID and fan it out to every enabled instance. Also
- * registers `last event time` so the next session-timeout check has a
- * baseline. Called from `check()` when no session is active OR when the
- * idle timeout has elapsed.
+ * Pull the current session ID from the SDK's common session service —
+ * the single source of truth. Returns null when ppLib or its session
+ * service is missing (boot ordering / minimal deployments).
  */
-function setId(): void {
-  sessionId = generateUuid();
-  lastEventTime = Date.now();
-  dispatch('register', [{ 'session ID': sessionId, 'last event time': lastEventTime }]);
-}
-
-/**
- * Read the latest session state from primary's super-props. Mixpanel
- * persists super-props across page loads via its cookie, so primary's
- * get_property('session ID' / 'last event time') is the authoritative
- * source of truth between checks. Internal SessionManager state is a
- * write-back cache — we mirror writes there for fan-out efficiency, but
- * we re-read primary on each check so external mutations (cookie
- * persistence, debug-console overrides) are honored.
- */
-function readPrimarySuperProps(): { id: string | null; last: number | null } {
-  const primary = getState('primary');
-  if (!primary.mpRef || typeof primary.mpRef.get_property !== 'function') {
-    return { id: null, last: null };
-  }
+function readCommonSessionId(): string | null {
+  if (pp === null) return null;
+  if (typeof pp.session?.getOrCreateSessionId !== 'function') return null;
   try {
-    const existingId = primary.mpRef.get_property('session ID');
-    const existingLast = primary.mpRef.get_property('last event time');
-    return {
-      id: typeof existingId === 'string' && existingId.length > 0 ? existingId : null,
-      last: typeof existingLast === 'number' && existingLast > 0 ? existingLast : null,
-    };
+    const id = pp.session.getOrCreateSessionId();
+    return typeof id === 'string' && id.length > 0 ? id : null;
   } catch (_e) {
-    return { id: null, last: null };
+    return null;
   }
 }
 
 /**
- * Check / refresh the session. Idempotent — safe to call before every
- * track. Triggers a session reset when the configured idle timeout has
- * elapsed since the last event.
+ * Check whether common's session has rotated since the last call.
+ * Returns true ONLY on a true boundary (the ID changed). First call
+ * (initial adoption) returns false — that's not a boundary.
  *
- * Returns true when a new session ID was minted in this call (caller —
- * the SessionManager itself — uses this to trigger resetCampaign on
- * session boundaries).
+ * Caller — the track wrapper — uses the return value to trigger
+ * resetCampaign so stale last-touch UTM super-props don't leak across
+ * sessions.
  */
 function check(): boolean {
-  const now = Date.now();
-  const primaryProps = readPrimarySuperProps();
-  // Adopt session ID from primary if internal state is blank.
-  if (!sessionId && primaryProps.id) {
-    sessionId = primaryProps.id;
-  }
-  // Last event time — prefer primary's super-prop when available; falls
-  // back to internal state. Lets external mutations (test cookie writes,
-  // debug overrides) drive timeout detection.
-  const effectiveLast = primaryProps.last !== null ? primaryProps.last : lastEventTime;
-
-  if (!sessionId) {
-    setId();
-    return true;
-  }
-  if (effectiveLast && now - effectiveLast > timeoutMs) {
-    setId();
-    return true;
-  }
-  lastEventTime = now;
-  dispatch('register', [{ 'last event time': now }]);
-  return false;
+  const commonId = readCommonSessionId();
+  if (commonId === null) return false;
+  if (lastSeenSessionId === commonId) return false;
+  const isFirstCheck = lastSeenSessionId === null;
+  lastSeenSessionId = commonId;
+  return !isFirstCheck;
 }
 
 export const SessionManager = {
@@ -117,9 +79,7 @@ export const SessionManager = {
   set timeout(value: number) {
     timeoutMs = value > 0 ? value : DEFAULTS.SESSION_TIMEOUT_MS;
   },
-  getSessionId: (): string | null => sessionId,
-  generateId: generateUuid,
-  setId,
+  getSessionId: (): string | null => lastSeenSessionId,
   check,
 };
 
@@ -175,11 +135,6 @@ export function patchInstanceTrack(
   if (!wrapped) return false;
   state.mpRef.track = wrapped;
   return true;
-}
-
-/** Test-only — return current internal state for assertions. */
-export function _internals(): { sessionId: string | null; lastEventTime: number; timeoutMs: number } {
-  return { sessionId, lastEventTime, timeoutMs };
 }
 
 // Re-export InstanceName so type-only consumers can pull from one place.
