@@ -135,6 +135,10 @@ describe('createEventPropertiesEnricher', () => {
       referrer: 'google.com',
     });
     seedActiveSession();
+    // Mixpanel is the source of truth for $device_id; the mixpanel
+    // module syncs it into pp_device_id on its loaded callback. Seed
+    // the cookie directly to simulate post-sync state.
+    document.cookie = 'pp_device_id=mp-sourced-uuid;path=/';
 
     const ppLib = makePPLib({ userId: '42', patientId: '99', app_is_authenticated: 'true', country: 'CA' });
     const enricher = createEventPropertiesEnricher(window, ppLib, makeConfig());
@@ -261,7 +265,13 @@ describe('createEventPropertiesEnricher', () => {
     expect(ep.pp_session_id).toBe('');
   });
 
-  it('persists device_id across calls', () => {
+  it('reads the same Mixpanel-sourced device_id from pp_device_id cookie across calls', () => {
+    // Mixpanel is now the source of truth for $device_id; the mixpanel
+    // module syncs it into pp_device_id on mp.init's loaded callback.
+    // The enricher just reads that cookie.
+    const seededId = 'mp-sourced-device-uuid';
+    document.cookie = 'pp_device_id=' + encodeURIComponent(seededId) + ';path=/';
+
     const enricher = createEventPropertiesEnricher(window, makePPLib(), makeConfig());
     const mockPush = vi.fn(() => 1);
     const wrapped = enricher(mockPush);
@@ -272,14 +282,9 @@ describe('createEventPropertiesEnricher', () => {
     wrapped({ event: 'second' });
     const id2 = mockPush.mock.calls[1][0].eventProperties.device_id;
 
-    expect(id1).toBe(id2);
-    // Storage moved from localStorage → cookie (cross-subdomain rollout).
-    // The legacy localStorage key is no longer written; the cookie is the
-    // source of truth.
+    expect(id1).toBe(seededId);
+    expect(id2).toBe(seededId);
     expect(localStorage.getItem('pp_device_id')).toBeNull();
-    const cookieMatch = document.cookie.match(/pp_device_id=([^;]+)/);
-    expect(cookieMatch).not.toBeNull();
-    expect(decodeURIComponent((cookieMatch as RegExpMatchArray)[1])).toBe(id1);
   });
 
   it('reads cookies fresh on each call', () => {

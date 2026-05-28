@@ -21,7 +21,6 @@ import {
   MARKETING_ATTRIBUTION_KEY,
 } from '@src/common/super-property-keys';
 import { createPersistentValue, createLocalStorageValue } from '@src/common/persistent-storage';
-import { generateUuid } from '@src/common/uuid';
 import { utmFallback } from '@src/common/utm-fallback';
 import {
   type RawUtmTouch,
@@ -365,13 +364,19 @@ export function createEventPropertiesBuilder(
   // Cross-subdomain device_id storage. Cookie-first read with one-time
   // migration from the legacy localStorage entry, so users hopping between
   // try.pocketpills.com and www.pocketpills.com keep the same anonymous ID.
+  //
+  // Source of truth is Mixpanel's $device_id. The mixpanel module's
+  // onAllLoaded() callback writes that value into this cookie via
+  // syncDeviceIdFromMixpanel() so non-Mixpanel destinations (dataLayer,
+  // Braze) read the same identifier Mixpanel uses. No generate() —
+  // returning users keep their existing cookie value until mp.init's
+  // loaded callback overwrites it; new users get '' until then.
   const deviceIdStore = createPersistentValue<string>(win, ppLib, {
     cookieName: DEVICE_ID_KEY,
     maxAgeSeconds: DEVICE_ID_MAX_AGE_SECONDS,
     serialize: (s) => s,
     deserialize: (s) => (typeof s === 'string' && s.length > 0) ? s : null,
-    generate: () => generateUuid(),
-    legacyLocalStorageKey: DEVICE_ID_KEY
+    legacyLocalStorageKey: DEVICE_ID_KEY,
   });
 
   function getOrCreateDeviceId(): string {

@@ -277,14 +277,29 @@ describe('createEventPropertiesBuilder', () => {
       expect(bundle.eventProperties.pp_session_id).toBe('');
     });
 
-    it('persists device_id across calls', () => {
+    it('returns the pp_device_id cookie value (Mixpanel-sourced, mirrored by SDK) consistently across calls', () => {
+      // Mixpanel is the source of truth for $device_id; the mixpanel
+      // module syncs it into the pp_device_id cookie on mp.init's loaded
+      // callback. The builder just reads that cookie.
+      const seededId = 'mp-sourced-device-uuid-abc';
+      document.cookie = 'pp_device_id=' + encodeURIComponent(seededId) + ';path=/';
+
       const ppLib = makePPLib();
       const builder = createEventPropertiesBuilder(window, ppLib);
       const a = builder.build().eventProperties.device_id;
       const b = builder.build().eventProperties.device_id;
 
-      expect(a).toBeTruthy();
+      expect(a).toBe(seededId);
       expect(a).toBe(b);
+    });
+
+    it('returns empty device_id when pp_device_id cookie is absent (pre mp.init / first visit)', () => {
+      // No cookie seeded — simulates first visit before mp.init loaded
+      // callback has fired. Industry-standard graceful degradation.
+      const ppLib = makePPLib();
+      const builder = createEventPropertiesBuilder(window, ppLib);
+      const id = builder.build().eventProperties.device_id;
+      expect(id).toBe('');
     });
 
     it('keeps device_id stable across UTM-changed re-visits (branch 2 / audit P7+T5)', () => {
