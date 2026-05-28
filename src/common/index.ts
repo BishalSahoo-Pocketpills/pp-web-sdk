@@ -190,6 +190,28 @@ import { safeLogPayload, safeLogError } from '@src/common/log-sanitize';
   enricher.applyEnrichers();
 
   // =====================================================
+  // MIXPANEL READY GATE
+  // Modules that need consistent device_id / distinct_id across all
+  // destinations (Mixpanel + dataLayer + Braze) should await
+  // ppLib.mixpanelReady before dispatching their initial auto-events.
+  // The mixpanel module resolves this after mp.init's loaded callback
+  // fires AND $device_id has been synced to the pp_device_id cookie.
+  //
+  // Timeout fallback: if Mixpanel never loads (minimal deployments,
+  // ad-blocker, CDN failure), the gate releases after 3 seconds so
+  // non-Mixpanel destinations still emit events. device_id will be
+  // empty for those deployments — industry-standard behavior for
+  // analytics SDKs.
+  // =====================================================
+
+  ppLib.mixpanelReady = new Promise<void>(function(resolve) {
+    ppLib._resolveMixpanelReady = function() {
+      resolve();
+    };
+    setTimeout(resolve, 3000);
+  });
+
+  // =====================================================
   // MODULE READY SYSTEM
   // Ensures modules can safely wait for common.js
   // =====================================================

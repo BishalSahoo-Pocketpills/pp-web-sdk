@@ -79,6 +79,60 @@ describe('IIFE Bootstrap', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 1b. mixpanelReady gate
+// ---------------------------------------------------------------------------
+describe('ppLib.mixpanelReady', () => {
+  beforeEach(() => {
+    delete window.ppLib;
+    loadModule('common');
+  });
+
+  it('exposes a Promise on ppLib.mixpanelReady', () => {
+    expect(window.ppLib.mixpanelReady).toBeInstanceOf(Promise);
+  });
+
+  it('exposes _resolveMixpanelReady as a callable', () => {
+    expect(typeof window.ppLib._resolveMixpanelReady).toBe('function');
+  });
+
+  it('resolves immediately when _resolveMixpanelReady is invoked', async () => {
+    let resolved = false;
+    window.ppLib.mixpanelReady.then(() => { resolved = true; });
+    window.ppLib._resolveMixpanelReady();
+    await window.ppLib.mixpanelReady;
+    expect(resolved).toBe(true);
+  });
+
+  it('resolves via the 3-second timeout fallback when mixpanel never loads', async () => {
+    vi.useFakeTimers();
+    delete window.ppLib;
+    loadModule('common');
+    let resolved = false;
+    window.ppLib.mixpanelReady.then(() => { resolved = true; });
+    // Just under the timeout — should not be resolved yet
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(resolved).toBe(false);
+    // Cross the threshold — fallback fires
+    await vi.advanceTimersByTimeAsync(2);
+    expect(resolved).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it('is idempotent — manual resolve after timeout is a no-op', async () => {
+    vi.useFakeTimers();
+    delete window.ppLib;
+    loadModule('common');
+    let resolveCount = 0;
+    window.ppLib.mixpanelReady.then(() => { resolveCount++; });
+    await vi.advanceTimersByTimeAsync(3001);
+    window.ppLib._resolveMixpanelReady();
+    await Promise.resolve();
+    expect(resolveCount).toBe(1);
+    vi.useRealTimers();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 2. SafeUtils.get()
 // ---------------------------------------------------------------------------
 describe('SafeUtils.get()', () => {
