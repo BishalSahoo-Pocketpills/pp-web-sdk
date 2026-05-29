@@ -4,7 +4,7 @@ All notable changes to **pp-web-sdk** are documented here. The project follows
 [Semantic Versioning](https://semver.org/) — breaking changes require a major
 or, at minimum, a documented migration path in this file.
 
-## [Unreleased]
+## [3.10.7] — 2026-05-29
 
 ### Fixed
 
