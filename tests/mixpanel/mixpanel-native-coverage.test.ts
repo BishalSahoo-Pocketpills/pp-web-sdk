@@ -835,6 +835,8 @@ describe('Mixpanel native coverage', () => {
   // ==========================================================================
   describe('loaded callback — resetCampaign', () => {
     it('sets utm_* [last touch] to spec defaults on session timeout when no utm params present', async () => {
+      // Auth boot-path: people.* gated on isAuthenticated (anonymous-profile fix).
+      setCookie('app_is_authenticated', 'true');
       const loadedCallback = await initAndGetLoadedCallback({ sessionTimeout: 1 });
       const mp = createMockMixpanel();
 
@@ -1079,6 +1081,9 @@ describe('Mixpanel native coverage', () => {
   // ==========================================================================
   describe('loaded callback — experiment cookie', () => {
     it('parses valid JSON experiment cookie and registers data', async () => {
+      // Auth boot-path: registerExperimentCookie's people.set_once gated
+      // on isAuthenticated (anonymous-profile fix).
+      setCookie('app_is_authenticated', 'true');
       const expData = { experiment_a: 'variant_1', experiment_b: 'control' };
       setCookie('exp', JSON.stringify(expData));
 
@@ -1219,6 +1224,9 @@ describe('Mixpanel native coverage', () => {
     });
 
     it('registers last touch and first touch UTM params when present', async () => {
+      // Auth boot-path: people.set / people.set_once gated on
+      // isAuthenticated (anonymous-profile fix).
+      setCookie('app_is_authenticated', 'true');
       Object.defineProperty(document, 'URL', {
         value: 'http://localhost/test?utm_source=google&utm_medium=cpc&utm_campaign=spring&utm_content=ad1&utm_term=shoes',
         writable: true,

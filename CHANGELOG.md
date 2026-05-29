@@ -4,6 +4,69 @@ All notable changes to **pp-web-sdk** are documented here. The project follows
 [Semantic Versioning](https://semver.org/) — breaking changes require a major
 or, at minimum, a documented migration path in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **Stop firing boot-time `people.*` dispatches for anonymous visitors.**
+  Closes [Issue #22](https://github.com/Pocketpills-marketing/pp-web-sdk/issues/22),
+  which a 4-Principal documentation review surfaced after the v3.10.4
+  `identify` gate landed. The previous release stopped automatic
+  `identify(userId)` on anonymous visitors but left six boot-time
+  `people.set` / `people.set_once` dispatches firing unconditionally:
+    - `registerExperimentCookie` (shared-context.ts:87) — exp super-prop's
+      `set_once`
+    - `registerMarketingAttribution` (shared-context.ts:97) — marketing
+      attribution profile copy
+    - `bridgeVwoProps` (shared-context.ts:202) — VWO experiment-property
+      bridge
+    - `resetSessionCampaign` (campaign.ts:67) — session-boundary UTM reset
+    - `registerCampaignParams` (campaign.ts:108) — last-touch UTM profile
+    - `registerCampaignParams` (campaign.ts:110) — first-touch UTM `set_once`
+
+  Under Mixpanel's Simplified ID Merge model, `people.*` writes against an
+  anonymous `distinct_id` (`$device:<uuid>`) materialise a real user
+  profile keyed on the device id. This polluted user counts (every
+  anonymous visitor became a unique "user"), inflated DAU/MAU, and
+  required a redundant server-side profile-merge step on the eventual
+  `identify(userId)`.
+
+  Each callsite now short-circuits when the visitor is anonymous via a
+  new `isAuthenticated(pp)` helper in `src/mixpanel/auth-state.ts`. The
+  helper reads the SDK's `logged_in` event property (derived from the
+  `userId` / `patientId` / `app_is_authenticated` cookies Angular owns)
+  — same signal `unifyDistinctIdWithPpDistinctId` already gates on.
+
+  The corresponding `register` / `register_once` (super-property) writes
+  stay unconditional — those attach to events going forward, not to a
+  profile, so anonymous events still carry the right marketing/experiment
+  context.
+
+  **Behavioural impact:**
+  - Anonymous visitors no longer materialise `$device:<uuid>`-keyed
+    Mixpanel profiles at boot. The v3.10.4 release's "eliminates
+    premature user profiles" claim is now complete (it was partially
+    true before — only the `identify` path was gated).
+  - First-touch UTM `set_once` does not lock onto the anonymous profile;
+    instead it locks onto the real identified profile when the visitor
+    later authenticates and the boot path re-fires.
+  - Manual `ppLib.mixpanel.people.*` callers are unaffected — the gate
+    only covers the SDK's six boot-time dispatches. Callers should still
+    gate their own `people.*` writes on auth state; see the warning
+    callouts on every `people.*` API doc page.
+
+  **Verification:** in Mixpanel, the count of profiles where
+  `\$distinct_id LIKE '$device:%'` AND `\$created` is after this fix's
+  deploy should drop to near-zero (some pre-fix events may still flush
+  from queues for ~30 min).
+
+  **Testing:** 4 new test cases in `tests/mixpanel/mixpanel.test.ts`
+  under `Anonymous-profile gate (Issue #22)` — three negative-coverage
+  asserts (each boot-time site does NOT fire `people.*` for anonymous)
+  plus one positive-coverage assert (all dispatches fire when
+  authenticated). Existing 6 tests that asserted the unconditional
+  behaviour were updated to set `app_is_authenticated=true`.
+
 ## [3.10.6] — 2026-05-29
 
 No SDK code changes — this version was auto-bumped by the post-merge

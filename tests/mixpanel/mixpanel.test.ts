@@ -659,6 +659,10 @@ describe('Campaign / UTM Attribution', () => {
 
   describe('resetCampaign()', () => {
     it('sets utm_* [last touch] to spec defaults on session timeout when no utm params present', () => {
+      // Auth boot-path: people.* dispatches are gated on isAuthenticated
+      // (per the Simplified ID Merge anonymous-profile fix). Set the auth
+      // cookie so the session-reset write fires.
+      setCookie('app_is_authenticated', 'true');
       const loadedCallback = initAndGetLoadedCallback({ sessionTimeout: 1 });
       const mp = createMockMixpanel();
 
@@ -753,6 +757,9 @@ describe('Campaign / UTM Attribution', () => {
 
   describe('campaignParams()', () => {
     it('registers last touch and first touch UTM params', () => {
+      // Auth boot-path: people.set / people.set_once are gated on
+      // isAuthenticated (anonymous-profile fix).
+      setCookie('app_is_authenticated', 'true');
       const originalURL = document.URL;
       Object.defineProperty(document, 'URL', {
         value:
@@ -1295,6 +1302,9 @@ describe('loaded callback', () => {
 
   describe('experiment cookie', () => {
     it('parses valid JSON experiment cookie and registers data', () => {
+      // Auth boot-path: registerExperimentCookie's people.set_once is
+      // gated on isAuthenticated (anonymous-profile fix).
+      setCookie('app_is_authenticated', 'true');
       const expData = { experiment_a: 'variant_1', experiment_b: 'control' };
       setCookie('exp', JSON.stringify(expData));
 
@@ -1729,5 +1739,124 @@ describe('Integration / Edge Cases', () => {
 
     const scriptArg = insertBeforeSpy.mock.calls[0][0];
     expect(scriptArg.getAttribute('nonce')).toBeNull();
+  });
+});
+
+// =========================================================================
+// Anonymous-profile gate (Issue #22 — boot-time people.* dispatches must
+// short-circuit for anonymous visitors per Simplified ID Merge guidance).
+// Negative-coverage block: explicitly assert that people.* is NOT called
+// when no auth cookie is present, while the corresponding super-property
+// `register` / `register_once` IS still called so events going forward
+// carry the right context.
+// =========================================================================
+describe('Anonymous-profile gate (Issue #22)', () => {
+  // Pin URL to a clean state before each test so prior tests' UTM-bearing
+  // URLs don't leak in via Object.defineProperty mutations.
+  beforeEach(() => {
+    Object.defineProperty(document, 'URL', {
+      value: 'http://localhost/test',
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  afterEach(() => {
+    teardownScriptEnv();
+  });
+
+  it('skips registerExperimentCookie people.set_once for anonymous visitors', () => {
+    const expData = { experiment_a: 'variant_1' };
+    setCookie('exp', JSON.stringify(expData));
+    // No app_is_authenticated cookie — anonymous visitor.
+
+    const loadedCallback = initAndGetLoadedCallback();
+    const mp = createMockMixpanel();
+    invokeLoadedCallback(loadedCallback, mp);
+
+    expect(mp.people.set_once).not.toHaveBeenCalledWith(
+      expect.objectContaining({ experiment_a: 'variant_1' })
+    );
+    // Super-property still goes through so events carry the variant.
+    expect(mp.register).toHaveBeenCalledWith(
+      expect.objectContaining({ experiment_a: 'variant_1' })
+    );
+  });
+
+  it('skips registerCampaignParams people.set + people.set_once for anonymous visitors', () => {
+    Object.defineProperty(document, 'URL', {
+      value: 'http://localhost/test?utm_source=google&utm_medium=cpc',
+      writable: true,
+      configurable: true,
+    });
+    // No auth cookie — anonymous visitor.
+
+    const loadedCallback = initAndGetLoadedCallback();
+    const mp = createMockMixpanel();
+    invokeLoadedCallback(loadedCallback, mp);
+
+    // people.set + people.set_once must NOT fire for the UTM touch keys.
+    expect(mp.people.set).not.toHaveBeenCalledWith(
+      expect.objectContaining({ 'utm_source [last touch]': 'google' })
+    );
+    expect(mp.people.set_once).not.toHaveBeenCalledWith(
+      expect.objectContaining({ 'utm_source [first touch]': 'google' })
+    );
+    // register / register_once still fire — events carry the touch keys.
+    expect(mp.register).toHaveBeenCalledWith(
+      expect.objectContaining({ 'utm_source [last touch]': 'google' })
+    );
+    expect(mp.register_once).toHaveBeenCalledWith(
+      expect.objectContaining({ 'utm_source [first touch]': 'google' })
+    );
+  });
+
+  it('skips resetSessionCampaign people.set on session timeout for anonymous visitors', () => {
+    // sessionTimeout: 1 forces the session-reset path on the next loaded
+    // callback. Anonymous visitor (no auth cookie).
+    const loadedCallback = initAndGetLoadedCallback({ sessionTimeout: 1 });
+    const mp = createMockMixpanel();
+
+    mp.register({ 'last event time': Date.now() - 100, 'session ID': 'old' });
+    invokeLoadedCallback(loadedCallback, mp);
+
+    // resetSessionCampaign's people.set must be gated; register stays.
+    ['utm_source', 'utm_medium', 'utm_campaign'].forEach((kw) => {
+      expect(mp.people.set).not.toHaveBeenCalledWith(
+        expect.objectContaining({ [kw + ' [last touch]']: '$direct' })
+      );
+      expect(mp.register).toHaveBeenCalledWith(
+        expect.objectContaining({ [kw + ' [last touch]']: '$direct' })
+      );
+    });
+  });
+
+  it('fires every boot-time people.* dispatch when the visitor is authenticated', () => {
+    // Positive coverage — companion to the negative cases above. The
+    // existing tests in `Campaign / UTM Attribution` and `loaded callback >
+    // experiment cookie` already cover this via `setCookie(
+    // 'app_is_authenticated', 'true')`; this assertion bundles the
+    // contract into one easily-grepped place.
+    setCookie('app_is_authenticated', 'true');
+    setCookie('exp', JSON.stringify({ experiment_a: 'variant_1' }));
+    Object.defineProperty(document, 'URL', {
+      value: 'http://localhost/test?utm_source=google',
+      writable: true,
+      configurable: true,
+    });
+
+    const loadedCallback = initAndGetLoadedCallback();
+    const mp = createMockMixpanel();
+    invokeLoadedCallback(loadedCallback, mp);
+
+    expect(mp.people.set_once).toHaveBeenCalledWith(
+      expect.objectContaining({ experiment_a: 'variant_1' })
+    );
+    expect(mp.people.set).toHaveBeenCalledWith(
+      expect.objectContaining({ 'utm_source [last touch]': 'google' })
+    );
+    expect(mp.people.set_once).toHaveBeenCalledWith(
+      expect.objectContaining({ 'utm_source [first touch]': 'google' })
+    );
   });
 });
