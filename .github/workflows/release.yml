@@ -20,21 +20,67 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check whether the diff since the last tag warrants a release
+        # The previous workflow shape bumped + tagged + released on every
+        # merge to main, including docs-only / CI-only PRs. That created a
+        # drift loop: every CHANGELOG-catch-up PR triggered ANOTHER version
+        # bump that itself needed another CHANGELOG entry. Now we only
+        # release when something that affects consumer behaviour actually
+        # changed.
+        #
+        # Inclusion list (release if ANY of these touched since LAST_TAG):
+        #   - src/**           — production source
+        #   - build.js, modules.js, prebuild.ts — build outputs change
+        #   - tsconfig.json    — emit/compile semantics change
+        #   - pnpm-lock.yaml   — dependency tree change (could be transitive)
+        #
+        # Anything else (docs/**, *.md, .github/**, tests/**, eslint/prettier
+        # configs) is considered docs/CI-only and skips the release.
+        id: should-release
+        run: |
+          set -euo pipefail
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            echo "No previous tag — always release on the first push to main."
+            echo "RELEASE=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Use --diff-filter=AMR (added/modified/renamed) so deletes alone
+          # don't trip the gate — though most deletes will also touch src/.
+          CHANGED=$(git diff --name-only --diff-filter=AMR "${LAST_TAG}..HEAD")
+          echo "Files changed since ${LAST_TAG}:"
+          echo "${CHANGED:-(none)}"
+
+          # Regex: production source, build entry points, compile config,
+          # or the lockfile. Anything else doesn't move the consumer bundle.
+          if echo "$CHANGED" | grep -qE '^(src/|build\.js$|modules\.js$|prebuild\.ts$|tsconfig\.json$|pnpm-lock\.yaml$)'; then
+            echo "Source / build / lockfile changes detected — release needed."
+            echo "RELEASE=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Only docs / CI / config changes since ${LAST_TAG} — skipping release."
+            echo "RELEASE=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Setup pnpm
+        if: steps.should-release.outputs.RELEASE == 'true'
         uses: pnpm/action-setup@v4
         with:
           version: 10
 
       - name: Setup Node.js
+        if: steps.should-release.outputs.RELEASE == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'pnpm'
 
       - name: Install dependencies
+        if: steps.should-release.outputs.RELEASE == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Determine version bump type
+        if: steps.should-release.outputs.RELEASE == 'true'
         id: bump
         run: |
           # Get the last tag, or fall back to scanning recent commits only
@@ -70,6 +116,7 @@ jobs:
           fi
 
       - name: Bump version
+        if: steps.should-release.outputs.RELEASE == 'true'
         id: version
         run: |
           CURRENT=$(node -p "require('./package.json').version")
@@ -87,9 +134,11 @@ jobs:
           echo "New version: v$VERSION (was v$CURRENT)"
 
       - name: Build minified files
+        if: steps.should-release.outputs.RELEASE == 'true'
         run: pnpm run build
 
       - name: Commit version bump, tag, and push
+        if: steps.should-release.outputs.RELEASE == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -110,6 +159,7 @@ jobs:
           git push && git push --tags
 
       - name: Create GitHub Release
+        if: steps.should-release.outputs.RELEASE == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.VERSION }}
@@ -123,6 +173,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload build artifacts
+        if: steps.should-release.outputs.RELEASE == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: dist
