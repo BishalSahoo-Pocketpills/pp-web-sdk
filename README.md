@@ -2,7 +2,7 @@
 
 Modular web SDK for PocketPills web properties. Provides analytics, attribution, login detection, ecommerce tracking, Mixpanel integration, and Braze engagement — all driven by HTML data attributes.
 
-**Version:** 3.10.5 | **Language:** TypeScript | **Build:** esbuild (IIFE) | **Tests:** Vitest + Playwright
+**Version:** 3.10.6 | **Language:** TypeScript | **Build:** esbuild (IIFE) | **Tests:** Vitest + Playwright
 
 > The canonical engineering docs live at **[pp-docs.pages.dev](https://pp-docs.pages.dev/guides/v3)** — architecture, identity model, cookie contract, event lifecycle, attribution, debugging, and full API reference. This README is a quick-start; reach for pp-docs for anything beyond the basics.
 
