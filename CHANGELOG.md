@@ -4,11 +4,22 @@ All notable changes to **pp-web-sdk** are documented here. The project follows
 [Semantic Versioning](https://semver.org/) — breaking changes require a major
 or, at minimum, a documented migration path in this file.
 
-## [3.10.5] — 2026-05-29
+## [3.10.6] — 2026-05-29
 
 No SDK code changes — this version was auto-bumped by the post-merge
-versioning hook after PR #20 landed a documentation-only update (the v3.10.4
-README + ANALYTICS-CONTRACT alignment and the full CHANGELOG backfill from
+versioning hook one last time after PR #21 (the v3.10.5 CHANGELOG backfill)
+landed, before PR #23 wired the docs-only skip path into `release.yml`.
+The bump is now a closed loop: subsequent docs-only PRs will leave
+`package.json` untouched and no further phantom versions will accumulate.
+
+Use v3.10.4 as the functional baseline. v3.10.5 and v3.10.6 carry no
+behaviour deltas.
+
+## [3.10.5] — 2026-05-29
+
+No SDK code changes — auto-bumped by the post-merge versioning hook
+after PR #20 landed a documentation-only update (the v3.10.4 README +
+ANALYTICS-CONTRACT alignment and the full CHANGELOG backfill from
 v3.6.2 → v3.10.4). The tag is preserved so consumers don't see a missing
 version in the registry.
 
