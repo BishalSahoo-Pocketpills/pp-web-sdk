@@ -282,6 +282,14 @@ export function createTracker(
         return;
       }
 
+      // Consent gate (C1): suppress dispatch when consent is required and not
+      // granted. With consent.required=false (default) isGranted() is true, so
+      // default behavior is unchanged.
+      if (!consent.isGranted()) {
+        utils.log('verbose', 'Consent not granted — track() suppressed for ' + eventName);
+        return;
+      }
+
       /*! v8 ignore start */
       properties = properties || {};
       /*! v8 ignore stop */

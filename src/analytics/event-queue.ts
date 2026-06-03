@@ -170,6 +170,8 @@ export function createEventQueue(
         /*! v8 ignore start */
         if (checkRateLimit('gtm', max, windowMs)) {
           platforms.GTM.push(event.data);
+        } else {
+          utils.log('warn', 'GTM event dropped (rate limit): ' + SafeUtils.get(event.data, 'event', '(unknown)'));
         }
       } else if (eventType === 'mixpanel' && SafeUtils.get(CONFIG, 'platforms.mixpanel.enabled', true)) {
         platforms.Mixpanel.send(event.data as MixpanelQueueData);

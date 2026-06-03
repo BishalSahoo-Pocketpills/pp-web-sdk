@@ -76,6 +76,11 @@ import { createTracker } from '@src/analytics/tracker';
       }
     },
 
+    // Backward-compatible alias for config() (C5) — both names work.
+    configure: function(options?: DeepPartial<AnalyticsConfig>) {
+      return API.config(options);
+    },
+
     consent: {
       grant: function(): void {
         consent.setConsent(true);
@@ -132,6 +137,9 @@ import { createTracker } from '@src/analytics/tracker';
   // =====================================================
 
   win.ppAnalytics = API;
+  // Also expose under the unified ppLib namespace for IA consistency with
+  // every other module (ppLib.datalayer, ppLib.mixpanel, ...). Same object.
+  ppLib.analytics = API;
 
   /*! v8 ignore start */
   if (CONFIG.debug) {
