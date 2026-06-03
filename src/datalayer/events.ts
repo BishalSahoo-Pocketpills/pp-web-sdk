@@ -1,6 +1,7 @@
 import type { PPLib } from '@src/types/common.types';
 import type { DataLayerConfig, DataLayerItem, DataLayerItemInput, DataLayerUser, DataLayerUserData, DataLayerPage } from '@src/types/datalayer.types';
 import { ensureDataLayer as initDataLayer } from '@src/common/datalayer-guard';
+import { isConsentGranted } from '@src/common/consent-check';
 
 export function createEventPusher(
   win: Window & typeof globalThis,
@@ -24,6 +25,11 @@ export function createEventPusher(
   }
 
   function pushEvent(eventName: string, extra?: Record<string, unknown>): void {
+    // Consent gate (C1): denied consent drops the dataLayer push silently.
+    if (!isConsentGranted(ppLib)) {
+      ppLib.log('verbose', '[ppDataLayer] consent not granted — suppressed ' + eventName);
+      return;
+    }
     const dl = ensureDataLayer();
     const enriched: Record<string, unknown> = {
       event: eventName,
@@ -48,6 +54,12 @@ export function createEventPusher(
   }
 
   function pushEcommerceEvent(eventName: string, inputItems: DataLayerItemInput[], extra?: Record<string, unknown>): void {
+    // Consent gate (C1): denied consent drops the ecommerce push (incl. the
+    // ecommerce-null clear) silently.
+    if (!isConsentGranted(ppLib)) {
+      ppLib.log('verbose', '[ppDataLayer] consent not granted — suppressed ' + eventName);
+      return;
+    }
     const dl = ensureDataLayer();
 
     // Clear previous ecommerce data

@@ -136,6 +136,7 @@ export interface PPLib {
   // pushes, event-source dispatches) call `consent.isGranted()` before
   // sending. Default mode is opt-out — flip to 'opt-in' for GDPR regions.
   consent: import('../common/consent').ConsentService;
+  analytics?: import('./analytics.types').AnalyticsAPI;
   login?: import('./login.types').LoginAPI;
   ecommerce?: import('./ecommerce.types').EcommerceAPI;
   eventSource?: import('./event-source.types').EventSourceAPI;

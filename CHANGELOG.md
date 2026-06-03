@@ -4,6 +4,43 @@ All notable changes to **pp-web-sdk** are documented here. The project follows
 [Semantic Versioning](https://semver.org/) — breaking changes require a major
 or, at minimum, a documented migration path in this file.
 
+## [3.11.0] — 2026-06-03
+
+### Changed
+
+- **Consent now gates `analytics.track()` and the dataLayer dispatch (C1).**
+  Previously only `analytics.init()` was consent-gated; `track()` and the
+  datalayer `pushEvent` / `pushEcommerceEvent` paths dispatched regardless.
+  They now check consent before sending. **Behavior change, but inert by
+  default:** with `consent.required = false` (the default), `isGranted()`
+  returns `true`, so events fire exactly as before. Only deployments that set
+  `consent.required = true` (or revoke consent) will see `track()` / datalayer
+  pushes suppressed. _Migration:_ none required unless you depend on consent
+  enforcement — in which case track-time and datalayer events are now correctly
+  blocked when consent is denied.
+
+### Added
+
+- **`ppLib.analytics` namespace + `configure()` alias (C5).** Analytics is now
+  exposed on the unified `ppLib.analytics` surface (alongside the existing
+  `window.ppAnalytics`), matching every other module's `ppLib.<name>` IA. A
+  backward-compatible `configure()` alias of `config()` is also available.
+
+### Fixed
+
+- **Consent vocabulary alignment (C2).** The analytics consent service now
+  accepts both `'approved'` and `'granted'` stored values, so it agrees with the
+  shared `ppLib.consent` service on the `pp_consent` key (previously the two
+  could disagree — the analytics side honored only `'approved'`).
+- **Observability (C4).** GTM events dropped by the rate limiter are now logged
+  with the dropped event name instead of being discarded silently.
+
+### Docs
+
+- Documentation (`pp-docs`) rewritten end-to-end to match shipped v3.x behavior
+  (audit remediation), with a new doc-from-types lint guarding against future
+  signature drift.
+
 ## [3.10.7] — 2026-05-29
 
 ### Fixed

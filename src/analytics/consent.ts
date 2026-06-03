@@ -129,8 +129,11 @@ export function createAnalyticsConsent(
         /*! v8 ignore start */
         if (SafeUtils.exists(stored)) {
         /*! v8 ignore stop */
-          api.state = stored as string;
-          return stored === 'approved';
+          // Accept both the analytics vocabulary ('approved') and the shared
+          // common-consent vocabulary ('granted') so the two services agree (C2).
+          const granted = stored === 'approved' || stored === 'granted';
+          api.state = granted ? 'approved' : (stored as string);
+          return granted;
         }
       } catch (e) {
         utils.log('verbose', 'Could not read consent from storage');
