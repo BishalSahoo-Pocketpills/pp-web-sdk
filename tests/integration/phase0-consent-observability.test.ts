@@ -155,3 +155,20 @@ describe('Phase 0 / C4 — GTM rate-limit drop logging', () => {
     expect(dropLogged).toBe(true);
   });
 });
+
+// ===========================================================================
+// Namespace alias — ppLib.analytics + configure() (src/analytics/index.ts)
+// ===========================================================================
+describe('Phase 0 / namespace — ppLib.analytics alias', () => {
+  it('exposes ppLib.analytics === window.ppAnalytics with a working configure() alias', async () => {
+    await loadAnalytics();
+    expect((window as any).ppLib.analytics).toBeDefined();
+    expect((window as any).ppLib.analytics).toBe((window as any).ppAnalytics);
+    expect(typeof (window as any).ppLib.analytics.config).toBe('function');
+    expect(typeof (window as any).ppLib.analytics.track).toBe('function');
+    // configure() is a backward-compatible alias of config()
+    const cfg = (window as any).ppLib.analytics.configure({ consent: { required: false } });
+    expect(cfg).toBeDefined();
+    expect(cfg.consent.required).toBe(false);
+  });
+});

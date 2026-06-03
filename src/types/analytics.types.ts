@@ -134,6 +134,8 @@ export interface AttributionData {
 export interface AnalyticsAPI {
   version: string;
   config: (options?: DeepPartial<AnalyticsConfig>) => AnalyticsConfig;
+  /** Backward-compatible alias for config(). */
+  configure: (options?: DeepPartial<AnalyticsConfig>) => AnalyticsConfig;
   consent: {
     grant: () => void;
     revoke: () => void;
