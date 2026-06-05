@@ -307,6 +307,10 @@ export const PII_QUERY_PARAM_DENYLIST: ReadonlySet<string> = new Set([
   // Session / auth state
   'password', 'passwd', 'pwd',
   'session', 'session_id', 'sessionid', 'sid', 'jwt',
+  // One-time passcodes / 2FA / MFA (magic-link + verification flows)
+  'otp', 'totp', 'one_time_password', 'onetime_password', 'one_time_code',
+  'passcode', 'pass_code', 'verification_code', 'verify_code', 'auth_code',
+  'confirmation_code', 'confirm_code', '2fa', 'mfa',
   // Identity
   'ssn', 'social_security', 'social_security_number',
   'dob', 'date_of_birth', 'birthdate',

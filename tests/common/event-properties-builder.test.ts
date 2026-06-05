@@ -1206,6 +1206,24 @@ describe('createEventPropertiesBuilder', () => {
         expect(ma!.landingPage).not.toContain('hunter2');
       });
 
+      it('strips one-time-passcode / 2FA params (otp, passcode, verification_code, 2fa)', () => {
+        setHref('http://localhost/verify?utm_source=email&otp=123456&passcode=abc987&verification_code=ZZ77&2fa=tok-xyz');
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+
+        // Marketing param preserved.
+        expect(ma!.landingPage).toContain('utm_source=email');
+        // OTP / 2FA values and keys dropped.
+        expect(ma!.landingPage).not.toContain('otp');
+        expect(ma!.landingPage).not.toContain('123456');
+        expect(ma!.landingPage).not.toContain('passcode');
+        expect(ma!.landingPage).not.toContain('abc987');
+        expect(ma!.landingPage).not.toContain('verification_code');
+        expect(ma!.landingPage).not.toContain('ZZ77');
+        expect(ma!.landingPage).not.toContain('2fa');
+        expect(ma!.landingPage).not.toContain('tok-xyz');
+      });
+
       it('preserves the URL when no PII params are present', () => {
         setHref('http://localhost/lp?utm_source=google&utm_medium=cpc&utm_campaign=spring&promo=q2');
         const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
