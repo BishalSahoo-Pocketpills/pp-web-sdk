@@ -263,13 +263,13 @@ export const MIXPANEL_DUPLICATE_KEYS: ReadonlySet<string> = new Set([
 const UTM_FIRST_TOUCH_KEY = 'pp_utm_first_touch';
 const UTM_LAST_TOUCH_KEY = 'pp_utm_last_touch';
 
-// First touch UTM — 2 years. First-touch
-// attribution is by definition long-lived and we want it to survive
-// re-engagement campaigns.
-const UTM_FIRST_TOUCH_MAX_AGE_SECONDS = 63072000;
-// Last touch UTM — 30 days. Matches the standard Mixpanel/GA "last touch"
-// attribution window so analytics tools agree on which campaign gets credit.
-const UTM_LAST_TOUCH_MAX_AGE_SECONDS = 2592000;
+// NOTE: first/last-touch are persisted in localStorage (no TTL) — see
+// createLocalStorageValue below. There is intentionally NO max-age constant
+// for them: first-touch is locked on first capture and last-touch rotates on
+// signal (it does not expire on a clock). The former UTM_FIRST/LAST_TOUCH_
+// MAX_AGE_SECONDS cookie-TTL constants were removed when the stores moved to
+// localStorage; only the session window below remains time-bounded.
+//
 // Session window — 30 minutes. Gates rotation of the pp_utm_*_touch
 // normalized slice (see captureUtmTouches): last-touch only refreshes when
 // (a) new traffic params on the URL, or (b) the session has expired AND
@@ -436,19 +436,20 @@ export function createEventPropertiesBuilder(
     }
   }
 
-  // The SDK emits `country` as an ISO-2 code (e.g. "CA") for cross-tool
-  // joins (Mixpanel, Braze, GA, BigQuery exports). This is INTENTIONALLY
-  // distinct from the geo-derived properties Mixpanel auto-attaches to
-  // every event from server-side IP lookup — those appear in the raw
-  // payload as `mp_country_code` ("CA") and are shown in Mixpanel's UI
-  // with the full-name label "Country: Canada". The two coexist by design;
-  // analysts querying our SDK should use lowercase `country`.
+  // The SDK emits `Country` (capitalized — proper-noun dimension convention,
+  // same as `Device`) as an ISO-2 code (e.g. "CA") for cross-tool joins
+  // (Mixpanel, Braze, GA, BigQuery exports). This is INTENTIONALLY distinct
+  // from the geo-derived properties Mixpanel auto-attaches to every event
+  // from server-side IP lookup — those appear in the raw payload as
+  // `mp_country_code` ("CA") and are shown in Mixpanel's UI with the
+  // full-name label "Country: Canada". The two coexist by design; analysts
+  // querying our SDK should use the capitalized `Country` property.
   //
   // Source: cookie only. We deliberately do NOT fall back to
   // navigator.language — it reflects the browser's UI language (often
   // "en-US" by default on Chrome regardless of physical location) and
   // produces confidently-wrong values. When the cookie is empty we leave
-  // `country` empty rather than ship fake data; analysts can rely on
+  // `Country` empty rather than ship fake data; analysts can rely on
   // Mixpanel's IP-based `mp_country_code` for those events. The cookie
   // should be set server-side from real IP geolocation (e.g. via the
   // CF-IPCountry header at the edge).

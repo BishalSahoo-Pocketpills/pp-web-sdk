@@ -63,7 +63,8 @@ interface OpHandler {
    *  still override via DispatchOptions.instances. */
   defaultInstances?: InstanceName[];
   /** When true, this op is consent-gated (drops silently when consent is
-   *  not granted). Only `track` is gated today — matches legacy behavior. */
+   *  not granted). 12 ops are gated — see the OP_TABLE rationale block below
+   *  (any op that emits or stores PII to Mixpanel). */
   consentGated?: boolean;
   /** When true, this op participates in the track-enrichment pipeline. */
   enrichable?: boolean;
