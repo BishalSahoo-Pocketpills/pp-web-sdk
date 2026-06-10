@@ -427,17 +427,112 @@ describe('User Data / SHA-256', () => {
     expect(event.userData.sha256_phone_number).toBe('');
   });
 
-  it('returns empty hash when crypto.subtle is unavailable (HTTP context)', async () => {
-    const origCrypto = globalThis.crypto;
-    vi.stubGlobal('crypto', undefined);
+  // PR1 / F1: setUserDataHashed must not forward cleartext PII mistakenly dropped
+  // into a sha256_* field — only real 64-hex digests pass through.
+  it('setUserDataHashed drops non-hash (cleartext) values to empty', () => {
+    window.ppLib.datalayer.setUserDataHashed({
+      sha256_email_address: 'john@example.com',   // cleartext mistake
+      sha256_phone_number: '+15551234567',         // cleartext mistake
+      address: { sha256_first_name: 'John', city: 'Calgary' }
+    });
 
-    await window.ppLib.datalayer.setUserData({ email: 'test@test.com' });
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     expect(event.userData.sha256_email_address).toBe('');
+    expect(event.userData.sha256_phone_number).toBe('');
+    expect(event.userData.address.sha256_first_name).toBe('');
+    expect(event.userData.address.city).toBe('Calgary');   // plain field unaffected
+  });
+
+  it('setUserDataHashed keeps valid hashes while dropping non-hash siblings', () => {
+    const validHash = 'a'.repeat(64);
+    window.ppLib.datalayer.setUserDataHashed({
+      sha256_email_address: validHash,
+      sha256_phone_number: 'not-a-hash'
+    });
+
+    window.ppLib.datalayer.push('test_event');
+
+    const event = window.dataLayer[window.dataLayer.length - 1];
+    expect(event.userData.sha256_email_address).toBe(validHash);
+    expect(event.userData.sha256_phone_number).toBe('');
+  });
+
+  // PR1 / F2: phone is formatting-normalized (punctuation stripped) before hashing;
+  // a leading + is preserved but no country code is ever fabricated.
+  it('normalizes phone formatting (strips punctuation) before hashing', async () => {
+    await window.ppLib.datalayer.setUserData({ phone: '(555) 123-4567' });
+
+    window.ppLib.datalayer.push('test_event');
+
+    const event = window.dataLayer[window.dataLayer.length - 1];
+    expect(event.userData.sha256_phone_number).toBe(await sha256hex('5551234567'));
+  });
+
+  it('preserves a leading + and does not fabricate a country code', async () => {
+    await window.ppLib.datalayer.setUserData({ phone: '+1 (555) 123-4567' });
+    window.ppLib.datalayer.push('e1');
+    const e1 = window.dataLayer[window.dataLayer.length - 1];
+    expect(e1.userData.sha256_phone_number).toBe(await sha256hex('+15551234567'));
+
+    // National-format input is formatting-normalized but stays un-prefixed.
+    await window.ppLib.datalayer.setUserData({ phone: '604.555.1234' });
+    window.ppLib.datalayer.push('e2');
+    const e2 = window.dataLayer[window.dataLayer.length - 1];
+    expect(e2.userData.sha256_phone_number).toBe(await sha256hex('6045551234'));
+  });
+
+  it('passes an already-hashed phone through setUserData untouched', async () => {
+    const h = 'a'.repeat(64);
+    await window.ppLib.datalayer.setUserData({ phone: h });
+    window.ppLib.datalayer.push('e');
+    const ev = window.dataLayer[window.dataLayer.length - 1];
+    expect(ev.userData.sha256_phone_number).toBe(h); // not re-hashed, not stripped
+  });
+
+  it('returns empty for an all-punctuation phone (no digits, + not preserved)', async () => {
+    await window.ppLib.datalayer.setUserData({ phone: '+()-. ' });
+    window.ppLib.datalayer.push('e');
+    const ev = window.dataLayer[window.dataLayer.length - 1];
+    expect(ev.userData.sha256_phone_number).toBe('');
+  });
+
+  // F1 symmetry: dropping cleartext must be observable, not silent.
+  it('warns when setUserDataHashed drops a non-hash (cleartext) value', () => {
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    window.ppLib.datalayer.setUserDataHashed({ sha256_email_address: 'john@example.com' });
+    const warns = logSpy.mock.calls.filter(c => c[0] === 'warn' && String(c[1]).includes('not a SHA-256 digest'));
+    expect(warns.length).toBe(1);
+    logSpy.mockRestore();
+  });
+
+  // Documents the no-country-default tradeoff: a national-format number is
+  // formatting-normalized but will NOT match the ad platforms' E.164 hash.
+  it('national-format phone does not match the platform E.164 hash (known limitation)', async () => {
+    await window.ppLib.datalayer.setUserData({ phone: '604.555.1234' });
+    window.ppLib.datalayer.push('e');
+    const ev = window.dataLayer[window.dataLayer.length - 1];
+    expect(ev.userData.sha256_phone_number).toBe(await sha256hex('6045551234'));
+    expect(ev.userData.sha256_phone_number).not.toBe(await sha256hex('+16045551234'));
+  });
+
+  it('logs exactly one warn (deduped) and returns empty hashes when crypto.subtle is unavailable', async () => {
+    const origCrypto = globalThis.crypto;
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    vi.stubGlobal('crypto', undefined);
+
+    await window.ppLib.datalayer.setUserData({ email: 'test@test.com', phone: '5551234567', first_name: 'X' });
+    window.ppLib.datalayer.push('test_event');
+
+    const event = window.dataLayer[window.dataLayer.length - 1];
+    expect(event.userData.sha256_email_address).toBe('');
+    expect(event.userData.sha256_phone_number).toBe('');
+    const cryptoWarns = logSpy.mock.calls.filter(c => c[0] === 'warn' && String(c[1]).includes('SHA-256 unavailable'));
+    expect(cryptoWarns.length).toBe(1); // deduped across all fields, not one-per-field
 
     vi.stubGlobal('crypto', origCrypto);
+    logSpy.mockRestore();
   });
 });
 

@@ -139,6 +139,13 @@ export interface UserDataInput {
   country?: string;
 }
 
+/**
+ * Pre-hashed user data for `setUserDataHashed`. Each `sha256_*` field MUST be a
+ * 64-character hex SHA-256 digest; any value not matching that shape is dropped
+ * to '' (and a warning is logged) — this guards against cleartext PII being
+ * accidentally placed in a hashed field. Plain address fields (city/region/
+ * postal_code/country) are passed through as-is.
+ */
 export interface UserDataHashedInput {
   sha256_email_address?: string;
   sha256_phone_number?: string;
