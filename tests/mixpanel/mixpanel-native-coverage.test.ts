@@ -793,6 +793,40 @@ describe('Mixpanel native coverage', () => {
 
       expect(mp.opt_in_tracking).not.toHaveBeenCalled();
     });
+
+    // F3: consent denial → native opt-out (so raw window.mixpanel.track is
+    // suppressed too), and never opt-in.
+    it('opts OUT (not in) when consent is denied', async () => {
+      const loadedCallback = await initAndGetLoadedCallback({ optOutByDefault: false });
+      window.ppLib.consent.configure({ mode: 'opt-in' }); // opt-in, ungranted → denied
+      const mp = createMockMixpanel();
+      invokeLoadedCallback(loadedCallback, mp);
+
+      expect(mp.opt_out_tracking).toHaveBeenCalled();
+      expect(mp.opt_in_tracking).not.toHaveBeenCalled();
+    });
+
+    // F3 / Meta P1+P2: denied consent must skip the raw mp.identify/register in
+    // the migration + identity-sync paths (native opt-out does NOT suppress those).
+    it('skips identity migration when consent is denied', async () => {
+      setCookie('mp_test-token-abc_mixpanel', JSON.stringify({ distinct_id: 'user-123' }));
+      const loadedCallback = await initAndGetLoadedCallback({ crossSubdomainCookie: true });
+      window.ppLib.consent.configure({ mode: 'opt-in' }); // denied
+      const mp = createMockMixpanel();
+      mp.get_distinct_id = vi.fn(() => 'new-distinct-id-456');
+      invokeLoadedCallback(loadedCallback, mp);
+
+      expect(mp.identify).not.toHaveBeenCalledWith('user-123'); // migration skipped under denial
+    });
+
+    it('treats an absent consent service as granted (defensive || arm)', async () => {
+      const loadedCallback = await initAndGetLoadedCallback({ optOutByDefault: false });
+      delete (window.ppLib as { consent?: unknown }).consent;
+      const mp = createMockMixpanel();
+      invokeLoadedCallback(loadedCallback, mp);
+
+      expect(mp.opt_in_tracking).toHaveBeenCalled();
+    });
   });
 
   // ==========================================================================

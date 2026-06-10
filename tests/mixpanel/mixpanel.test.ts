@@ -1196,6 +1196,29 @@ describe('loaded callback', () => {
     expect(mp.opt_in_tracking).not.toHaveBeenCalled();
   });
 
+  // F3: consent denial must propagate to Mixpanel's native opt-out, so raw
+  // window.mixpanel.track calls (which bypass the dispatch consent gate) are
+  // suppressed too — not just opted-in regardless of consent.
+  it('opts OUT of native tracking and does NOT opt in when consent is denied', () => {
+    const loadedCallback = initAndGetLoadedCallback();
+    window.ppLib.consent.configure({ mode: 'opt-in' }); // opt-in, not yet granted → denied
+    const mp = createMockMixpanel();
+    invokeLoadedCallback(loadedCallback, mp);
+
+    expect(mp.opt_out_tracking).toHaveBeenCalled();
+    expect(mp.opt_in_tracking).not.toHaveBeenCalled();
+  });
+
+  it('opts in (and never opts out) when consent is granted', () => {
+    const loadedCallback = initAndGetLoadedCallback();
+    window.ppLib.consent.configure({ mode: 'opt-out' }); // granted
+    const mp = createMockMixpanel();
+    invokeLoadedCallback(loadedCallback, mp);
+
+    expect(mp.opt_in_tracking).toHaveBeenCalled();
+    expect(mp.opt_out_tracking).not.toHaveBeenCalled();
+  });
+
   it('updates SessionManager timeout from config', () => {
     const loadedCallback = initAndGetLoadedCallback({ sessionTimeout: 5000 });
     const mp = createMockMixpanel();

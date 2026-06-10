@@ -416,24 +416,43 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       const state = getState(name);
       state.mpRef = mp;
 
-      // Opt-in tracking unless explicitly opted-out at boot.
-      if (!CONFIG.shared.optOutByDefault) {
-        try {
+      // Align Mixpanel's native opt-in/out state with the unified consent
+      // gate. The dispatch facade already gates on consent, but raw / legacy
+      // `window.mixpanel.track` calls bypass it — so on a denial we also flip
+      // Mixpanel's own opt_out_tracking(), and we only opt in when consent is
+      // granted. `optOutByDefault: true` is an intentional hard-off that keeps
+      // the instance dark regardless of consent. (`ppLib.consent` is installed
+      // by common; guarded defensively — an absent service is treated as
+      // granted, consistent with the dispatch gate. Default consent mode is
+      // 'opt-out' ⇒ granted, so this opt-out branch is dormant by default.)
+      const consentGranted = !ppLib.consent || ppLib.consent.isGranted();
+      try {
+        if (consentGranted && !CONFIG.shared.optOutByDefault) {
           mp.opt_in_tracking();
-        } catch (_e) {
-          /* legacy mock may not implement — non-fatal */
+        } else if (!consentGranted) {
+          mp.opt_out_tracking();
+          ppLib.log('info', '[ppMixpanel] consent denied — ' + name + ' opted out of native tracking');
         }
+      } catch (_e) {
+        /* legacy mock may not implement opt_in/opt_out — non-fatal */
       }
 
       // PRIMARY-ONLY: subdomain cookie migration + pp_distinct_id unification.
-      // Both are migration-era concerns that the secondary (fresh project)
-      // has no state to migrate from.
-      if (name === 'primary') {
-        applyMigrationIfNeeded(mp, primaryMigrationCtx);
-      } else {
-        // SECONDARY: pin $device_id from primary BEFORE any tracks fire.
-        // syncIdentityFromPrimary internally guards if primary isn't ready.
-        syncIdentityFromPrimary(mp);
+      // SECONDARY: pin $device_id from primary BEFORE any tracks fire.
+      // Both issue RAW mp.identify/register that Mixpanel's native opt-out does
+      // NOT suppress and that bypass the dispatch consent gate — so skip them
+      // entirely when consent is denied, otherwise a denied user's identity /
+      // migration would still reach Mixpanel. (NOTE: post-boot consent *revoke*
+      // is not yet propagated to native opt-out — tracked as a follow-up; the
+      // realistic CMP-revoke path remains open mid-session. Dormant under the
+      // auto-accept default.)
+      if (consentGranted) {
+        if (name === 'primary') {
+          applyMigrationIfNeeded(mp, primaryMigrationCtx);
+        } else {
+          // syncIdentityFromPrimary internally guards if primary isn't ready.
+          syncIdentityFromPrimary(mp);
+        }
       }
 
       // Patch this instance's `mp.track` so SessionManager.check() runs
