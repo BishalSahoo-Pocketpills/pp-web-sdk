@@ -41,7 +41,7 @@ import { cloneConfig } from '@src/common/clone-config';
 
   const pageBuilder = createPageBuilder(win, doc);
   const userBuilder = createUserBuilder(ppLib, CONFIG);
-  const userDataManager = createUserDataManager();
+  const userDataManager = createUserDataManager(ppLib);
   const itemBuilder = createItemBuilder(ppLib, CONFIG);
   const eventPusher = createEventPusher(win, ppLib, CONFIG, userBuilder, userDataManager, pageBuilder, itemBuilder);
   const domBinder = createDomBinder(win, doc, ppLib, CONFIG, eventPusher, itemBuilder);
