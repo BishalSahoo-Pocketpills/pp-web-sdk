@@ -10,7 +10,7 @@ export function createEventPusher(
   userBuilder: { buildUser: () => DataLayerUser; setUser: (u: Partial<DataLayerUser>) => void },
   userDataManager: { getUserData: () => DataLayerUserData },
   pageBuilder: { buildPage: () => DataLayerPage },
-  itemBuilder: { normalizeItem: (input: DataLayerItemInput) => DataLayerItem; calculateValue: (items: DataLayerItem[]) => string }
+  itemBuilder: { normalizeItem: (input: DataLayerItemInput) => DataLayerItem; calculateValue: (items: DataLayerItem[]) => number }
 ) {
 
   function ensureDataLayer(): unknown[] {

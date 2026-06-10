@@ -201,10 +201,10 @@ describe('User Object', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    // Anonymous visitors get the '-1' sentinel (rather than '') so the
-    // field survives downstream empty-string stripping and remains
-    // queryable / filterable for anonymous segments.
-    expect(event.user.pp_user_id).toBe('-1');
+    // Anonymous visitors emit null (rather than '' or the legacy '-1'
+    // sentinel). dataLayer is not empty-stripped, so null is pushed as-is
+    // and stays queryable / filterable for anonymous segments.
+    expect(event.user.pp_user_id).toBe(null);
     expect(event.user.logged_in).toBe('false');
   });
 
@@ -214,7 +214,8 @@ describe('User Object', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user.pp_user_id).toBe('-1');
+    // The '-1' logged-out cookie sentinel maps to null, never '-1'.
+    expect(event.user.pp_user_id).toBe(null);
     expect(event.user.logged_in).toBe('false');
   });
 
@@ -653,7 +654,7 @@ describe('Item Builder', () => {
     createMockDataLayer();
   });
 
-  it('normalizes items with defaults and empty strings', () => {
+  it('normalizes items with defaults (missing numerics → 0)', () => {
     window.ppLib.datalayer.viewItem([{ item_name: 'Aspirin' }]);
 
     // dataLayer: [ecommerce null clear, enriched event]
@@ -663,28 +664,28 @@ describe('Item Builder', () => {
     expect(item.item_name).toBe('Aspirin');
     expect(item.item_brand).toBe('Pocketpills');
     expect(item.item_category).toBeUndefined();
-    expect(item.price).toBe('');
+    expect(item.price).toBe(0);
     expect(item.quantity).toBe(1);
-    expect(item.discount).toBe('');
+    expect(item.discount).toBe(0);
     expect(item.coupon).toBe('');
   });
 
-  it('keeps price and discount as strings', () => {
+  it('converts price and discount to floats', () => {
     window.ppLib.datalayer.viewItem([{ item_id: 'RX-1', price: '29.99', discount: '5.00' }]);
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     const item = event.ecommerce.items[0];
-    expect(item.price).toBe('29.99');
-    expect(item.discount).toBe('5.00');
+    expect(item.price).toBe(29.99);
+    expect(item.discount).toBe(5);
   });
 
-  it('handles NaN price/discount as strings', () => {
+  it('handles non-numeric price/discount as 0', () => {
     window.ppLib.datalayer.viewItem([{ price: 'abc', discount: 'xyz' }]);
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     const item = event.ecommerce.items[0];
-    expect(item.price).toBe('abc');
-    expect(item.discount).toBe('xyz');
+    expect(item.price).toBe(0);
+    expect(item.discount).toBe(0);
   });
 
   it('uses custom item_brand from input', () => {
@@ -708,7 +709,7 @@ describe('Item Builder', () => {
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     // (100 * 2) - 10 = 190
-    expect(event.ecommerce.value).toBe('190');
+    expect(event.ecommerce.value).toBe(190);
   });
 
   it('calculates value correctly for multiple items', () => {
@@ -719,7 +720,7 @@ describe('Item Builder', () => {
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     // (50*2 - 5) + (30*1 - 0) = 95 + 30 = 125
-    expect(event.ecommerce.value).toBe('125');
+    expect(event.ecommerce.value).toBe(125);
   });
 });
 
@@ -878,7 +879,7 @@ describe('Ecommerce Push', () => {
     expect(event.event).toBe('view_item');
     expect(event.ecommerce.items).toHaveLength(1);
     expect(event.ecommerce.items[0].item_id).toBe('RX-1');
-    expect(event.ecommerce.value).toBe('10');
+    expect(event.ecommerce.value).toBe(10);
     expect(event.ecommerce.currency).toBe('CAD');
   });
 
@@ -888,7 +889,7 @@ describe('Ecommerce Push', () => {
     const event = window.dataLayer[window.dataLayer.length - 1];
     expect(event.event).toBe('add_to_cart');
     expect(event.ecommerce.items[0].quantity).toBe(3);
-    expect(event.ecommerce.value).toBe('60');
+    expect(event.ecommerce.value).toBe(60);
   });
 
   it('beginCheckout pushes begin_checkout event', () => {
@@ -914,7 +915,7 @@ describe('Ecommerce Push', () => {
     expect(event.event).toBe('purchase');
     expect(event.transaction_id).toBe('TXN-001');
     expect(event.ecommerce.items).toHaveLength(1);
-    expect(event.ecommerce.value).toBe('100');
+    expect(event.ecommerce.value).toBe(100);
   });
 
   it('pushEcommerce supports generic ecommerce events with extra data', () => {
@@ -1042,7 +1043,7 @@ describe('DOM Binding — Ecommerce Events', () => {
     expect(event.ecommerce.items).toHaveLength(1);
     expect(event.ecommerce.items[0].item_id).toBe('RX-1');
     expect(event.ecommerce.items[0].item_name).toBe('Aspirin');
-    expect(event.ecommerce.items[0].price).toBe('10.99');
+    expect(event.ecommerce.items[0].price).toBe(10.99);
   });
 
   it('pushes add_to_cart from data-dl-event with quantity and discount', () => {
@@ -1056,7 +1057,7 @@ describe('DOM Binding — Ecommerce Events', () => {
     const event = window.dataLayer[window.dataLayer.length - 1];
     expect(event.event).toBe('add_to_cart');
     expect(event.ecommerce.items[0].quantity).toBe(3);
-    expect(event.ecommerce.items[0].discount).toBe('5');
+    expect(event.ecommerce.items[0].discount).toBe(5);
   });
 
   it('pushes purchase with transaction_id from data-dl-transaction-id', () => {
@@ -1091,7 +1092,7 @@ describe('DOM Binding — Ecommerce Events', () => {
     expect(event.event).toBe('add_to_cart');
     expect(event.ecommerce.items[0].item_id).toBe('RX-CONTAINER');
     expect(event.ecommerce.items[0].item_name).toBe('Container Med');
-    expect(event.ecommerce.items[0].price).toBe('55');
+    expect(event.ecommerce.items[0].price).toBe(55);
   });
 });
 
@@ -1558,7 +1559,7 @@ describe('Integration', () => {
     expect(event.userData.sha256_email_address).toBe('f'.repeat(64));
     expect(event.ecommerce.items).toHaveLength(2);
     // (50*2 - 0) + (30*1 - 0) = 130
-    expect(event.ecommerce.value).toBe('130');
+    expect(event.ecommerce.value).toBe(130);
     expect(event.ecommerce.currency).toBe('CAD');
   });
 
@@ -1609,7 +1610,7 @@ describe('Auto view_item on page load', () => {
     expect(event.ecommerce.items).toHaveLength(1);
     expect(event.ecommerce.items[0].item_id).toBe('SKU-100');
     expect(event.ecommerce.items[0].item_name).toBe('Test Drug');
-    expect(event.ecommerce.items[0].price).toBe('25.99');
+    expect(event.ecommerce.items[0].price).toBe(25.99);
   });
 
   it('does not fire view_item when no data-dl-view-item elements exist', () => {

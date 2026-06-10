@@ -246,23 +246,27 @@ describe('createEventPropertiesBuilder', () => {
 
       expect(bundle.eventProperties.logged_in).toBe('false');
       expect(bundle.userProperties.pp_distinct_id).toBe(bundle.eventProperties.device_id);
+      // The '-1' logged-out cookie sentinel maps to null, never '-1'.
+      expect(bundle.eventProperties.pp_user_id).toBe(null);
     });
 
-    it('falls back to "-1" sentinel for pp_user_id / pp_patient_id when cookies are absent', () => {
-      // Anonymous visitors (no userId/patientId cookies) get the '-1'
-      // sentinel rather than '' so the fields survive 3E's empty-string
-      // strip and remain queryable / filterable in Mixpanel.
+    it('emits null for pp_user_id / pp_patient_id when cookies are absent', () => {
+      // Anonymous visitors (no userId/patientId cookies) emit null rather
+      // than the legacy '-1' sentinel. null is normally dropped by 3E's
+      // strip, but these two keys are on the ALLOW_NULL list so the explicit
+      // null survives and stays queryable / filterable in Mixpanel.
       const ppLib = makePPLib({ cookies: {} });
       const bundle = createEventPropertiesBuilder(window, ppLib).build();
 
-      expect(bundle.eventProperties.pp_user_id).toBe('-1');
-      expect(bundle.eventProperties.pp_patient_id).toBe('-1');
+      expect(bundle.eventProperties.pp_user_id).toBe(null);
+      expect(bundle.eventProperties.pp_patient_id).toBe(null);
       expect(bundle.eventProperties.logged_in).toBe('false');
 
-      // Verify the flat (Mixpanel) payload preserves '-1' through stripping.
+      // Verify the flat (Mixpanel) payload preserves null through stripping.
       const flat = createEventPropertiesBuilder(window, ppLib).buildFlat();
-      expect(flat.pp_user_id).toBe('-1');
-      expect(flat.pp_patient_id).toBe('-1');
+      expect(flat.pp_user_id).toBe(null);
+      expect(flat.pp_patient_id).toBe(null);
+      expect('pp_user_id' in flat).toBe(true);
     });
 
     it('on a first-ever visit with no prior touch cookies, captures a direct touch', () => {

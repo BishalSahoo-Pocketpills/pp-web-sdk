@@ -67,8 +67,8 @@ export interface DataLayerConfig {
 // =====================================================
 
 export interface DataLayerUser {
-  pp_user_id: string;
-  pp_patient_id: string;
+  pp_user_id: string | null;
+  pp_patient_id: string | null;
   // Stringified boolean ("true" / "false") per the event-attribute
   // contract — Mixpanel + GTM consumers treat this as a categorical
   // string, not a boolean.
@@ -106,9 +106,9 @@ export interface DataLayerItem {
   item_name: string;
   item_brand: string;
   item_category?: string;
-  price: string;
+  price: number;
   quantity: number;
-  discount: string;
+  discount: number;
   coupon: string;
 }
 

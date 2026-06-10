@@ -49,8 +49,8 @@ The ecommerce module scans the DOM for elements with `data-ecommerce-*` attribut
 | `data-ecommerce-item` | Yes | — | Item ID / product slug (e.g., `weight-loss`) |
 | `data-ecommerce-name` | Yes | — | Display name (e.g., `Weight Loss`) |
 | `data-ecommerce-price` | Yes | — | Price as string (e.g., `60`) |
-| `data-ecommerce-category` | No | `Telehealth` | Product category |
-| `data-ecommerce-brand` | No | `PocketPills` | Brand name |
+| `data-ecommerce-category` | No | `treatments` | Product category |
+| `data-ecommerce-brand` | No | `Pocketpills` | Brand name |
 | `data-ecommerce-variant` | No | — | Product variant |
 | `data-ecommerce-discount` | No | — | Discount amount |
 | `data-ecommerce-coupon` | No | — | Coupon code |
@@ -104,8 +104,8 @@ If a page has multiple `[data-ecommerce-item]` elements, the `view_item` event i
 ```javascript
 ppLib.ecommerce.configure({
   defaults: {
-    brand: 'PocketPills',      // Default brand for all items
-    category: 'Telehealth',    // Default category
+    brand: 'Pocketpills',      // Default brand for all items
+    category: 'treatments',    // Default category
     currency: 'CAD',           // Currency code
     quantity: 1                // Default quantity
   }
@@ -259,8 +259,8 @@ The ecommerce module validates all data attributes and falls back to configured 
 | `data-ecommerce-item` | Yes | - | `'Missing required ecommerce attribute(s): data-ecommerce-item'` (warn) |
 | `data-ecommerce-name` | Yes | - | `'Missing required ecommerce attribute(s): data-ecommerce-name'` (warn) |
 | `data-ecommerce-price` | Yes | - | `'Missing required ecommerce attribute(s): data-ecommerce-price'` (warn) |
-| `data-ecommerce-brand` | No | `CONFIG.defaults.brand` (`'PocketPills'`) | No warning |
-| `data-ecommerce-category` | No | `CONFIG.defaults.category` (`'Telehealth'`) | No warning |
+| `data-ecommerce-brand` | No | `CONFIG.defaults.brand` (`'Pocketpills'`) | No warning |
+| `data-ecommerce-category` | No | `CONFIG.defaults.category` (`'treatments'`) | No warning |
 | `data-ecommerce-variant` | No | Not included in payload | No warning |
 | `data-ecommerce-discount` | No | Not included in payload | No warning |
 | `data-ecommerce-coupon` | No | Not included in payload | No warning |
