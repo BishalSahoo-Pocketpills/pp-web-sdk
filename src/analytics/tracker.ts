@@ -244,7 +244,7 @@ export function createTracker(
         eventQueue.add({
           type: 'gtm',
           data: ppLib.extend({
-            event: SafeUtils.get(CONFIG, 'platforms.gtm.events.pageView', 'attribution_page_view')
+            event: SafeUtils.get(CONFIG, 'platforms.gtm.events.pageView', 'page_view')
           }, data)
         });
       }
@@ -257,7 +257,7 @@ export function createTracker(
           type: 'mixpanel',
           data: {
             type: 'track',
-            eventName: 'pageview',
+            eventName: 'page_view',
             properties: data
           }
         });

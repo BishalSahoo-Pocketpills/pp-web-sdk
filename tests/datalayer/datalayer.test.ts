@@ -58,14 +58,14 @@ describe('IIFE Bootstrap', () => {
     expect(window.ppLib.datalayer).toBeDefined();
   });
 
-  it('auto-fires pageview event on module load', async () => {
+  it('auto-fires page_view event on module load', async () => {
     createMockDataLayer();
     loadWithCommon('datalayer');
 
     // Wait for initDelay (1500ms) + async user data hashing
     await new Promise(r => setTimeout(r, 1700));
 
-    const events = window.dataLayer.filter((e: any) => e.event === 'pageview');
+    const events = window.dataLayer.filter((e: any) => e.event === 'page_view');
     expect(events.length).toBeGreaterThanOrEqual(1);
     const event = events[events.length - 1];
     expect(event.platform).toBe('web');
@@ -769,7 +769,7 @@ describe('Core Event Push', () => {
     window.ppLib.datalayer.pageview();
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.event).toBe('pageview');
+    expect(event.event).toBe('page_view');
     expect(event.platform).toBe('web');
   });
 
@@ -777,7 +777,7 @@ describe('Core Event Push', () => {
     window.ppLib.datalayer.pageview({ page_type: 'home' });
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.event).toBe('pageview');
+    expect(event.event).toBe('page_view');
     expect(event.platform).toBe('web');
     expect(event.page_type).toBe('home');
   });
@@ -952,14 +952,14 @@ describe('DOM Binding — Core Events', () => {
 
   it('pushes pageview event with platform from data-dl-event click', () => {
     createDataLayerDOM([
-      { event: 'pageview', attrs: { 'data-dl-page-type': 'home' } }
+      { event: 'page_view', attrs: { 'data-dl-page-type': 'home' } }
     ]);
 
-    const btn = document.querySelector('[data-dl-event="pageview"]')!;
+    const btn = document.querySelector('[data-dl-event="page_view"]')!;
     btn.dispatchEvent(new Event('click', { bubbles: true }));
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.event).toBe('pageview');
+    expect(event.event).toBe('page_view');
     expect(event.platform).toBe('web');
     expect(event.page_type).toBe('home');
   });

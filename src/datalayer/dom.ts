@@ -100,7 +100,7 @@ export function createDomBinder(
     if (resultsCount) data.results_count = parseInt(resultsCount, 10) || 0;
     if (searchType) data.search_type = searchType;
 
-    if (eventName === 'pageview') {
+    if (eventName === 'page_view') {
       data.platform = CONFIG.defaults.platform;
     }
 

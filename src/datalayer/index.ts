@@ -113,7 +113,7 @@ import { cloneConfig } from '@src/common/clone-config';
   function onReady(): void {
     readCookieUserData().then(function() {
       const ud = userDataManager.getUserData();
-      eventPusher.pushEvent('pageview');
+      eventPusher.pushEvent('page_view');
       CONFIG.autoViewItem && domBinder.scanViewItems();
 
       // If previousUser cookie wasn't available yet, poll for it
@@ -199,7 +199,7 @@ import { cloneConfig } from '@src/common/clone-config';
     pageview: function(data?: Record<string, unknown>) {
       const extra: Record<string, unknown> = { platform: CONFIG.defaults.platform };
       ppLib.extend(extra, data || {});
-      eventPusher.pushEvent('pageview', extra);
+      eventPusher.pushEvent('page_view', extra);
     },
 
     loginView: coreEvent('login_view'),
