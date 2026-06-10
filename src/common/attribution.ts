@@ -210,7 +210,11 @@ export function detectPlatform(params: Record<string, string>, referrer: string)
     if (lower === 'twitter' || lower === 'x') return isPaid ? 'twitter_ads' : 'twitter';
     if (lower === 'pinterest') return isPaid ? 'pinterest_ads' : 'pinterest';
     if (lower === 'snapchat') return isPaid ? 'snapchat_ads' : 'snapchat';
-    return lower;
+    // Unrecognized utm_source → 'other'. `platform` is a closed enum that
+    // dashboards/funnels GROUP BY; echoing the raw (caller-controllable)
+    // utm_source here would explode its cardinality and let a crafted link
+    // inject arbitrary values. The verbatim source is preserved in `source`.
+    return 'other';
   }
 
   // Priority 3: Referrer-based detection
