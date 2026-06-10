@@ -57,7 +57,7 @@ function registerCookieIdentity(): void {
   if (!pp || !cookieNames) return;
   const userId = pp.getCookie(cookieNames.userId);
   /*! v8 ignore start */
-  if (userId) {
+  if (userId && userId !== '-1') {
   /*! v8 ignore stop */
     dispatch('register', [{ pp_user_id: userId }]);
   }

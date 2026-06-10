@@ -18,7 +18,7 @@ export function createDomBinder(
   ppLib: PPLib,
   CONFIG: DataLayerConfig,
   eventPusher: { pushEvent: (name: string, extra?: Record<string, unknown>) => void; pushEcommerceEvent: (name: string, items: DataLayerItemInput[], extra?: Record<string, unknown>) => void },
-  itemBuilder: { normalizeItem: (input: DataLayerItemInput) => DataLayerItem; calculateValue: (items: DataLayerItem[]) => string }
+  itemBuilder: { normalizeItem: (input: DataLayerItemInput) => DataLayerItem; calculateValue: (items: DataLayerItem[]) => number }
 ) {
 
   const debounce = createDebounceTracker(CONFIG);

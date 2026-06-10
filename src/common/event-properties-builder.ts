@@ -111,8 +111,8 @@ export interface BuiltEventProperties {
   current_url: string;
   url: string;
   device_id: string;
-  pp_user_id: string;
-  pp_patient_id: string;
+  pp_user_id: string | null;
+  pp_patient_id: string | null;
   pp_session_id: string;
   pp_timestamp: number;
   platform: string;
@@ -206,13 +206,21 @@ export interface EventPropertiesBuilder {
 // segments; null/undefined breaks BigQuery exports. Stripping at the
 // builder boundary is cheaper than stripping at every dispatcher.
 // Pure: returns a fresh object; does NOT mutate the input.
+//
+// ALLOW_NULL: identity fields that intentionally emit `null` for anonymous /
+// logged-out visitors (replacing the legacy '-1' sentinel). They are exempt
+// from the null/undefined drop so the explicit null survives to Mixpanel
+// (which keeps custom-property nulls) and GA4, staying queryable for
+// anonymous segments. The empty-string drop still applies to every key.
+const ALLOW_NULL: ReadonlySet<string> = new Set(['pp_user_id', 'pp_patient_id']);
+
 export function stripEmptyProps(input: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   const keys = Object.keys(input);
   for (let i = 0; i < keys.length; i++) {
     const k = keys[i];
     const v = input[k];
-    if (v === null || v === undefined) continue;
+    if ((v === null || v === undefined) && !ALLOW_NULL.has(k)) continue;
     if (typeof v === 'string' && v === '') continue;
     out[k] = v;
   }
@@ -1096,12 +1104,13 @@ export function createEventPropertiesBuilder(
       url: win.location.href,
       current_url: win.location.pathname || '/',
       device_id: deviceId,
-      // Anonymous visitors get the '-1' sentinel (matches the convention
-      // used by `isLoggedIn` above and the main app's cookie format) so
-      // these fields survive 3E's empty-string strip and remain queryable
-      // / filterable in Mixpanel for anonymous segments.
-      pp_user_id: userId || '-1',
-      pp_patient_id: patientId || '-1',
+      // Anonymous visitors (no cookie, or the main app's '-1' logged-out
+      // sentinel) emit `null` rather than a string id. `null` is normally
+      // dropped by 3E's strip, but `pp_user_id` / `pp_patient_id` are on the
+      // ALLOW_NULL list in `stripEmptyProps`, so the explicit null is
+      // preserved and stays queryable / filterable in Mixpanel and GA4.
+      pp_user_id: userId && userId !== '-1' ? userId : null,
+      pp_patient_id: patientId && patientId !== '-1' ? patientId : null,
       pp_session_id: ppLib.session ? ppLib.session.getOrCreateSessionId() : '',
       pp_timestamp: Date.now(),
       platform: defaultPlatform,

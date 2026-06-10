@@ -193,12 +193,12 @@ describe('CONFIG defaults', () => {
 
   it('has correct default brand', () => {
     const config = window.ppLib.ecommerce.getConfig();
-    expect(config.defaults.brand).toBe('PocketPills');
+    expect(config.defaults.brand).toBe('Pocketpills');
   });
 
   it('has correct default category', () => {
     const config = window.ppLib.ecommerce.getConfig();
-    expect(config.defaults.category).toBe('Telehealth');
+    expect(config.defaults.category).toBe('treatments');
   });
 
   it('has correct default currency', () => {
@@ -420,7 +420,7 @@ describe('parseItem() — tested via getItems()', () => {
     expect(items.length).toBe(1);
     expect(items[0].item_id).toBe('wl');
     expect(items[0].item_name).toBe('Weight Loss');
-    expect(items[0].price).toBe('60');
+    expect(items[0].price).toBe(60);
   });
 
   it('returns null for null element (no items from empty DOM)', () => {
@@ -480,7 +480,7 @@ describe('parseItem() — tested via getItems()', () => {
     });
 
     const items = window.ppLib.ecommerce.getItems();
-    expect(items[0].item_brand).toBe('PocketPills');
+    expect(items[0].item_brand).toBe('Pocketpills');
   });
 
   it('uses default category when not specified', () => {
@@ -489,7 +489,7 @@ describe('parseItem() — tested via getItems()', () => {
     });
 
     const items = window.ppLib.ecommerce.getItems();
-    expect(items[0].item_category).toBe('Telehealth');
+    expect(items[0].item_category).toBe('treatments');
   });
 
   it('uses custom brand when specified', () => {
@@ -525,7 +525,7 @@ describe('parseItem() — tested via getItems()', () => {
     });
 
     const items = window.ppLib.ecommerce.getItems();
-    expect(items[0].discount).toBe('5');
+    expect(items[0].discount).toBe(5);
   });
 
   it('includes coupon when present', () => {
@@ -1377,7 +1377,7 @@ describe('Public API', () => {
       });
 
       expect(result.defaults.currency).toBe('USD');
-      expect(result.defaults.brand).toBe('PocketPills');
+      expect(result.defaults.brand).toBe('Pocketpills');
     });
 
     it('deep merges nested objects', () => {
@@ -1432,7 +1432,7 @@ describe('Public API', () => {
       expect(event).toBeDefined();
       expect(event.ecommerce.items[0].item_id).toBe('prog-1');
       expect(event.ecommerce.items[0].item_name).toBe('Programmatic Item');
-      expect(event.ecommerce.items[0].price).toBe('55');
+      expect(event.ecommerce.items[0].price).toBe(55);
     });
 
     it('returns early when itemData is null', () => {
@@ -1519,8 +1519,8 @@ describe('Public API', () => {
       });
 
       const event = dataLayer.find(d => d.event === 'add_to_cart');
-      expect(event.ecommerce.items[0].item_brand).toBe('PocketPills');
-      expect(event.ecommerce.items[0].item_category).toBe('Telehealth');
+      expect(event.ecommerce.items[0].item_brand).toBe('Pocketpills');
+      expect(event.ecommerce.items[0].item_category).toBe('treatments');
     });
 
     it('uses custom brand and category when provided', () => {
@@ -1553,7 +1553,7 @@ describe('Public API', () => {
       expect(event.ecommerce.items[0].variant).toBe('large');
     });
 
-    it('includes optional discount field (converts to string)', () => {
+    it('includes optional discount field (converts to number)', () => {
       const dataLayer = createMockDataLayer();
 
       window.ppLib.ecommerce.trackItem({
@@ -1564,7 +1564,7 @@ describe('Public API', () => {
       });
 
       const event = dataLayer.find(d => d.event === 'add_to_cart');
-      expect(event.ecommerce.items[0].discount).toBe('5');
+      expect(event.ecommerce.items[0].discount).toBe(5);
     });
 
     it('includes optional coupon field', () => {
@@ -1649,7 +1649,7 @@ describe('Public API', () => {
       expect(item.coupon).not.toContain('<');
     });
 
-    it('converts numeric price to string via sanitize', () => {
+    it('converts price to a float number', () => {
       const dataLayer = createMockDataLayer();
 
       window.ppLib.ecommerce.trackItem({
@@ -1659,8 +1659,8 @@ describe('Public API', () => {
       });
 
       const event = dataLayer.find(d => d.event === 'add_to_cart');
-      expect(typeof event.ecommerce.items[0].price).toBe('string');
-      expect(event.ecommerce.items[0].price).toBe('29.99');
+      expect(typeof event.ecommerce.items[0].price).toBe('number');
+      expect(event.ecommerce.items[0].price).toBe(29.99);
     });
   });
 
@@ -1866,14 +1866,14 @@ describe('Edge cases and integration', () => {
     expect(items.length).toBe(3);
 
     expect(items[0].variant).toBe('small');
-    expect(items[0].discount).toBe('2');
+    expect(items[0].discount).toBe(2);
     expect(items[0].coupon).toBe('CODE');
 
     expect(items[1].item_brand).toBe('Pharma');
     expect(items[1].item_category).toBe('Health');
     expect(items[1].variant).toBeUndefined();
 
-    expect(items[2].item_brand).toBe('PocketPills');
+    expect(items[2].item_brand).toBe('Pocketpills');
     expect(items[2].variant).toBeUndefined();
     expect(items[2].discount).toBeUndefined();
     expect(items[2].coupon).toBeUndefined();
@@ -2091,7 +2091,7 @@ describe('Item deduplication', () => {
     const items = window.ppLib.ecommerce.getItems();
     expect(items.length).toBe(1);
     expect(items[0].item_id).toBe('hair-loss-treatment');
-    expect(items[0].price).toBe('60');
+    expect(items[0].price).toBe(60);
   });
 
   it('trackViewItem pushes exactly 1 item when 7 identical DOM elements exist', () => {

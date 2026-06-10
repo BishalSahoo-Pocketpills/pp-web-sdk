@@ -8,6 +8,7 @@
 import type { PPLib } from '@src/types/common.types';
 import type { EcommerceConfig, EcommerceItem, EcommerceData } from '@src/types/ecommerce.types';
 import type { DeepPartial } from '@src/types/utility.types';
+import { toFloat } from '@src/common/coerce';
 import { trackViaMixpanel } from '@src/common/mixpanel-bridge';
 import { ensureDataLayer } from '@src/common/datalayer-guard';
 import { isConsentGranted } from '@src/common/consent-check';
@@ -30,8 +31,8 @@ import { cloneConfig } from '@src/common/clone-config';
   const CONFIG: EcommerceConfig = {
     // Default item field values
     defaults: {
-      brand: 'PocketPills',
-      category: 'Telehealth',
+      brand: 'Pocketpills',
+      category: 'treatments',
       currency: 'CAD',
       quantity: 1,
       platform: 'web'
@@ -105,7 +106,9 @@ import { cloneConfig } from '@src/common/clone-config';
       item_name: ppLib.Security.sanitize(itemName),
       item_brand: ppLib.Security.sanitize(el.getAttribute(attrs.brand) || CONFIG.defaults.brand),
       item_category: ppLib.Security.sanitize(el.getAttribute(attrs.category) || CONFIG.defaults.category),
-      price: ppLib.Security.sanitize(itemPrice),
+      // Monetary field → float (decimal). A number can't carry XSS, so it
+      // doesn't need Security.sanitize the way the string fields above do.
+      price: toFloat(itemPrice),
       quantity: CONFIG.defaults.quantity
     };
 
@@ -117,7 +120,7 @@ import { cloneConfig } from '@src/common/clone-config';
 
     const discount = el.getAttribute(attrs.discount);
     /*! v8 ignore start */
-    if (discount) item.discount = ppLib.Security.sanitize(discount);
+    if (discount) item.discount = toFloat(discount);
     /*! v8 ignore stop */
 
     const coupon = el.getAttribute(attrs.coupon);
@@ -191,7 +194,7 @@ import { cloneConfig } from '@src/common/clone-config';
     // Calculate total value from all items
     let totalValue = 0;
     for (let i = 0; i < dedupedItems.length; i++) {
-      const price = parseFloat(dedupedItems[i].price);
+      const price = dedupedItems[i].price;
       /*! v8 ignore start */
       if (!isNaN(price)) {
         totalValue += price * (dedupedItems[i].quantity || 1);
@@ -236,7 +239,7 @@ import { cloneConfig } from '@src/common/clone-config';
       names.push(it.item_name);
       brands.push(it.item_brand);
       categories.push(it.item_category);
-      const p = parseFloat(it.price);
+      const p = it.price;
       prices.push(isNaN(p) ? 0 : p);
       quantities.push(it.quantity || 1);
     }
@@ -452,13 +455,13 @@ import { cloneConfig } from '@src/common/clone-config';
         item_name: ppLib.Security.sanitize(itemData.item_name),
         item_brand: ppLib.Security.sanitize(itemData.item_brand || CONFIG.defaults.brand),
         item_category: ppLib.Security.sanitize(itemData.item_category || CONFIG.defaults.category),
-        price: ppLib.Security.sanitize(String(itemData.price)),
+        price: toFloat(itemData.price),
         quantity: itemData.quantity || CONFIG.defaults.quantity
       };
 
       /*! v8 ignore start */
       if (itemData.variant) item.variant = ppLib.Security.sanitize(itemData.variant);
-      if (itemData.discount) item.discount = ppLib.Security.sanitize(String(itemData.discount));
+      if (itemData.discount) item.discount = toFloat(itemData.discount);
       if (itemData.coupon) item.coupon = ppLib.Security.sanitize(itemData.coupon);
       /*! v8 ignore stop */
 
