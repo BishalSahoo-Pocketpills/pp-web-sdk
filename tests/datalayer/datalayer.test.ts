@@ -688,6 +688,15 @@ describe('Item Builder', () => {
     expect(item.discount).toBe(0);
   });
 
+  it('rounds price/discount to 2 decimal places', () => {
+    window.ppLib.datalayer.viewItem([{ item_id: 'RX-1', price: '29.999', discount: '5.128' }]);
+
+    const event = window.dataLayer[window.dataLayer.length - 1];
+    const item = event.ecommerce.items[0];
+    expect(item.price).toBe(30);
+    expect(item.discount).toBe(5.13);
+  });
+
   it('uses custom item_brand from input', () => {
     window.ppLib.datalayer.viewItem([{ item_brand: 'CustomBrand' }]);
 
