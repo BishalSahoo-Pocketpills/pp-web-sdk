@@ -289,7 +289,7 @@ Both are called automatically on `DOMContentLoaded`.
 
 ```javascript
 window.dataLayer.push({
-  event: 'pageview',
+  event: 'page_view',
   user: {
     pp_user_id: '12345',
     pp_patient_id: '67890',

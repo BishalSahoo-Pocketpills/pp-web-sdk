@@ -181,7 +181,7 @@ describe('Analytics native coverage', () => {
     expect(ltEvent).toBeDefined();
     expect(ltEvent.last_touch_source).toBe('google');
 
-    const pvEvent = dataLayer.find((e: any) => e.event === 'attribution_page_view');
+    const pvEvent = dataLayer.find((e: any) => e.event === 'page_view');
     expect(pvEvent).toBeDefined();
 
     // Mixpanel should have received register + track(Page View) after becoming ready
@@ -863,12 +863,12 @@ describe('Analytics native coverage', () => {
     // Process queue
     dbg.queue.processQueue();
 
-    const pvGtm = dataLayer.find((e: any) => e.event === 'attribution_page_view');
+    const pvGtm = dataLayer.find((e: any) => e.event === 'page_view');
     expect(pvGtm).toBeDefined();
     expect(pvGtm.page_url).toBeDefined();
     expect(pvGtm.page_title).toBeDefined();
 
-    expect(mockMp.track).toHaveBeenCalledWith('pageview', expect.objectContaining({
+    expect(mockMp.track).toHaveBeenCalledWith('page_view', expect.objectContaining({
       page_url: expect.any(String)
     }));
   });
@@ -1105,7 +1105,7 @@ describe('Analytics native coverage', () => {
     dbg.tracker.init();
     // Drain the new events
     dbg.queue.processQueue();
-    const pvEvents = dataLayer.filter((e: any) => e.event === 'attribution_page_view');
+    const pvEvents = dataLayer.filter((e: any) => e.event === 'page_view');
     expect(pvEvents.length).toBe(0);
   });
 
@@ -1389,7 +1389,7 @@ describe('Analytics native coverage', () => {
     dbg.queue.processQueue();
 
     // GTM should still get page view
-    expect(dataLayer.find((e: any) => e.event === 'attribution_page_view')).toBeDefined();
+    expect(dataLayer.find((e: any) => e.event === 'page_view')).toBeDefined();
     // Mixpanel should NOT get Page View track
     expect(mockMp.track).not.toHaveBeenCalled();
   });
