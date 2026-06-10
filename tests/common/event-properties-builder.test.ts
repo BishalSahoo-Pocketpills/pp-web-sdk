@@ -950,6 +950,18 @@ describe('createEventPropertiesBuilder', () => {
         expect(ma!.platform).toBe('direct');
         expect(ma!.source).toBe('direct');
       });
+
+      it('unknown utm_source → platform "other"; raw value preserved in source (F13)', () => {
+        // platform is a closed enum dashboards GROUP BY — an unrecognized
+        // (caller-controllable) utm_source must not become a distinct platform.
+        setHref('http://localhost/lp?utm_source=test_abc&utm_medium=test_abc');
+        setReferrer('');
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+
+        expect(ma!.platform).toBe('other');
+        expect(ma!.source).toBe('test_abc'); // verbatim source still available
+      });
     });
 
     describe('cookieDomain override (staging / preview hosts)', () => {
