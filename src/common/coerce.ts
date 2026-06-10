@@ -10,8 +10,12 @@
  * fallback so a malformed attribute never emits `NaN`.
  */
 
-/** Coerce a money-like value to a float; non-numeric / missing → 0. */
+/**
+ * Coerce a money-like value to a float rounded to 2 decimal places (currency
+ * precision); non-numeric / missing → 0. The `* 100` round also clears binary
+ * float artifacts (e.g. 29.99 → 2998.9999… → 2999 → 29.99).
+ */
 export function toFloat(value: unknown): number {
   const n = typeof value === 'number' ? value : parseFloat(String(value));
-  return isNaN(n) ? 0 : n;
+  return isNaN(n) ? 0 : Math.round(n * 100) / 100;
 }
