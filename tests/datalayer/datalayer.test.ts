@@ -74,6 +74,20 @@ describe('IIFE Bootstrap', () => {
     expect(event.pp_timestamp).toBeDefined();
   });
 
+  it('caps window.dataLayer at the shared 1000-entry limit (front-trim)', () => {
+    loadWithCommon('datalayer');
+    createMockDataLayer();
+    const dl: any[] = [];
+    for (let i = 0; i < 1010; i++) dl.push({ event: 'filler_' + i });
+    window.dataLayer = dl;
+
+    window.ppLib.datalayer.push('test_event');
+
+    // pushToDataLayer front-trims to the cap before pushing.
+    expect(window.dataLayer.length).toBe(1000);
+    expect(window.dataLayer[window.dataLayer.length - 1].event).toBe('test_event');
+  });
+
   it('exposes ppLib.datalayer public API with all expected methods', () => {
     loadWithCommon('datalayer');
     const api = window.ppLib.datalayer;

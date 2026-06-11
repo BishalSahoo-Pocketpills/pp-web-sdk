@@ -12,7 +12,7 @@ import { trackViaMixpanel } from '@src/common/mixpanel-bridge';
 import { addInteractionListener } from '@src/common/dom-events';
 import { bootstrapModule } from '@src/common/bootstrap';
 import { cloneConfig } from '@src/common/clone-config';
-import { ensureDataLayer } from '@src/common/datalayer-guard';
+import { pushToDataLayer } from '@src/common/datalayer-guard';
 import { isConsentGranted } from '@src/common/consent-check';
 import { createDebounceTracker } from '@src/common/debounce';
 import { getElementDebounceKey } from '@src/common/element-key';
@@ -171,7 +171,6 @@ import { getElementDebounceKey } from '@src/common/element-key';
       if (!CONFIG.platforms.gtm.enabled) return;
       /*! v8 ignore stop */
 
-      const dl = ensureDataLayer(win);
       const gtmData: Record<string, unknown> = { event: CONFIG.gtmEventName };
 
       for (const key in data) {
@@ -189,8 +188,7 @@ import { getElementDebounceKey } from '@src/common/element-key';
       }
       /*! v8 ignore stop */
 
-      dl.splice(0, Math.max(0, dl.length - 500));
-      dl.push(gtmData);
+      pushToDataLayer(win, gtmData);
       ppLib.log('verbose', '[ppEventSource] Sent to GTM', gtmData);
     } catch (e) {
       ppLib.log('error', '[ppEventSource] GTM send error', ppLib.safeLogError(e));
