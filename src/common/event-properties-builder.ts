@@ -294,6 +294,12 @@ const UTM_SESSION_MAX_AGE_SECONDS = 1800;
 const LEGACY_MKTG_FIRST_KEY = 'pp_mktg_first_touch';
 const LEGACY_MKTG_LAST_KEY = 'pp_mktg_last_touch';
 
+// Persistent self-disable marker (F22) for the one-time pp_mktg_* migration.
+// Once the fold + cleanup has run on a device, this localStorage flag lets
+// every future page load skip the whole shim — the legacy cookies are gone, so
+// re-running only burns cookie reads/writes on each navigation.
+const MKTG_MIGRATION_DONE_KEY = 'pp_mktg_migrated';
+
 /**
  * Parse a legacy `pp_mktg_*_touch` cookie. The pre-consolidation
  * attribution service serialised these as JSON with the 9 normalized +
@@ -716,6 +722,20 @@ export function createEventPropertiesBuilder(
     if (mktgMigrated) return;
     mktgMigrated = true;
 
+    // Persistent self-disable (F22): the in-memory guard above only covers a
+    // single page load. Once the fold + cleanup has completed on this device,
+    // a localStorage marker short-circuits the shim on every FUTURE load. It is
+    // purely an optimization — if localStorage is blocked the shim still runs
+    // each load and stays correct (the fold is idempotent; the deletes no-op
+    // once the cookies are gone). The marker is written below via the same
+    // localStorage the fold uses, so an *availability* failure fails both
+    // together (no marker without a fold). The marker never WORSENS data loss:
+    // the legacy cookies are deleted via the cookie API in the same run
+    // regardless, so a later marker-skip has nothing left to migrate anyway.
+    try {
+      if (win.localStorage.getItem(MKTG_MIGRATION_DONE_KEY)) return;
+    } catch (e) { /* localStorage blocked — fall through and run the shim */ }
+
     const foldInto = (storageKey: string, legacyCookieName: string): void => {
       const ext = readStoredExtended(storageKey);
       if (ext.platform) return; // already populated — skip
@@ -794,6 +814,12 @@ export function createEventPropertiesBuilder(
       } catch (e) { /* best-effort */ }
       try { ppLib.deleteCookie(name); } catch (e) { /* best-effort */ }
     }
+
+    // Self-disable (F22): the fold + cleanup above has completed, so mark this
+    // device done. Written via the same localStorage the fold uses, so the
+    // marker only persists when the fold did too. Best-effort — if it fails the
+    // shim simply runs again next load (idempotent fold, no-op deletes).
+    try { win.localStorage.setItem(MKTG_MIGRATION_DONE_KEY, '1'); } catch (e) { /* best-effort */ }
   }
 
   /**
