@@ -17,6 +17,7 @@ export interface EcommerceAttributes {
   variant: string;
   discount: string;
   coupon: string;
+  quantity: string;
 }
 
 export interface EcommercePlatforms {

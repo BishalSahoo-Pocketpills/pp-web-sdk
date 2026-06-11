@@ -222,6 +222,7 @@ describe('CONFIG defaults', () => {
       variant: 'data-ecommerce-variant',
       discount: 'data-ecommerce-discount',
       coupon: 'data-ecommerce-coupon',
+      quantity: 'data-ecommerce-quantity',
     });
   });
 
@@ -528,6 +529,28 @@ describe('parseItem() — tested via getItems()', () => {
     expect(items[0].discount).toBe(5);
   });
 
+  // F12: data-ecommerce-quantity (default 1 when absent; explicit value kept).
+  it('reads data-ecommerce-quantity, defaulting to 1 when absent', () => {
+    const a = document.createElement('div');
+    a.setAttribute('data-ecommerce-item', 'rx1');
+    a.setAttribute('data-ecommerce-name', 'A');
+    a.setAttribute('data-ecommerce-price', '10');
+    document.body.appendChild(a);
+
+    const b = document.createElement('div');
+    b.setAttribute('data-ecommerce-item', 'rx2');
+    b.setAttribute('data-ecommerce-name', 'B');
+    b.setAttribute('data-ecommerce-price', '5');
+    b.setAttribute('data-ecommerce-quantity', '3');
+    document.body.appendChild(b);
+
+    const items = window.ppLib.ecommerce.getItems();
+    const itemA = items.find((i: any) => i.item_id === 'rx1');
+    const itemB = items.find((i: any) => i.item_id === 'rx2');
+    expect(itemA.quantity).toBe(1); // absent → default
+    expect(itemB.quantity).toBe(3); // explicit
+  });
+
   it('includes coupon when present', () => {
     createEcommerceDOM({
       items: [{ id: 'x', name: 'X', price: '10', coupon: 'SAVE10' }],
@@ -800,19 +823,31 @@ describe('buildEcommerceData() — tested via trackItem and trackViewItem', () =
     expect(dataLayer.find(d => d.event === 'add_to_cart')).toBeUndefined();
   });
 
-  it('uses quantity fallback of 1 when item has no quantity', () => {
+  it('preserves an explicit quantity of 0 (F12 — not coerced to 1)', () => {
     const dataLayer = createMockDataLayer();
 
     window.ppLib.ecommerce.trackItem({
       item_id: 'test',
       item_name: 'Test',
       price: 10,
-      quantity: 0, // falsy, buildEcommerceData uses || 1
+      quantity: 0,
     });
 
     const event = dataLayer.find(d => d.event === 'add_to_cart');
-    // price * (0 || 1) = 10 * 1 = 10
-    expect(event.ecommerce.value).toBe(10);
+    expect(event.ecommerce.value).toBe(0); // price * 0 = 0 (explicit 0 kept)
+  });
+
+  it('uses quantity fallback of 1 when quantity is omitted', () => {
+    const dataLayer = createMockDataLayer();
+
+    window.ppLib.ecommerce.trackItem({
+      item_id: 'test',
+      item_name: 'Test',
+      price: 10,
+    });
+
+    const event = dataLayer.find(d => d.event === 'add_to_cart');
+    expect(event.ecommerce.value).toBe(10); // undefined ?? 1 → price * 1
   });
 });
 

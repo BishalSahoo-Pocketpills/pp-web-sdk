@@ -12,8 +12,9 @@ export function createItemBuilder(
       item_name: input.item_name || '',
       item_brand: input.item_brand || CONFIG.defaults.itemBrand,
       // Monetary fields leave the SDK as floats (decimal); quantity as int.
+      // `?? 1` preserves an explicit 0; only undefined falls back to 1.
       price: toFloat(input.price),
-      quantity: input.quantity || 1,
+      quantity: input.quantity ?? 1,
       discount: toFloat(input.discount),
       coupon: input.coupon || ''
     };

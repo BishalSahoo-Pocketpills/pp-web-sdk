@@ -19,3 +19,19 @@ export function toFloat(value: unknown): number {
   const n = typeof value === 'number' ? value : parseFloat(String(value));
   return isNaN(n) ? 0 : Math.round(n * 100) / 100;
 }
+
+/**
+ * Coerce a count-like value (quantity) to a non-negative integer. Preserves an
+ * explicit 0 (e.g. a removed line item); a non-numeric or missing value falls
+ * back to `fallback`. Unlike `value || fallback`, a legitimate 0 is NOT
+ * clobbered. Floats are truncated identically whether the input arrives as a
+ * number or a string (you can't add a fractional unit), and negatives — which
+ * would otherwise yield negative revenue in `price * quantity` — are clamped
+ * to 0. `fallback` is required because quantity's safe default is
+ * context-specific (1 for add-to-cart), unlike `toFloat`'s universal 0.
+ */
+export function toInt(value: unknown, fallback: number): number {
+  const raw = typeof value === 'number' ? value : parseInt(String(value), 10);
+  if (!Number.isFinite(raw)) return fallback;
+  return Math.max(0, Math.trunc(raw));
+}
