@@ -94,6 +94,10 @@ export interface PerformanceConfig {
   useRequestIdleCallback: boolean;
   queueEnabled: boolean;
   maxQueueSize: number;
+  // Max events drained per turn on the setTimeout fallback path (the
+  // requestIdleCallback path yields on the frame's idle deadline instead).
+  // Bounds main-thread time per drain so a large backlog can't cause a long task.
+  drainBatchSize: number;
 }
 
 export interface AnalyticsConfig {
