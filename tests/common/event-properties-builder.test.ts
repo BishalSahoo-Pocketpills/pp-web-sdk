@@ -1199,6 +1199,67 @@ describe('createEventPropertiesBuilder', () => {
         expect(typeof parsed.sessionTs).toBe('number');
         expect(parsed.sessionTs).toBeGreaterThan(sessionTs);
       });
+
+      it('sets the pp_mktg_migrated self-disable marker after a run (F22)', () => {
+        // Even a no-op run (no legacy cookies) marks the device done.
+        expect(window.localStorage.getItem('pp_mktg_migrated')).toBeNull();
+        createEventPropertiesBuilder(window, makePPLib({ attribution: null })).build();
+        expect(window.localStorage.getItem('pp_mktg_migrated')).toBe('1');
+      });
+
+      it('skips the shim entirely when the self-disable marker is already set (F22)', () => {
+        // A returning visitor: marker present, an existing (already-migrated)
+        // pp_utm_first_touch, but a stale legacy cookie still lingering.
+        window.localStorage.setItem('pp_mktg_migrated', '1');
+        window.localStorage.setItem('pp_utm_first_touch', JSON.stringify({
+          utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'spring',
+          utm_content: '', utm_term: '',
+          source: 'google', medium: 'cpc', campaign: 'spring', platform: 'google_ads',
+          clickId: '', referrer: 'https://www.google.com/', referrerDomain: 'www.google.com',
+          landingPage: 'http://localhost/lp', timestamp: '2026-01-01T00:00:00.000Z',
+        }));
+        document.cookie = 'pp_mktg_first_touch=' +
+          encodeURIComponent(JSON.stringify({
+            source: 'facebook', medium: 'social', campaign: 'launch', platform: 'organic_social',
+            clickId: '', landingPage: 'http://localhost/first',
+            referrer: 'https://www.facebook.com/', referrerDomain: 'www.facebook.com',
+            timestamp: '2024-01-01T00:00:00.000Z',
+          })) + ';path=/';
+
+        createEventPropertiesBuilder(window, makePPLib({ attribution: null })).build();
+
+        // Shim short-circuited: the legacy cookie is NOT deleted (the shim
+        // always deletes it when it runs) and its facebook data was NOT folded
+        // into the existing first-touch (which keeps its google data).
+        expect(document.cookie).toMatch(/pp_mktg_first_touch=[^;]+/);
+        const firstRaw = window.localStorage.getItem('pp_utm_first_touch')!;
+        expect(firstRaw).not.toContain('www.facebook.com');
+        expect(firstRaw).toContain('www.google.com');
+      });
+
+      it('still runs the shim when localStorage.getItem throws (marker is best-effort)', () => {
+        document.cookie = 'pp_mktg_first_touch=' +
+          encodeURIComponent(JSON.stringify({
+            source: 'facebook', medium: 'social', campaign: 'launch', platform: 'organic_social',
+            clickId: '', landingPage: 'http://localhost/first',
+            referrer: 'https://www.facebook.com/', referrerDomain: 'www.facebook.com',
+            timestamp: '2024-01-01T00:00:00.000Z',
+          })) + ';path=/';
+
+        const origGet = window.localStorage.getItem.bind(window.localStorage);
+        const spy = vi.spyOn(window.localStorage, 'getItem').mockImplementation((k: string) => {
+          if (k === 'pp_mktg_migrated') throw new Error('blocked');
+          return origGet(k);
+        });
+        try {
+          createEventPropertiesBuilder(window, makePPLib({ attribution: null })).build();
+          // The marker check threw and fell through → the shim still ran and
+          // deleted the legacy cookie.
+          expect(document.cookie).not.toMatch(/pp_mktg_first_touch=[^;]+/);
+        } finally {
+          spy.mockRestore();
+        }
+      });
     });
 
     describe('landingPage PII sanitisation', () => {
