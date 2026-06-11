@@ -827,6 +827,47 @@ describe('Mixpanel native coverage', () => {
 
       expect(mp.opt_in_tracking).toHaveBeenCalled();
     });
+
+    // PR3b: post-boot consent changes flip the live instance's native opt-in/out.
+    it('propagates a post-boot consent revoke to native opt_out', async () => {
+      const loadedCallback = await initAndGetLoadedCallback({ optOutByDefault: false });
+      window.ppLib.consent.configure({ mode: 'opt-out' }); // granted at boot
+      const mp = createMockMixpanel();
+      invokeLoadedCallback(loadedCallback, mp);
+      expect(mp.opt_in_tracking).toHaveBeenCalled(); // opted in at boot
+      mp.opt_out_tracking.mockClear();
+
+      window.ppLib.consent.revoke();
+      expect(mp.opt_out_tracking).toHaveBeenCalled(); // live opt-out on revoke
+    });
+
+    it('propagates a post-boot consent grant to native opt_in', async () => {
+      const loadedCallback = await initAndGetLoadedCallback({ optOutByDefault: false });
+      const mp = createMockMixpanel();
+      invokeLoadedCallback(loadedCallback, mp);
+      mp.opt_in_tracking.mockClear();
+
+      window.ppLib.consent.grant();
+      expect(mp.opt_in_tracking).toHaveBeenCalled(); // live opt-in on grant
+    });
+
+    it('does NOT opt in on a post-boot grant when optOutByDefault is true', async () => {
+      const loadedCallback = await initAndGetLoadedCallback({ optOutByDefault: true });
+      const mp = createMockMixpanel();
+      invokeLoadedCallback(loadedCallback, mp);
+      mp.opt_in_tracking.mockClear();
+
+      window.ppLib.consent.grant();
+      expect(mp.opt_in_tracking).not.toHaveBeenCalled(); // hard-off stays dark
+    });
+
+    it('swallows a throwing native opt_in/out (legacy mock without the API)', async () => {
+      const loadedCallback = await initAndGetLoadedCallback({ optOutByDefault: false });
+      const mp = createMockMixpanel();
+      mp.opt_in_tracking = vi.fn(() => { throw new Error('no opt_in on legacy mock'); });
+      // The boot path calls opt_in_tracking → throws → caught, non-fatal.
+      expect(() => invokeLoadedCallback(loadedCallback, mp)).not.toThrow();
+    });
   });
 
   // ==========================================================================

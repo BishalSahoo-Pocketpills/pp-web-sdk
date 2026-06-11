@@ -241,6 +241,25 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       if (typeof ppLib._resolveMixpanelReady === 'function') {
         ppLib._resolveMixpanelReady();
       }
+
+      // Propagate POST-boot consent changes to each instance's native
+      // opt-in/out (a mid-session CMP revoke/grant). The boot check above only
+      // runs once; without this a user who revokes after load keeps a natively
+      // opted-in Mixpanel handle that raw window.mixpanel.track calls could use.
+      // Subscribed once (onAllLoaded is guarded by allLoadedFired); `consent` is
+      // installed by common (same bundle), guarded defensively for absence.
+      if (ppLib.consent) {
+        ppLib.consent.subscribe(function(next) {
+          const granted = next === 'granted';
+          // All enabled instances are loaded by now (onAllLoaded gate), so each
+          // has a live mpRef; filter defensively in case one was torn down.
+          const ready = getEnabledStates().filter(function(s) { return s.mpRef; });
+          for (let i = 0; i < ready.length; i++) {
+            applyNativeConsent(ready[i].name, ready[i].mpRef as MixpanelGlobal, granted);
+          }
+        });
+      }
+
       ppLib.log('info', M.INITIALIZED_SUCCESSFULLY);
     }
 
@@ -407,6 +426,28 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
     }
 
     /**
+     * Align an instance's native Mixpanel opt-in/out with the consent state.
+     * The dispatch facade already gates on consent, but raw / legacy
+     * `window.mixpanel.track` calls bypass it — so on a denial we flip the
+     * instance's own opt_out_tracking(), and only opt in when granted.
+     * `optOutByDefault: true` is an intentional hard-off that stays dark
+     * regardless of consent. Shared by boot (onInstanceLoaded) and the
+     * post-boot consent subscription (onAllLoaded).
+     */
+    function applyNativeConsent(name: InstanceName, mp: MixpanelGlobal, granted: boolean): void {
+      try {
+        if (granted && !CONFIG.shared.optOutByDefault) {
+          mp.opt_in_tracking();
+        } else if (!granted) {
+          mp.opt_out_tracking();
+          ppLib.log('info', '[ppMixpanel] consent denied — ' + name + ' opted out of native tracking');
+        }
+      } catch (_e) {
+        /* legacy mock may not implement opt_in/opt_out — non-fatal */
+      }
+    }
+
+    /**
      * Per-instance loaded callback. Runs once per instance after the real
      * Mixpanel SDK has replayed its `_i[]` entry and created the live
      * Mixpanel handle (window.mixpanel for primary, window.mixpanel.secondary
@@ -426,26 +467,17 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       // granted, consistent with the dispatch gate. Default consent mode is
       // 'opt-out' ⇒ granted, so this opt-out branch is dormant by default.)
       const consentGranted = !ppLib.consent || ppLib.consent.isGranted();
-      try {
-        if (consentGranted && !CONFIG.shared.optOutByDefault) {
-          mp.opt_in_tracking();
-        } else if (!consentGranted) {
-          mp.opt_out_tracking();
-          ppLib.log('info', '[ppMixpanel] consent denied — ' + name + ' opted out of native tracking');
-        }
-      } catch (_e) {
-        /* legacy mock may not implement opt_in/opt_out — non-fatal */
-      }
+      applyNativeConsent(name, mp, consentGranted);
 
       // PRIMARY-ONLY: subdomain cookie migration + pp_distinct_id unification.
       // SECONDARY: pin $device_id from primary BEFORE any tracks fire.
       // Both issue RAW mp.identify/register that Mixpanel's native opt-out does
       // NOT suppress and that bypass the dispatch consent gate — so skip them
       // entirely when consent is denied, otherwise a denied user's identity /
-      // migration would still reach Mixpanel. (NOTE: post-boot consent *revoke*
-      // is not yet propagated to native opt-out — tracked as a follow-up; the
-      // realistic CMP-revoke path remains open mid-session. Dormant under the
-      // auto-accept default.)
+      // migration would still reach Mixpanel. (A post-boot grant does NOT
+      // retroactively run migration here — it self-heals on the next page load,
+      // where boot-time consent is granted; only native opt-in/out is flipped
+      // live, via the consent subscription wired in onAllLoaded.)
       if (consentGranted) {
         if (name === 'primary') {
           applyMigrationIfNeeded(mp, primaryMigrationCtx);
