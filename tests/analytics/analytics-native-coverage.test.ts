@@ -664,25 +664,82 @@ describe('Analytics native coverage', () => {
   // ==========================================================================
   // EVENT QUEUE
   // ==========================================================================
-  it('EventQueue.add: drops event when queue is full', async () => {
+  it('EventQueue.add: drops the INCOMING event when full, preserving the buffered prefix (F5)', async () => {
     await freshLoad();
     const dbg = window.ppAnalyticsDebug;
-    // Fill the queue to maxQueueSize (50)
     dbg.config.performance.maxQueueSize = 3;
+    dbg.config.performance.useRequestIdleCallback = false; // setTimeout drain won't fire synchronously
     dbg.queue.queue.length = 0;
+    dbg.queue.droppedCount = 0;
     dbg.queue.processing = false;
-    // We need to prevent processing so queue stays full
-    // Override scheduleProcessing to no-op
-    const origSchedule = dbg.queue.scheduleProcessing;
-    dbg.queue.scheduleProcessing = function() {};
     dbg.queue.add({ type: 'gtm', data: { event: 'a' } });
     dbg.queue.add({ type: 'gtm', data: { event: 'b' } });
     dbg.queue.add({ type: 'gtm', data: { event: 'c' } });
     expect(dbg.queue.queue.length).toBe(3);
-    // This should be dropped
+    // Overflow: the incoming 'd' is dropped; the head ('a') and prefix survive.
     dbg.queue.add({ type: 'gtm', data: { event: 'd' } });
     expect(dbg.queue.queue.length).toBe(3);
-    dbg.queue.scheduleProcessing = origSchedule;
+    expect(dbg.queue.queue.map((e: any) => e.data.event)).toEqual(['a', 'b', 'c']);
+    expect(dbg.queue.droppedCount).toBe(1); // counted unconditionally (observable in prod)
+  });
+
+  it('EventQueue.add: floors a misconfigured maxQueueSize=0 to the safe default (no total eviction)', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    dbg.config.performance.maxQueueSize = 0; // would evict everything if trusted
+    dbg.config.performance.useRequestIdleCallback = false;
+    dbg.queue.queue.length = 0;
+    dbg.queue.droppedCount = 0;
+    dbg.queue.add({ type: 'gtm', data: { event: 'kept' } });
+    expect(dbg.queue.queue.length).toBe(1); // floored to 50 → event is queued, not dropped
+    expect(dbg.queue.droppedCount).toBe(0);
+  });
+
+  it('EventQueue.add: ignores a null / non-object event', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    dbg.queue.queue.length = 0;
+    dbg.queue.add(null as any);
+    dbg.queue.add('nope' as any);
+    expect(dbg.queue.queue.length).toBe(0);
+  });
+
+  it('EventQueue.add: processes immediately (bypasses queue) when queueEnabled=false', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    const dataLayer = createMockDataLayer();
+    dbg.config.performance.queueEnabled = false;
+    dbg.queue.queue.length = 0;
+    dbg.queue.add({ type: 'gtm', data: { event: 'direct' } });
+    // Not queued; sent straight through to the platform.
+    expect(dbg.queue.queue.length).toBe(0);
+    expect(dataLayer.find((e: any) => e.event === 'direct')).toBeDefined();
+  });
+
+  it('EventQueue.add: surfaces an error thrown during enqueue', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    dbg.queue.queue.length = 0;
+    // Make push throw to drive the catch arm.
+    const origPush = Array.prototype.push;
+    dbg.config.performance.queueEnabled = true;
+    const evt = { type: 'gtm', data: { event: 'x' } };
+    const spy = vi.spyOn(dbg.queue.queue, 'push').mockImplementation(() => { throw new Error('boom'); });
+    expect(() => dbg.queue.add(evt)).not.toThrow();
+    spy.mockRestore();
+    void origPush;
+  });
+
+  it('EventQueue.scheduleProcessing: early-returns while already processing', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    dbg.queue.queue.length = 0;
+    dbg.queue.processing = true;
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    dbg.queue.scheduleProcessing();
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
+    setTimeoutSpy.mockRestore();
+    dbg.queue.processing = false;
   });
 
   it('EventQueue.scheduleProcessing: uses setTimeout fallback', async () => {
@@ -734,6 +791,23 @@ describe('Analytics native coverage', () => {
     dbg.queue.processQueue();
     expect(dbg.queue.processing).toBe(false);
     dbg.queue.process = origProcess;
+  });
+
+  it('EventQueue.processQueue: catch arm resets processing=false on a thrown drain', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    dbg.queue.processing = false;
+    const origQueue = dbg.queue.queue;
+    // Force the drain loop's `state.queue` access to throw → exercise the catch.
+    Object.defineProperty(dbg.queue, 'queue', {
+      get() { throw new Error('boom'); },
+      configurable: true
+    });
+    expect(() => dbg.queue.processQueue()).not.toThrow();
+    Object.defineProperty(dbg.queue, 'queue', {
+      value: origQueue, writable: true, configurable: true
+    });
+    expect(dbg.queue.processing).toBe(false);
   });
 
   it('EventQueue.checkRateLimit: new key creates entry', async () => {
@@ -811,6 +885,183 @@ describe('Analytics native coverage', () => {
       data: { foo: 'bar' }
     });
     expect(handler).toHaveBeenCalledWith({ foo: 'bar' });
+  });
+
+  it('EventQueue.process: custom event with no valid handler is a no-op', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    // handler absent → the `typeof === function` guard is false; must not throw.
+    expect(() => dbg.queue.process({ type: 'custom', data: { foo: 'bar' } } as any)).not.toThrow();
+    // non-function handler → same false arm.
+    expect(() => dbg.queue.process({ type: 'custom', handler: 'nope', data: {} } as any)).not.toThrow();
+  });
+
+  it('EventQueue.process: ignores a malformed event with no type', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    const dataLayer = createMockDataLayer();
+    expect(() => dbg.queue.process({ data: { event: 'x' } } as any)).not.toThrow();
+    expect(dataLayer.length).toBe(0);
+  });
+
+  it('EventQueue.process: drops the gtm event and logs when rate-limited', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    const dataLayer = createMockDataLayer();
+    // Pre-saturate the 'gtm' bucket so checkRateLimit returns false.
+    dbg.queue.rateLimits = { gtm: { count: 9999, resetAt: Date.now() + 60000 } };
+    dbg.config.platforms.gtm.rateLimitMax = 1;
+    dbg.queue.process({ type: 'gtm', data: { event: 'rl_drop' } });
+    expect(dataLayer.find((e: any) => e.event === 'rl_drop')).toBeUndefined();
+  });
+
+  it('EventQueue.checkRateLimit: empty key returns false', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    expect(dbg.queue.checkRateLimit('', 10, 60000)).toBe(false);
+  });
+
+  it('EventQueue.checkRateLimit: prunes expired entries every 50 writes', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    // A stale entry that should be swept once the prune threshold trips.
+    dbg.queue.rateLimits = { stale: { count: 1, resetAt: Date.now() - 1000 } };
+    // 50 writes on an active key drives rateLimitWriteCount past the threshold.
+    for (let i = 0; i < 50; i++) {
+      dbg.queue.checkRateLimit('active', 100000, 60000);
+    }
+    expect(dbg.queue.rateLimits['stale']).toBeUndefined();
+    expect(dbg.queue.rateLimits['active']).toBeDefined();
+  });
+
+  it('EventQueue.processQueue: yields on idle-deadline exhaustion and reschedules the remainder (F6)', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    createMockDataLayer();
+    dbg.queue.processing = false;
+    dbg.queue.queue = [
+      { type: 'gtm', data: { event: 'q1' } },
+      { type: 'gtm', data: { event: 'q2' } },
+      { type: 'gtm', data: { event: 'q3' } }
+    ];
+    // processQueue reschedules via the closure-local scheduleProcessing, which
+    // (no requestIdleCallback in jsdom) falls through to setTimeout — spy there.
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(() => 0 as any);
+    // Idle budget is ZERO from the very first call. The ≥1-progress guard means
+    // we still drain exactly one event (forward progress, no zero-work spin),
+    // then yield on the second iteration.
+    const deadline = { didTimeout: false, timeRemaining: () => 0 } as IdleDeadline;
+    dbg.queue.processQueue(deadline);
+    expect(dbg.queue.queue.length).toBe(2); // exactly one drained, never zero
+    expect(dbg.queue.processing).toBe(false);
+    expect(setTimeoutSpy).toHaveBeenCalled(); // remainder rescheduled
+    setTimeoutSpy.mockRestore();
+  });
+
+  it('EventQueue.processQueue: drains fully when the idle deadline already timed out', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    createMockDataLayer();
+    dbg.queue.processing = false;
+    dbg.queue.queue = [
+      { type: 'gtm', data: { event: 't1' } },
+      { type: 'gtm', data: { event: 't2' } }
+    ];
+    // didTimeout=true → drain regardless of zero remaining time.
+    const deadline = { didTimeout: true, timeRemaining: () => 0 } as IdleDeadline;
+    dbg.queue.processQueue(deadline);
+    expect(dbg.queue.queue.length).toBe(0);
+  });
+
+  it('EventQueue.processQueue: setTimeout fallback bounds work by drainBatchSize and reschedules (F6)', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    createMockDataLayer();
+    dbg.config.performance.drainBatchSize = 2;
+    dbg.queue.processing = false;
+    dbg.queue.queue = [
+      { type: 'gtm', data: { event: 'b1' } },
+      { type: 'gtm', data: { event: 'b2' } },
+      { type: 'gtm', data: { event: 'b3' } }
+    ];
+    // Reschedule path falls through to setTimeout (no requestIdleCallback in jsdom).
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(() => 0 as any);
+    dbg.queue.processQueue(); // no deadline → batch-bounded
+    expect(dbg.queue.queue.length).toBe(1); // 2 drained, 1 left
+    expect(setTimeoutSpy).toHaveBeenCalled();
+    setTimeoutSpy.mockRestore();
+  });
+
+  it('EventQueue.processQueue: floors a misconfigured drainBatchSize=0 (no stall)', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    createMockDataLayer();
+    dbg.config.performance.drainBatchSize = 0; // would break before draining if trusted
+    dbg.queue.processing = false;
+    dbg.queue.queue = [
+      { type: 'gtm', data: { event: 'f1' } },
+      { type: 'gtm', data: { event: 'f2' } }
+    ];
+    dbg.queue.processQueue(); // floored to 25 → drains fully, no livelock
+    expect(dbg.queue.queue.length).toBe(0);
+  });
+
+  it('EventQueue.flush: drains the queue synchronously', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    const dataLayer = createMockDataLayer();
+    dbg.queue.processing = false;
+    dbg.queue.queue = [
+      { type: 'gtm', data: { event: 'fl1' } },
+      { type: 'gtm', data: { event: 'fl2' } }
+    ];
+    dbg.queue.flush();
+    expect(dbg.queue.queue.length).toBe(0);
+    expect(dataLayer.filter((e: any) => e.event === 'fl1' || e.event === 'fl2').length).toBe(2);
+  });
+
+  it('EventQueue.flush: surfaces an error during drain without throwing', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    const origQueue = dbg.queue.queue;
+    Object.defineProperty(dbg.queue, 'queue', {
+      get() { throw new Error('boom'); },
+      configurable: true
+    });
+    expect(() => dbg.queue.flush()).not.toThrow();
+    Object.defineProperty(dbg.queue, 'queue', { value: origQueue, writable: true, configurable: true });
+  });
+
+  it('EventQueue: flushes the queue on pagehide (navigation safety net)', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    const dataLayer = createMockDataLayer();
+    dbg.queue.processing = false;
+    dbg.queue.queue = [{ type: 'gtm', data: { event: 'unload_evt' } }];
+    window.dispatchEvent(new Event('pagehide'));
+    expect(dbg.queue.queue.length).toBe(0);
+    expect(dataLayer.find((e: any) => e.event === 'unload_evt')).toBeDefined();
+  });
+
+  it('EventQueue: flushes on visibilitychange when hidden, ignores when visible', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    createMockDataLayer();
+    dbg.queue.processing = false;
+
+    // Getter-based override is reliable in jsdom where the prototype defines a getter.
+    let vis = 'visible';
+    Object.defineProperty(document, 'visibilityState', { get: () => vis, configurable: true });
+
+    // visible → no flush
+    dbg.queue.queue = [{ type: 'gtm', data: { event: 'vis_keep' } }];
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(dbg.queue.queue.length).toBe(1);
+
+    // hidden → flush
+    vis = 'hidden';
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(dbg.queue.queue.length).toBe(0);
   });
 
   // ==========================================================================

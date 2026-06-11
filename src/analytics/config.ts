@@ -62,7 +62,8 @@ export function createAnalyticsConfig(ppLib: PPLib): AnalyticsConfig {
     performance: {
       useRequestIdleCallback: true,
       queueEnabled: true,
-      maxQueueSize: 50
+      maxQueueSize: 50,
+      drainBatchSize: 25
     },
 
     /*! v8 ignore start */

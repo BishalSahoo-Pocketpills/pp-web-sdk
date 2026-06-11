@@ -6,12 +6,21 @@ import type { AnalyticsPlatforms, MixpanelQueueData } from '@src/analytics/platf
 export interface AnalyticsEventQueue {
   queue: QueueEvent[];
   processing: boolean;
+  droppedCount: number;
   rateLimits: Record<string, RateLimitEntry>;
   add: (event: QueueEvent) => void;
   process: (event: QueueEvent) => void;
-  processQueue: () => void;
+  processQueue: (deadline?: IdleDeadline) => void;
   scheduleProcessing: () => void;
+  flush: () => void;
   checkRateLimit: (key: string, max: number, windowMs: number) => boolean;
+}
+
+// A queue/batch size must be a positive integer; a misconfigured 0, negative,
+// fractional, or non-number value would otherwise stall the drain or evict
+// everything, so we floor to the safe default rather than trusting the input.
+function positiveIntOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' && value >= 1 ? Math.floor(value) : fallback;
 }
 
 export function createEventQueue(
@@ -26,36 +35,54 @@ export function createEventQueue(
   const state: AnalyticsEventQueue = {
     queue: [] as QueueEvent[],
     processing: false,
+    droppedCount: 0,
     rateLimits: {} as Record<string, RateLimitEntry>,
     add: addEvent,
     process: processEvent,
     processQueue: processQueue,
     scheduleProcessing: scheduleProcessing,
+    flush: flush,
     checkRateLimit: checkRateLimit
   };
 
   let rateLimitWriteCount = 0;
 
+  // Best-effort synchronous drain on page teardown (F6 safety net). The
+  // cooperative drain can leave events buffered across idle callbacks; without
+  // this they would be lost when the user navigates away. processEvent's
+  // destinations (dataLayer push, Mixpanel sendBeacon) survive unload, so a
+  // synchronous drain here actually delivers. Registered for both pagehide and
+  // the visibility→hidden transition (bfcache / mobile background).
+  win.addEventListener('pagehide', flush);
+  win.document.addEventListener('visibilitychange', function() {
+    if (win.document.visibilityState === 'hidden') flush();
+  });
+
   function addEvent(event: QueueEvent): void {
     try {
-      /*! v8 ignore start */
       if (!event || typeof event !== 'object') return;
 
       if (!SafeUtils.get(CONFIG, 'performance.queueEnabled', true)) {
-      /*! v8 ignore stop */
         processEvent(event);
         return;
       }
 
-      const maxSize = SafeUtils.get(CONFIG, 'performance.maxQueueSize', 50);
-      /*! v8 ignore start */
+      const maxSize = positiveIntOr(SafeUtils.get(CONFIG, 'performance.maxQueueSize', 50), 50);
       if (state.queue.length >= maxSize) {
-      /*! v8 ignore stop */
-        utils.log('warn', 'Event queue full, dropping event');
-      } else {
-        state.queue.push(event);
-        scheduleProcessing();
+        // Overflow policy (F5): the queue is bounded to protect memory and the
+        // main thread. We DROP THE INCOMING event rather than evicting a queued
+        // one, so the already-buffered prefix — e.g. first-touch / attribution
+        // events emitted at the head of the journey — stays intact. Ordering
+        // matters more for funnel reconstruction than capturing one extra tail
+        // event under distress. The drop is counted unconditionally (the warn
+        // log is debug-gated) so sustained shedding is observable in the field.
+        state.droppedCount++;
+        utils.log('warn', 'Event queue full (maxSize=' + maxSize + '), dropping incoming event; total dropped=' + state.droppedCount);
+        return;
       }
+
+      state.queue.push(event);
+      scheduleProcessing();
     } catch (e) {
       utils.log('error', 'Queue add error', e);
     }
@@ -63,17 +90,13 @@ export function createEventQueue(
 
   function scheduleProcessing(): void {
     try {
-      /*! v8 ignore start */
       if (state.processing) return;
-      /*! v8 ignore stop */
 
       const useIdleCallback = SafeUtils.get(CONFIG, 'performance.useRequestIdleCallback', true);
 
-      /*! v8 ignore start */
       if (useIdleCallback && typeof win.requestIdleCallback === 'function') {
-      /*! v8 ignore stop */
-        win.requestIdleCallback(function() {
-          processQueue();
+        win.requestIdleCallback(function(deadline) {
+          processQueue(deadline);
         }, { timeout: 2000 });
       } else {
         setTimeout(function() {
@@ -85,60 +108,80 @@ export function createEventQueue(
     }
   }
 
-  function processQueue(): void {
+  function processQueue(deadline?: IdleDeadline): void {
     try {
       state.processing = true;
 
+      const batchSize = positiveIntOr(SafeUtils.get(CONFIG, 'performance.drainBatchSize', 25), 25);
+      let processedThisTurn = 0;
+
       while (state.queue.length > 0) {
-        const event = state.queue.shift();
-        /*! v8 ignore start */
-        if (event) {
-        /*! v8 ignore stop */
-          processEvent(event);
-        }
+        // Hard cap on work per turn (both the rIC and setTimeout paths), so a
+        // large backlog can never become one long task — the remainder is
+        // rescheduled below.
+        if (processedThisTurn >= batchSize) break;
+
+        // Cooperative yield (F6): under requestIdleCallback, also stop early
+        // once the frame's idle budget is spent — but ONLY after draining at
+        // least one event, so every turn makes forward progress and we never
+        // spin rescheduling zero work. If the rIC timeout already fired
+        // (didTimeout), ignore the spent budget and drain up to the batch cap.
+        if (deadline && processedThisTurn > 0 && deadline.timeRemaining() <= 0 && !deadline.didTimeout) break;
+
+        // length > 0 guarantees a value, so no per-item null check is needed.
+        const event = state.queue.shift() as QueueEvent;
+        processEvent(event);
+        processedThisTurn++;
       }
 
       state.processing = false;
+
+      // If we yielded with events still queued, reschedule the remainder.
+      // processing is already false, so scheduleProcessing won't early-return.
+      if (state.queue.length > 0) {
+        scheduleProcessing();
+      }
     } catch (e) {
       utils.log('error', 'Process queue error', e);
       state.processing = false;
     }
   }
 
+  function flush(): void {
+    try {
+      while (state.queue.length > 0) {
+        processEvent(state.queue.shift() as QueueEvent);
+      }
+    } catch (e) {
+      utils.log('error', 'Queue flush error', e);
+    }
+  }
+
   function checkRateLimit(key: string, max: number, windowMs: number): boolean {
     try {
-      /*! v8 ignore start */
       if (!SafeUtils.exists(key)) return false;
-      /*! v8 ignore stop */
 
       const now = Date.now();
 
-      /*! v8 ignore start */
       if (!state.rateLimits[key]) {
-      /*! v8 ignore stop */
         state.rateLimits[key] = { count: 0, resetAt: now + windowMs };
       }
 
       const limit = state.rateLimits[key];
 
-      /*! v8 ignore start */
       if (now > limit.resetAt) {
-      /*! v8 ignore stop */
         limit.count = 0;
         limit.resetAt = now + windowMs;
       }
 
-      /*! v8 ignore start */
       if (limit.count >= max) {
-      /*! v8 ignore stop */
         utils.log('warn', 'Rate limit exceeded for ' + key);
         return false;
       }
 
       limit.count++;
 
-      /*! v8 ignore start */
-      // Prune expired rate limit entries every 50 writes to prevent unbounded growth
+      // Prune expired rate-limit entries every 50 writes to bound memory.
       if (++rateLimitWriteCount >= 50) {
         rateLimitWriteCount = 0;
         for (const k in state.rateLimits) {
@@ -147,19 +190,19 @@ export function createEventQueue(
           }
         }
       }
-      /*! v8 ignore stop */
 
       return true;
     } catch (e) {
+      // Fail OPEN (F14): allow the event for availability — a rate-limiter
+      // fault must never silently swallow analytics. Log so it's observable.
+      utils.log('error', 'Rate limit check error (failing open)', ppLib.safeLogError(e));
       return true;
     }
   }
 
   function processEvent(event: QueueEvent): void {
     try {
-      /*! v8 ignore start */
       if (!event || !event.type) return;
-      /*! v8 ignore stop */
 
       const eventType = SafeUtils.toString(event.type);
 
@@ -167,7 +210,6 @@ export function createEventQueue(
         const max = SafeUtils.get(CONFIG, 'platforms.gtm.rateLimitMax', 100);
         const windowMs = SafeUtils.get(CONFIG, 'platforms.gtm.rateLimitWindow', 60000);
 
-        /*! v8 ignore start */
         if (checkRateLimit('gtm', max, windowMs)) {
           platforms.GTM.push(event.data);
         } else {
@@ -175,14 +217,11 @@ export function createEventQueue(
         }
       } else if (eventType === 'mixpanel' && SafeUtils.get(CONFIG, 'platforms.mixpanel.enabled', true)) {
         platforms.Mixpanel.send(event.data as MixpanelQueueData);
-      /*! v8 ignore stop */
-      /*! v8 ignore start */
       } else if (eventType === 'custom') {
         if (event.handler && typeof event.handler === 'function') {
           event.handler(event.data);
         }
       }
-      /*! v8 ignore stop */
     } catch (e) {
       utils.log('error', 'Event processing error', e);
     }
