@@ -150,7 +150,8 @@ import { createTracker } from '@src/analytics/tracker';
       consent: consent,
       tracker: tracker,
       platforms: platforms,
-      queue: eventQueue
+      queue: eventQueue,
+      session: session
     };
   }
   /*! v8 ignore stop */

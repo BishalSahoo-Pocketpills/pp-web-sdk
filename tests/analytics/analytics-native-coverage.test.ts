@@ -661,6 +661,45 @@ describe('Analytics native coverage', () => {
     expect(attr.firstTouch!.utm_source).toBe('test');
   });
 
+  // Direct isValid() coverage via the debug handle (exercises every branch).
+  it('Session.isValid (direct): false when session_start is missing or non-number', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    window.ppLib.Storage.remove('session_start');
+    expect(dbg.session.isValid()).toBe(false); // null → type guard
+    window.ppLib.Storage.set('session_start', 'not-a-number');
+    expect(dbg.session.isValid()).toBe(false); // non-number → type guard
+  });
+
+  it('Session.isValid (direct): true for recent, false for expired', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    window.ppLib.Storage.set('session_start', Date.now());
+    expect(dbg.session.isValid()).toBe(true);
+    window.ppLib.Storage.set('session_start', Date.now() - 31 * 60 * 1000);
+    expect(dbg.session.isValid()).toBe(false);
+  });
+
+  it('Session.isValid (direct): floors a misconfigured sessionTimeout<=0 to 30min (F7)', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    // A recent (10-min-old) session would be INVALID if timeout=0 were trusted.
+    window.ppLib.Storage.set('session_start', Date.now() - 10 * 60 * 1000);
+    dbg.config.attribution.sessionTimeout = 0;
+    expect(dbg.session.isValid()).toBe(true); // floored to 30 → still valid
+    dbg.config.attribution.sessionTimeout = -5;
+    expect(dbg.session.isValid()).toBe(true); // negative also floored
+  });
+
+  it('Session.isValid (direct): returns false if Storage throws', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    const origGet = window.ppLib.Storage.get;
+    window.ppLib.Storage.get = () => { throw new Error('storage boom'); };
+    expect(dbg.session.isValid()).toBe(false); // catch arm
+    window.ppLib.Storage.get = origGet;
+  });
+
   // ==========================================================================
   // EVENT QUEUE
   // ==========================================================================
