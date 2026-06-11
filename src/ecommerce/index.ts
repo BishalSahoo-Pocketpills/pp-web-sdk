@@ -10,7 +10,7 @@ import type { EcommerceConfig, EcommerceItem, EcommerceData } from '@src/types/e
 import type { DeepPartial } from '@src/types/utility.types';
 import { toFloat } from '@src/common/coerce';
 import { trackViaMixpanel } from '@src/common/mixpanel-bridge';
-import { ensureDataLayer } from '@src/common/datalayer-guard';
+import { pushToDataLayer } from '@src/common/datalayer-guard';
 import { isConsentGranted } from '@src/common/consent-check';
 import { getElementDebounceKey } from '@src/common/element-key';
 import { createDebounceTracker } from '@src/common/debounce';
@@ -259,9 +259,6 @@ import { cloneConfig } from '@src/common/clone-config';
       if (!CONFIG.platforms.gtm.enabled) return;
       /*! v8 ignore stop */
 
-      const dl = ensureDataLayer(win);
-      dl.splice(0, Math.max(0, dl.length - 500));
-
       const payload: Record<string, unknown> = {
         event: eventName,
         platform: CONFIG.defaults.platform,
@@ -276,8 +273,8 @@ import { cloneConfig } from '@src/common/clone-config';
       }
 
       // GA4 best practice: clear previous ecommerce data
-      win.dataLayer.push({ ecommerce: null });
-      win.dataLayer.push(payload);
+      pushToDataLayer(win, { ecommerce: null });
+      pushToDataLayer(win, payload);
 
       // Wrap through safeLogPayload — item names / categories / coupons are
       // merchant-controlled strings that could carry PII (e.g. a coupon

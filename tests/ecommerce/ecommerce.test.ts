@@ -2048,10 +2048,10 @@ describe('dataLayer soft cap', () => {
     loadWithCommon('ecommerce');
   });
 
-  it('caps dataLayer at 500 entries before push via splice', () => {
-    // Create a dataLayer with 510 entries
+  it('caps dataLayer at the shared 1000-entry limit (front-trim)', () => {
+    // Over the cap so the front-trim engages.
     const dataLayer: any[] = [];
-    for (let i = 0; i < 510; i++) {
+    for (let i = 0; i < 1010; i++) {
       dataLayer.push({ event: 'filler_' + i });
     }
     window.dataLayer = dataLayer;
@@ -2062,8 +2062,9 @@ describe('dataLayer soft cap', () => {
       price: 10,
     });
 
-    // splice(0, max(0, 510-500)) removes first 10 entries: 500 + ecommerce:null + payload = 502
-    expect(window.dataLayer.length).toBe(502);
+    // pushToDataLayer front-trims to <=1000 before each push; the two pushes
+    // (ecommerce:null clear + add_to_cart payload) leave the array at the cap.
+    expect(window.dataLayer.length).toBe(1000);
     const lastEntry = window.dataLayer[window.dataLayer.length - 1];
     expect(lastEntry.event).toBe('add_to_cart');
   });
