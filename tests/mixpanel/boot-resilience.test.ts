@@ -338,6 +338,49 @@ describe('H4 — watchdog force-drain to ready instances', () => {
     expect(noReadyWarn).toBeTruthy();
   });
 
+  // F15: a nothing-loaded watchdog must NOT latch allLoadedFired, so a late
+  // `loaded` callback (instance recovers after the 15s timeout) can still run
+  // onAllLoaded — otherwise shared context never registers and buffered events
+  // stay stuck forever.
+  it('recovers after a nothing-loaded watchdog: a late loaded still drains the buffer', () => {
+    vi.useFakeTimers();
+    loadWithCommon('mixpanel');
+
+    (window as any).ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'p' },
+      secondary: { enabled: true, token: 's' },
+    });
+    setupScriptEnv();
+
+    (window as any).ppLib.mixpanel.track('orphan-1');
+    (window as any).ppLib.mixpanel.track('orphan-2');
+
+    (window as any).ppLib.mixpanel.init();
+    const queued = (window as any).mixpanel._i.slice();
+
+    // Watchdog fires with NOTHING loaded.
+    vi.advanceTimersByTime(15001);
+
+    // Both instances recover AFTER the watchdog.
+    const { root, primary, secondary } = createDualMockMixpanel();
+    (window as any).mixpanel = root;
+    queued.forEach((entry: any[]) => {
+      const [, opts, name] = entry;
+      if (typeof opts.loaded === 'function') {
+        opts.loaded(name === 'secondary' ? secondary : primary);
+      }
+    });
+
+    // onAllLoaded ran on recovery → the buffered events drained to primary.
+    // Pre-fix, the watchdog had latched allLoadedFired so onAllLoaded
+    // early-returned and these were lost. (patchInstanceTrack wrapped
+    // primary.track, so assert against the underlying spy via _ppOriginal.)
+    const trackSpy = ((primary.track as any)._ppOriginal as ReturnType<typeof vi.fn>);
+    const tracked = trackSpy.mock.calls.map((c: any[]) => c[0]);
+    expect(tracked).toContain('orphan-1');
+    expect(tracked).toContain('orphan-2');
+  });
+
   it('clears the watchdog when all enabled instances load before the timeout', () => {
     vi.useFakeTimers();
     loadWithCommon('mixpanel');

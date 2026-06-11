@@ -603,17 +603,16 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
           }
         }
 
-        // Mark all-loaded fired so a late `loaded` callback (after the
-        // watchdog) doesn't double-fire `onAllLoaded`. Identity sync /
-        // shared context still need to run for whichever instances DID
-        // load — but only when at least one is ready.
+        // Run the all-loaded handler (shared context, identity sync, the
+        // readiness gate) for whichever instances DID load — but only when at
+        // least one is ready, since onAllLoaded dispatches register()/identify().
+        // When NOTHING loaded, do NOT latch `allLoadedFired`: a late `loaded`
+        // callback (if a stuck instance recovers after the watchdog) must still
+        // be able to run onAllLoaded so shared context registers and the
+        // readiness gate resolves. onAllLoaded's own guard prevents a
+        // double-fire (F15).
         if (enabled.some((s) => s.initialized && !!s.mpRef)) {
           onAllLoaded();
-        } else {
-          // Nothing loaded — `onAllLoaded` would dispatch register()
-          // into the void. Skip; the late `loaded` callback path will
-          // run it if/when an instance recovers.
-          allLoadedFired = true;
         }
       }, WATCHDOG_MS);
     }
