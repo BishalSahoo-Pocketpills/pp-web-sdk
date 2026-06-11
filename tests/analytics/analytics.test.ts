@@ -3035,8 +3035,8 @@ describe('Additional coverage paths', () => {
 // =========================================================================
 // CONSENT CACHING
 // =========================================================================
-describe('Consent Caching', () => {
-  it('returns cached consent result within TTL window', () => {
+describe('Consent Freshness (no cache — F19)', () => {
+  it('reflects an external storage change immediately (no stale cache)', () => {
     loadModule('common');
     loadModule('analytics', { coverable: false });
     localStorage.setItem('pp_consent', 'approved');
@@ -3051,46 +3051,12 @@ describe('Consent Caching', () => {
       }
     });
 
-    // First call — should compute and cache
-    const result1 = window.ppAnalytics.consent.status();
-    expect(result1).toBe(true);
-
-    // Change underlying storage to 'denied' without going through setConsent
-    localStorage.setItem('pp_consent', 'denied');
-
-    // Second call within TTL — should return cached true
-    const result2 = window.ppAnalytics.consent.status();
-    expect(result2).toBe(true);
-  });
-
-  it('re-evaluates consent after TTL expires', () => {
-    loadModule('common');
-    loadModule('analytics', { coverable: false });
-    localStorage.setItem('pp_consent', 'approved');
-    window.ppAnalytics.config({
-      consent: {
-        required: true,
-        frameworks: {
-          custom: { enabled: false },
-          oneTrust: { enabled: false },
-          cookieYes: { enabled: false }
-        }
-      }
-    });
-
-    // First call — caches result as true
     expect(window.ppAnalytics.consent.status()).toBe(true);
 
-    // Change underlying storage
+    // A CMP changes storage directly (NOT via setConsent) — the next read must
+    // reflect it immediately; there is no TTL window to wait out.
     localStorage.setItem('pp_consent', 'denied');
-
-    // Advance time past the 60s TTL
-    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 61000);
-
-    // Should re-evaluate and return false
     expect(window.ppAnalytics.consent.status()).toBe(false);
-
-    vi.restoreAllMocks();
   });
 
   it('invalidates consent cache on setConsent (grant)', () => {

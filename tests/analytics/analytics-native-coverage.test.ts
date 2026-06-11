@@ -242,14 +242,26 @@ describe('Analytics native coverage', () => {
     expect(window.ppAnalytics.consent.status()).toBe(true);
   });
 
-  it('consent: cache hit returns cached value', async () => {
+  it('consent: reflects an external CMP revoke immediately — no stale cache (F19)', async () => {
     await freshLoadConsentRequired();
-    const dbg = window.ppAnalyticsDebug;
-    // First call populates cache (via stored consent / defaultState)
-    const first = window.ppAnalytics.consent.status();
-    // Second call hits cache
-    const second = window.ppAnalytics.consent.status();
-    expect(first).toBe(second);
+    window.OnetrustActiveGroups = ',C0002,'; // granted
+    window.ppAnalytics.config({
+      consent: {
+        required: true,
+        frameworks: {
+          custom: { enabled: false },
+          oneTrust: { enabled: true, categoryId: 'C0002' },
+          cookieYes: { enabled: false }
+        }
+      } as any
+    });
+    expect(window.ppAnalytics.consent.status()).toBe(true);
+
+    // External CMP mutates OneTrust groups directly (NOT via setConsent) — the
+    // gate must flip on the very next read, not after a 60s cache window.
+    window.OnetrustActiveGroups = ',C0001,';
+    expect(window.ppAnalytics.consent.status()).toBe(false);
+    delete (window as any).OnetrustActiveGroups;
   });
 
   it('consent: custom framework returns true', async () => {
@@ -429,6 +441,91 @@ describe('Analytics native coverage', () => {
     const clearSpy = vi.spyOn(window.ppLib.Storage, 'clear');
     window.ppAnalytics.consent.revoke();
     expect(clearSpy).toHaveBeenCalled();
+  });
+
+  // Branch coverage for the v8-ignore removed in PR4 (F19): absent-state arms
+  // of the framework checks + the isGranted top-level catch.
+  it('consent: oneTrust enabled but groups absent → falls through to stored', async () => {
+    await freshLoadConsentRequired();
+    delete (window as any).OnetrustActiveGroups;
+    window.ppAnalytics.config({
+      consent: { required: true, frameworks: { custom: { enabled: false }, oneTrust: { enabled: true, categoryId: 'C0002' }, cookieYes: { enabled: false } } } as any
+    });
+    localStorage.setItem('pp_consent', 'approved');
+    expect(window.ppAnalytics.consent.status()).toBe(true); // checkOneTrust false (no groups) → stored
+  });
+
+  it('consent: cookieYes enabled but cookie absent → falls through to stored', async () => {
+    await freshLoadConsentRequired();
+    document.cookie = 'cookieyes-consent=; expires=Thu, 01 Jan 1970 00:00:00 GMT'; // ensure absent
+    window.ppAnalytics.config({
+      consent: { required: true, frameworks: { custom: { enabled: false }, oneTrust: { enabled: false }, cookieYes: { enabled: true, cookieName: 'cookieyes-consent', categoryId: 'analytics' } } } as any
+    });
+    localStorage.setItem('pp_consent', 'approved');
+    expect(window.ppAnalytics.consent.status()).toBe(true); // checkCookieYes false (no cookie) → stored
+  });
+
+  it('consent: getStoredConsent falls back to state when nothing is stored', async () => {
+    await freshLoadConsentRequired();
+    localStorage.removeItem('pp_consent');
+    window.ppAnalytics.config({
+      consent: { required: true, frameworks: { custom: { enabled: false }, oneTrust: { enabled: false }, cookieYes: { enabled: false } } } as any
+    });
+    window.ppAnalyticsDebug.consent.state = 'approved';
+    expect(window.ppAnalytics.consent.status()).toBe(true); // all disabled, nothing stored → state
+  });
+
+  it('consent: isGranted top-level catch returns defaultState on unexpected throw', async () => {
+    await freshLoadConsentRequired();
+    window.ppAnalytics.config({
+      consent: { required: true, frameworks: { custom: { enabled: false }, oneTrust: { enabled: true, categoryId: 'C0002' }, cookieYes: { enabled: false } } } as any
+    });
+    window.ppAnalyticsDebug.consent.state = 'approved';
+    (window.ppAnalyticsDebug.consent as any).checkOneTrust = () => { throw new Error('boom'); };
+    expect(window.ppAnalytics.consent.status()).toBe(true); // outer catch → state === 'approved'
+  });
+
+  // Inner-catch coverage for each framework check (no v8-ignore — real throws).
+  it('consent: checkOneTrust inner catch swallows a non-array groups value', async () => {
+    await freshLoadConsentRequired();
+    window.ppAnalytics.config({
+      consent: { required: true, frameworks: { custom: { enabled: false }, oneTrust: { enabled: true, categoryId: 'C0002' }, cookieYes: { enabled: false } } } as any
+    });
+    window.ppAnalyticsDebug.consent.state = 'denied';
+    (window as any).OnetrustActiveGroups = 42; // exists()=true, but (42).indexOf throws
+    expect(window.ppAnalytics.consent.status()).toBe(false); // catch → false → stored/state denied
+    delete (window as any).OnetrustActiveGroups;
+  });
+
+  it('consent: checkCookieYes inner catch swallows a getCookie error', async () => {
+    await freshLoadConsentRequired();
+    window.ppAnalytics.config({
+      consent: { required: true, frameworks: { custom: { enabled: false }, oneTrust: { enabled: false }, cookieYes: { enabled: true, cookieName: 'cookieyes-consent', categoryId: 'analytics' } } } as any
+    });
+    window.ppAnalyticsDebug.consent.state = 'denied';
+    const spy = vi.spyOn(window.ppLib, 'getCookie').mockImplementation(() => { throw new Error('boom'); });
+    expect(window.ppAnalytics.consent.status()).toBe(false); // catch → false → stored/state denied
+    spy.mockRestore();
+  });
+
+  it('consent: custom enabled but checkFunction not a function → falls through to stored', async () => {
+    await freshLoadConsentRequired();
+    window.ppAnalytics.config({
+      consent: { required: true, frameworks: { custom: { enabled: true, checkFunction: null }, oneTrust: { enabled: false }, cookieYes: { enabled: false } } } as any
+    });
+    localStorage.setItem('pp_consent', 'approved');
+    expect(window.ppAnalytics.consent.status()).toBe(true); // checkFn not a function → result null → stored
+  });
+
+  it('consent: getStoredConsent inner catch falls back to state on a localStorage error', async () => {
+    await freshLoadConsentRequired();
+    window.ppAnalytics.config({
+      consent: { required: true, frameworks: { custom: { enabled: false }, oneTrust: { enabled: false }, cookieYes: { enabled: false } } } as any
+    });
+    window.ppAnalyticsDebug.consent.state = 'approved';
+    const spy = vi.spyOn(window.localStorage, 'getItem').mockImplementation(() => { throw new Error('boom'); });
+    expect(window.ppAnalytics.consent.status()).toBe(true); // catch → fallback state 'approved'
+    spy.mockRestore();
   });
 
   it('consent: getStoredConsent returns state fallback when no stored value', async () => {
