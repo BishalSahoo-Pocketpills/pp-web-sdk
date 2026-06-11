@@ -8,7 +8,7 @@
 import type { PPLib } from '@src/types/common.types';
 import type { EcommerceConfig, EcommerceItem, EcommerceData } from '@src/types/ecommerce.types';
 import type { DeepPartial } from '@src/types/utility.types';
-import { toFloat } from '@src/common/coerce';
+import { toFloat, toInt } from '@src/common/coerce';
 import { trackViaMixpanel } from '@src/common/mixpanel-bridge';
 import { pushToDataLayer } from '@src/common/datalayer-guard';
 import { isConsentGranted } from '@src/common/consent-check';
@@ -47,7 +47,8 @@ import { cloneConfig } from '@src/common/clone-config';
       brand: 'data-ecommerce-brand',
       variant: 'data-ecommerce-variant',
       discount: 'data-ecommerce-discount',
-      coupon: 'data-ecommerce-coupon'
+      coupon: 'data-ecommerce-coupon',
+      quantity: 'data-ecommerce-quantity'
     },
 
     // CTA selector — clicks on these trigger add_to_cart
@@ -109,7 +110,8 @@ import { cloneConfig } from '@src/common/clone-config';
       // Monetary field → float (decimal). A number can't carry XSS, so it
       // doesn't need Security.sanitize the way the string fields above do.
       price: toFloat(itemPrice),
-      quantity: CONFIG.defaults.quantity
+      // Optional `data-ecommerce-quantity` (default 1); an explicit 0 is kept.
+      quantity: toInt(el.getAttribute(attrs.quantity), CONFIG.defaults.quantity)
     };
 
     // Optional fields — only include if present
@@ -197,7 +199,7 @@ import { cloneConfig } from '@src/common/clone-config';
       const price = dedupedItems[i].price;
       /*! v8 ignore start */
       if (!isNaN(price)) {
-        totalValue += price * (dedupedItems[i].quantity || 1);
+        totalValue += price * dedupedItems[i].quantity;
       /*! v8 ignore stop */
       }
     }
@@ -241,7 +243,7 @@ import { cloneConfig } from '@src/common/clone-config';
       categories.push(it.item_category);
       const p = it.price;
       prices.push(isNaN(p) ? 0 : p);
-      quantities.push(it.quantity || 1);
+      quantities.push(it.quantity);
     }
     flat['item_ids'] = ids;
     flat['item_names'] = names;
@@ -453,7 +455,7 @@ import { cloneConfig } from '@src/common/clone-config';
         item_brand: ppLib.Security.sanitize(itemData.item_brand || CONFIG.defaults.brand),
         item_category: ppLib.Security.sanitize(itemData.item_category || CONFIG.defaults.category),
         price: toFloat(itemData.price),
-        quantity: itemData.quantity || CONFIG.defaults.quantity
+        quantity: itemData.quantity ?? CONFIG.defaults.quantity
       };
 
       /*! v8 ignore start */

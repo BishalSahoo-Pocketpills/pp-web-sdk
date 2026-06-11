@@ -54,6 +54,7 @@ The ecommerce module scans the DOM for elements with `data-ecommerce-*` attribut
 | `data-ecommerce-variant` | No | — | Product variant |
 | `data-ecommerce-discount` | No | — | Discount amount |
 | `data-ecommerce-coupon` | No | — | Coupon code |
+| `data-ecommerce-quantity` | No | `1` | Item quantity (integer; explicit `0` is preserved) |
 
 ### Container Pattern
 

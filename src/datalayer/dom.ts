@@ -3,6 +3,7 @@ import type { DataLayerConfig, DataLayerItemInput, DataLayerItem } from '@src/ty
 import { createDebounceTracker } from '@src/common/debounce';
 import { createEventGuard } from '@src/common/event-guard';
 import { addInteractionListener } from '@src/common/dom-events';
+import { toInt } from '@src/common/coerce';
 
 const ECOMMERCE_EVENTS: Record<string, boolean> = {
   view_item: true,
@@ -52,7 +53,8 @@ export function createDomBinder(
     if (itemBrand) item.item_brand = itemBrand;
     if (itemCategory) item.item_category = itemCategory;
     if (price) item.price = price;
-    if (quantity) item.quantity = parseInt(quantity, 10) || 1;
+    // Preserve an explicit 0 (e.g. a removed line item); non-numeric → 1.
+    if (quantity) item.quantity = toInt(quantity, 1);
     if (discount) item.discount = discount;
     if (coupon) item.coupon = coupon;
 
@@ -127,8 +129,26 @@ export function createDomBinder(
         e.preventDefault();
       }
 
-      // Route to ecommerce or core handler
+      // Route to ecommerce or core handler.
       if (ECOMMERCE_EVENTS[eventName]) {
+        // Ownership rule (F10): the ecommerce module's CTA selector only emits
+        // `add_to_cart` (on `data-event-source="add_to_cart"`), and only when it
+        // can resolve item data from a `data-ecommerce-item` ancestor. We defer
+        // to it ONLY when BOTH hold — otherwise the ecommerce module silently
+        // bails (disjoint `data-ecommerce-*` vs `data-dl-*` namespaces) and the
+        // event would be DROPPED rather than handed off. We scope to add_to_cart
+        // (the other ecommerce events are DOM-scan or datalayer-only), and do
+        // NOT use eventGuard.claim (a one-shot that would kill repeat clicks).
+        // NOTE: the literal mirrors the ecommerce module's default `ctaSelector`;
+        // the two are independent IIFEs and must stay in sync if that changes.
+        if (
+          eventName === 'add_to_cart' &&
+          el.closest('[data-event-source="add_to_cart"]') &&
+          el.closest('[data-ecommerce-item]')
+        ) {
+          ppLib.log('verbose', '[ppDataLayer] add_to_cart deferred to the ecommerce module (element is also a data-event-source CTA with item data)');
+          return;
+        }
         handleEcommerceEvent(eventName, el);
       } else {
         handleCoreEvent(eventName, el);

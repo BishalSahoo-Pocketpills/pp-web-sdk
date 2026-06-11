@@ -1082,6 +1082,70 @@ describe('DOM Binding — Core Events', () => {
     expect(event.page_type).toBe('home');
   });
 
+  // F10: an element carrying BOTH data-dl-event and data-event-source for the
+  // same ecommerce event would otherwise double-fire (datalayer + ecommerce).
+  it('defers add_to_cart to the ecommerce module when the element is an ecommerce CTA WITH item data', () => {
+    const btn = document.createElement('button');
+    btn.setAttribute('data-dl-event', 'add_to_cart');
+    btn.setAttribute('data-event-source', 'add_to_cart'); // also an ecommerce CTA
+    btn.setAttribute('data-ecommerce-item', 'RX-1'); // ecommerce can resolve & own it
+    btn.setAttribute('data-dl-item-id', 'RX-1');
+    btn.setAttribute('data-dl-item-price', '10');
+    document.body.appendChild(btn);
+
+    btn.dispatchEvent(new Event('click', { bubbles: true }));
+
+    const events = window.dataLayer.filter((e: any) => e.event === 'add_to_cart');
+    expect(events.length).toBe(0); // deferred — ecommerce module owns it
+  });
+
+  // Drop-hole guard: a data-event-source CTA WITHOUT data-ecommerce-* data means
+  // the ecommerce module can't resolve an item and emits nothing. The datalayer
+  // must NOT defer in that case, or the add_to_cart would be silently lost.
+  it('still fires add_to_cart for a data-event-source CTA that has NO ecommerce item data', () => {
+    const btn = document.createElement('button');
+    btn.setAttribute('data-dl-event', 'add_to_cart');
+    btn.setAttribute('data-event-source', 'add_to_cart'); // event-source CTA, but...
+    btn.setAttribute('data-dl-item-id', 'RX-2'); // ...only data-dl-* data present
+    btn.setAttribute('data-dl-item-price', '20');
+    document.body.appendChild(btn);
+
+    btn.dispatchEvent(new Event('click', { bubbles: true }));
+
+    const events = window.dataLayer.filter((e: any) => e.event === 'add_to_cart');
+    expect(events.length).toBe(1); // not dropped — ecommerce can't own it
+  });
+
+  it('still fires add_to_cart when the element is NOT an ecommerce CTA', () => {
+    const btn = document.createElement('button');
+    btn.setAttribute('data-dl-event', 'add_to_cart');
+    btn.setAttribute('data-dl-item-id', 'RX-3');
+    btn.setAttribute('data-dl-item-price', '20');
+    document.body.appendChild(btn);
+
+    btn.dispatchEvent(new Event('click', { bubbles: true }));
+
+    const events = window.dataLayer.filter((e: any) => e.event === 'add_to_cart');
+    expect(events.length).toBe(1);
+  });
+
+  // F10 scoping: the ownership guard is add_to_cart-only. The ecommerce module
+  // never emits begin_checkout, so a begin_checkout element that ALSO carries
+  // data-event-source must NOT be deferred — else the event would be dropped.
+  it('still fires begin_checkout even when the element carries data-event-source', () => {
+    const btn = document.createElement('button');
+    btn.setAttribute('data-dl-event', 'begin_checkout');
+    btn.setAttribute('data-event-source', 'begin_checkout');
+    btn.setAttribute('data-dl-item-id', 'RX-3');
+    btn.setAttribute('data-dl-item-price', '30');
+    document.body.appendChild(btn);
+
+    btn.dispatchEvent(new Event('click', { bubbles: true }));
+
+    const events = window.dataLayer.filter((e: any) => e.event === 'begin_checkout');
+    expect(events.length).toBe(1);
+  });
+
   it('pushes login_view event with method', () => {
     createDataLayerDOM([
       { event: 'login_view', attrs: { 'data-dl-method': 'email' } }
