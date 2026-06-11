@@ -16,7 +16,7 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     coverage: {
       provider: 'v8',
-      include: ['src/*/index.ts', 'src/analytics/consent.ts', 'src/analytics/event-queue.ts', 'src/analytics/session.ts', 'src/common/debounce.ts', 'src/common/event-guard.ts', 'src/common/session.ts', 'src/common/datalayer-enricher.ts', 'src/common/datalayer-guard.ts', 'src/datalayer/enrichers/event-properties.ts', 'src/mixpanel/*.ts'],
+      include: ['src/*/index.ts', 'src/analytics/consent.ts', 'src/analytics/event-queue.ts', 'src/analytics/session.ts', 'src/common/consent.ts', 'src/common/debounce.ts', 'src/common/event-guard.ts', 'src/common/session.ts', 'src/common/datalayer-enricher.ts', 'src/common/datalayer-guard.ts', 'src/datalayer/enrichers/event-properties.ts', 'src/mixpanel/*.ts'],
       exclude: ['src/_headers', 'src/types/**'],
       thresholds: {
         lines: 100,
