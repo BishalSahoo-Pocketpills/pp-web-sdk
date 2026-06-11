@@ -18,22 +18,24 @@ export function createSession(
   function isValid(): boolean {
     try {
       const sessionStart = Storage.get('session_start');
-      /*! v8 ignore start */
       if (sessionStart === null || sessionStart === undefined || typeof sessionStart !== 'number') {
-      /*! v8 ignore stop */
         return false;
       }
 
       const now = new Date().getTime();
       const sessionAge = (now - sessionStart) / 1000 / 60;
-      const timeout = SafeUtils.get(CONFIG, 'attribution.sessionTimeout', 30);
+
+      // Enforce a sane session timeout (F7): a misconfigured 0 / negative /
+      // non-number would make `sessionAge < timeout` always false, silently
+      // breaking session continuity (every page would look like a new session).
+      // Floor to the 30-minute default unless a positive number is configured.
+      const configured = SafeUtils.get(CONFIG, 'attribution.sessionTimeout', 30);
+      const timeout = typeof configured === 'number' && configured > 0 ? configured : 30;
 
       return sessionAge < timeout;
-    /*! v8 ignore start */
     } catch (e) {
       return false;
     }
-    /*! v8 ignore stop */
   }
 
   function start(): void {
