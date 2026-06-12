@@ -144,6 +144,8 @@ export interface AnalyticsAPI {
     grant: () => void;
     revoke: () => void;
     status: () => boolean;
+    /** Whether this module's consent gate is armed (consent.required). */
+    isRequired: () => boolean;
   };
   track: (eventName: string, properties?: Record<string, unknown>) => void;
   getAttribution: () => AttributionData;

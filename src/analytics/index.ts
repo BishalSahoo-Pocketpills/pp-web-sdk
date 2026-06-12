@@ -90,6 +90,11 @@ import { createTracker } from '@src/analytics/tracker';
       },
       status: function(): boolean {
         return consent.isGranted();
+      },
+      // Lets the unified common-consent service know whether this module's gate
+      // is armed; a disarmed gate must not override an explicit ppLib revoke().
+      isRequired: function(): boolean {
+        return consent.isRequired();
       }
     },
 

@@ -5,6 +5,7 @@ import type { AnalyticsUtils } from '@src/analytics/utils';
 export interface AnalyticsConsent {
   state: string;
   isGranted: () => boolean;
+  isRequired: () => boolean;
   checkOneTrust: () => boolean;
   checkCookieYes: () => boolean;
   getStoredConsent: () => boolean;
@@ -71,6 +72,14 @@ export function createAnalyticsConsent(
         utils.log('error', 'Consent check error', e);
         return api.state === 'approved';
       }
+    },
+
+    // Whether this module's consent gate is armed. When false (the shipped
+    // default), isGranted() short-circuits to true regardless of the persisted
+    // choice, so the unified common-consent service treats this delegate as
+    // having no authoritative opinion and lets an explicit revoke() win.
+    isRequired: function(): boolean {
+      return SafeUtils.get(CONFIG, 'consent.required', false) === true;
     },
 
     checkOneTrust: function(): boolean {
