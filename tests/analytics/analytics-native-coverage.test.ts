@@ -242,6 +242,24 @@ describe('Analytics native coverage', () => {
     expect(window.ppAnalytics.consent.status()).toBe(true);
   });
 
+  it('consent: isRequired() reflects the configured gate', async () => {
+    await freshLoad();
+    expect(window.ppAnalytics.consent.isRequired()).toBe(false); // shipped default
+    window.ppAnalytics.config({ consent: { required: true } as any });
+    expect(window.ppAnalytics.consent.isRequired()).toBe(true);
+  });
+
+  it('consent: ppLib.consent.revoke() is honoured despite the disarmed analytics delegate', async () => {
+    // Full-bundle regression: with analytics' default consent.required:false,
+    // its delegate reports a permissive granted. ppLib.consent.revoke() must
+    // still win (deny) rather than being neutered (or re-opting the user in).
+    await freshLoad();
+    expect(window.ppLib.consent.isGranted()).toBe(true); // opt-out default, gate open
+    window.ppLib.consent.revoke();
+    expect(window.ppLib.consent.status()).toBe('denied');
+    expect(window.ppLib.consent.isGranted()).toBe(false);
+  });
+
   it('consent: reflects an external CMP revoke immediately — no stale cache (F19)', async () => {
     await freshLoadConsentRequired();
     window.OnetrustActiveGroups = ',C0002,'; // granted

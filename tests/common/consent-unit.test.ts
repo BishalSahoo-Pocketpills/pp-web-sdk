@@ -51,6 +51,37 @@ describe('createConsentService (unit)', () => {
       expect(svc.status()).toBe('granted');
     });
 
+    it('a DISARMED delegate (isRequired:false) does not neuter an explicit revoke', () => {
+      // Regression: analytics ships consent.required:false, whose status()
+      // returns a permissive true. Before the isRequired skip this overrode
+      // ppLib.consent.revoke(), leaving the gate open and even re-opting-in.
+      const ls = makeMemoryStorage();
+      const { svc } = makeCtx({
+        localStorage: ls,
+        ppAnalytics: { consent: { status: () => true, isRequired: () => false } },
+      });
+      svc.revoke();
+      expect(svc.status()).toBe('denied');
+      expect(svc.isGranted()).toBe(false);
+    });
+
+    it('a DISARMED delegate is skipped so stored denied wins', () => {
+      const ls = makeMemoryStorage();
+      ls.setItem('pp_consent', 'denied');
+      const { svc } = makeCtx({
+        localStorage: ls,
+        ppAnalytics: { consent: { status: () => true, isRequired: () => false } },
+      });
+      expect(svc.status()).toBe('denied');
+    });
+
+    it('an ARMED delegate (isRequired:true) is still authoritative', () => {
+      const denied = makeCtx({ ppAnalytics: { consent: { status: () => false, isRequired: () => true } } });
+      expect(denied.svc.status()).toBe('denied');
+      const granted = makeCtx({ ppAnalytics: { consent: { status: () => true, isRequired: () => true } } });
+      expect(granted.svc.status()).toBe('granted');
+    });
+
     it('stored value wins when no delegation', () => {
       const ls = makeMemoryStorage();
       ls.setItem('pp_consent', 'denied');
