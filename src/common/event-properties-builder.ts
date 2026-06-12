@@ -146,6 +146,12 @@ export interface BuiltEventProperties {
   'referrer_domain [last touch]': string;
   'landing_page_url [first touch]': string;
   'landing_page_url [last touch]': string;
+  // SDK-owned backup of Mixpanel's native $initial_referrer /
+  // $initial_referring_domain. Same first-touch value as the bracket fields
+  // above, named to parallel the Mixpanel columns so consumers have a reliable,
+  // explicitly-owned referrer when the native value reads $direct (see below).
+  pp_initial_referrer: string;
+  pp_initial_referring_domain: string;
   [bracketKey: string]: unknown;
 }
 
@@ -1191,6 +1197,17 @@ export function createEventPropertiesBuilder(
       'referrer_domain [last touch]': lastExt.referrerDomain,
       'landing_page_url [first touch]': firstExt.landingPage,
       'landing_page_url [last touch]': lastExt.landingPage,
+
+      // pp_initial_* — SDK-owned backup mirroring Mixpanel's native
+      // $initial_referrer / $initial_referring_domain. Those freeze (register_once)
+      // on the device's first MP-cookie contact and read $direct when that visit
+      // was direct, even if the SDK later captured a real referrer on a different
+      // visit (cookie vs localStorage clear independently). These carry the SDK's
+      // authoritative first-touch referrer from pp_utm_first_touch (localStorage),
+      // unstripped for Mixpanel, so analysts always have a trustworthy column.
+      // Empty (a genuinely-direct first touch) is stripped like the bracket fields.
+      'pp_initial_referrer': firstExt.referrer,
+      'pp_initial_referring_domain': firstExt.referrerDomain,
     };
 
     const page: BuiltPage = {

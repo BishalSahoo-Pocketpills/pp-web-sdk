@@ -398,6 +398,10 @@ describe('createEventPropertiesBuilder', () => {
       expect(bundle.eventProperties['referrer_domain [last touch]']).toBe('www.google.com');
       expect(bundle.eventProperties['landing_page_url [first touch]']).toBe('http://localhost/lp/first?utm_source=facebook');
       expect(bundle.eventProperties['landing_page_url [last touch]']).toBe('http://localhost/lp/last?utm_source=google&utm_medium=cpc');
+
+      // pp_initial_* mirror the first-touch referrer (backup for Mixpanel's $initial_*).
+      expect(bundle.eventProperties['pp_initial_referrer']).toBe('https://www.facebook.com/some-page');
+      expect(bundle.eventProperties['pp_initial_referring_domain']).toBe('www.facebook.com');
     });
 
     it('emits empty referrer/referrer_domain and current-URL landing on a direct first-ever visit', () => {
@@ -412,6 +416,10 @@ describe('createEventPropertiesBuilder', () => {
       expect(bundle.eventProperties['referrer [last touch]']).toBe('');
       expect(bundle.eventProperties['referrer_domain [first touch]']).toBe('');
       expect(bundle.eventProperties['referrer_domain [last touch]']).toBe('');
+      // pp_initial_* carry the raw first-touch value too — empty on a direct
+      // first visit (stripEmptyProps drops them downstream, like the brackets).
+      expect(bundle.eventProperties['pp_initial_referrer']).toBe('');
+      expect(bundle.eventProperties['pp_initial_referring_domain']).toBe('');
       // landing_page_url IS populated from the current visit's URL —
       // captureUtmTouches always records it on first-ever capture.
       expect(typeof bundle.eventProperties['landing_page_url [first touch]']).toBe('string');
@@ -576,6 +584,12 @@ describe('createEventPropertiesBuilder', () => {
       expect(flat['referrer_domain [last touch]']).toBe('www.google.com');
       expect(flat['landing_page_url [first touch]']).toBe('http://localhost/a?utm_source=facebook');
       expect(flat['landing_page_url [last touch]']).toBe('http://localhost/b?utm_source=google');
+
+      // pp_initial_* reach the Mixpanel flat shape (NOT stripped, unlike the
+      // bare `initial_referrer` in MIXPANEL_DUPLICATE_KEYS) — the whole point of
+      // the backup is that it survives where the native $initial_referrer froze $direct.
+      expect(flat['pp_initial_referrer']).toBe('https://www.facebook.com/x');
+      expect(flat['pp_initial_referring_domain']).toBe('www.facebook.com');
     });
 
     it('includes utm_* [first/last touch] and marketingAttribution per-event (parity with dataLayer)', () => {
