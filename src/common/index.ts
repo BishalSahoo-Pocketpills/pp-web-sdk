@@ -5,7 +5,7 @@
  *
  * Exposes: window.ppLib
  */
-import type { PPLib } from '@src/types/common.types';
+import type { PPLib, PPLibConfig } from '@src/types/common.types';
 import { createSafeUtils } from '@src/common/safe-utils';
 import { createConfig } from '@src/common/config';
 import { createGetCookie, createDeleteCookie, createSetCookie } from '@src/common/cookies';
@@ -25,11 +25,33 @@ import { safeLogPayload, safeLogError } from '@src/common/log-sanitize';
   const ppLib: PPLib = win.ppLib = win.ppLib || {} as PPLib;
   ppLib.version = __PP_SDK_VERSION__;
 
+  // Idempotency guard. Re-including common.min.js (a common Webflow dual-paste,
+  // or a tag-manager double-fire) must NOT re-run init: doing so would rebuild
+  // config (wiping any runtime overrides), wrap dataLayer.push a SECOND time
+  // (every push enriched twice), reset the mixpanelReady promise, and re-drain
+  // the ppLibReady queue. Bail once we've already booted — keep the existing
+  // ppLib instance and its live state intact.
+  if (ppLib._isReady) {
+    if (typeof ppLib.log === 'function') {
+      ppLib.log('warn', 'common loaded twice — ignoring duplicate initialization');
+    }
+    return;
+  }
+
   // =====================================================
   // CONFIGURATION (BASE)
   // =====================================================
 
+  // Preserve any config a pre-load snippet seeded on window.ppLib.config (the
+  // documented cookieDomain / debug override pattern below). Build the full
+  // default config, then merge the seeded keys back over it so the override
+  // survives instead of being clobbered. Typed as Partial<PPLibConfig> because
+  // a pre-load seed only sets a subset of keys.
+  const seededConfig: Partial<PPLibConfig> | undefined = ppLib.config;
   ppLib.config = createConfig();
+  if (seededConfig && typeof seededConfig === 'object') {
+    Object.assign(ppLib.config, seededConfig);
+  }
 
   // Cross-subdomain cookie domain auto-detection.
   // try.pocketpills.com and www.pocketpills.com share session/device/UTM
@@ -225,16 +247,28 @@ import { safeLogPayload, safeLogError } from '@src/common/log-sanitize';
     if (typeof callback !== 'function') return;
     /*! v8 ignore stop */
 
-    callback(ppLib);
+    // Isolate the callback — a throwing module init must not propagate to
+    // whoever called ppLib.ready().
+    try {
+      callback(ppLib);
+    } catch (e) {
+      ppLib.log('error', 'ppLib.ready callback threw', ppLib.safeLogError(e));
+    }
   };
 
   // Process any callbacks registered before common.js loaded
-  // (modules that loaded first and queued via window.ppLibReady)
+  // (modules that loaded first and queued via window.ppLibReady). Each callback
+  // is isolated: one module's init failure must not prevent the modules queued
+  // after it from initializing (no silent cascade).
   /*! v8 ignore start */
   if (win.ppLibReady && Array.isArray(win.ppLibReady)) {
     for (let i = 0; i < win.ppLibReady.length; i++) {
       if (typeof win.ppLibReady[i] === 'function') {
-        win.ppLibReady[i](ppLib);
+        try {
+          win.ppLibReady[i](ppLib);
+        } catch (e) {
+          ppLib.log('error', 'queued module init threw; continuing with the rest', ppLib.safeLogError(e));
+        }
       }
     }
     win.ppLibReady = null;

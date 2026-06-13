@@ -1,4 +1,5 @@
 import { loadModule } from '../helpers/iife-loader.ts';
+import type { PPLib, PPLibConfig } from '../../src/types/common.types';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const PKG_VERSION: string = require('../../package.json').version;
@@ -75,6 +76,45 @@ describe('IIFE Bootstrap', () => {
     loadModule('common');
     expect(window.ppLib.customProp).toBe('keep me');
     expect(window.ppLib.version).toBe(PKG_VERSION);
+  });
+
+  it('double-load is idempotent: does not re-wrap dataLayer.push or reset state', () => {
+    const firstPush = window.dataLayer.push;
+    const firstReady = window.ppLib.mixpanelReady;
+    loadModule('common'); // second include
+    // Re-running init would re-wrap push and replace the ready promise.
+    expect(window.dataLayer.push).toBe(firstPush);
+    expect(window.ppLib.mixpanelReady).toBe(firstReady);
+  });
+
+  it('preserves a pre-load seeded config override instead of clobbering it', () => {
+    delete window.ppLib;
+    delete window.dataLayer;
+    // Mirror the documented pre-load snippet: an empty ppLib whose config is
+    // seeded with a subset of keys (the real HTML snippet is untyped JS).
+    window.ppLib = {} as PPLib;
+    const seed: Partial<PPLibConfig> = { cookieDomain: '.staging.pocketpills.com', debug: true };
+    window.ppLib.config = seed as PPLibConfig;
+    loadModule('common');
+    expect(window.ppLib.config.cookieDomain).toBe('.staging.pocketpills.com');
+    expect(window.ppLib.config.debug).toBe(true);
+    // Default keys are still present (full config built, seed merged over it).
+    expect(window.ppLib.config.namespace).toBe('pp_attr');
+    expect(window.ppLib.config.security).toBeDefined();
+  });
+
+  it('isolates a throwing ppLibReady callback so later modules still init', () => {
+    delete window.ppLib;
+    delete window.dataLayer;
+    const order: string[] = [];
+    window.ppLibReady = [
+      () => { order.push('a'); },
+      () => { throw new Error('module b init boom'); },
+      () => { order.push('c'); },
+    ];
+    expect(() => loadModule('common')).not.toThrow();
+    expect(order).toEqual(['a', 'c']); // 'c' ran despite 'b' throwing
+    expect(window.ppLibReady).toBeNull();
   });
 });
 
