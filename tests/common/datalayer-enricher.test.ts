@@ -1,11 +1,13 @@
 import { createDataLayerEnricher } from '../../src/common/datalayer-enricher';
+import type { EnricherFn } from '../../src/common/datalayer-enricher';
 import type { PPLib } from '../../src/types/common.types';
 
 function makePPLib(): PPLib {
   return {
     log: vi.fn(),
+    safeLogError: vi.fn((e: unknown) => ({ message: String(e) })),
     _enrichers: undefined,
-  } as any;
+  } as unknown as PPLib;
 }
 
 describe('createDataLayerEnricher', () => {
@@ -136,6 +138,32 @@ describe('createDataLayerEnricher', () => {
     const inner = window.dataLayer.find((e: any) => e.event === 'inner');
     expect(inner).toBeDefined();
     expect(inner.fromEnricher).toBe(true);
+  });
+
+  it('a throwing enricher never breaks the host push and still pushes the raw event', () => {
+    const ppLib = makePPLib();
+    const enricher = createDataLayerEnricher(window, ppLib);
+
+    // An enricher whose wrapped push throws at invoke time (e.g. builder.build()
+    // blowing up). win.dataLayer.push is a host-page global — GTM and other
+    // scripts call it — so this exception must not reach the caller.
+    const throwing: EnricherFn = () => () => { throw new Error('enricher boom'); };
+    enricher.registerEnricher(throwing);
+    enricher.applyEnrichers();
+
+    const dl = window.dataLayer as Array<Record<string, unknown>>;
+    expect(() => dl.push({ event: 'host_event' })).not.toThrow();
+
+    // Raw event still reached the dataLayer despite the enricher failure.
+    const last = dl[dl.length - 1];
+    expect(last.event).toBe('host_event');
+
+    // And the failure was logged rather than silently swallowed.
+    expect(ppLib.log).toHaveBeenCalledWith(
+      'error',
+      expect.stringContaining('enricher threw'),
+      expect.anything(),
+    );
   });
 
   it('multiple enrichers compose correctly', () => {
