@@ -321,6 +321,58 @@ describe('dual-instance native coverage', () => {
       );
       expect(overflowWarns.length).toBe(1); // one-time warning
     });
+
+    it('re-enriches buffered track events at DRAIN time with post-buffer context', async () => {
+      // The pre-init buffer stores RAW args and re-runs enrichment at drain
+      // time (documented contract) so context captured AFTER buffering — a late
+      // UTM touch, a userId cookie set by a slow auth script — still rides the
+      // buffered event. Previously untested.
+      const api = await freshLoadDual();
+
+      // Buffer a track while BOTH instances are unready (no window.mixpanel).
+      expect(api.track('pageview', { a: 1 })).toBe(true);
+
+      // Context arrives AFTER the event was buffered.
+      document.cookie = 'userId=USER-LATE;path=/';
+
+      // init() injects the real SDK <script>; stub the DOM insert.
+      if (!document.getElementsByTagName('script').length) {
+        const s = document.createElement('script');
+        s.src = 'dummy.js';
+        document.head.appendChild(s);
+      }
+      const insertBeforeSpy = vi.spyOn(Node.prototype, 'insertBefore').mockImplementation((node: Node) => node);
+
+      type LoadedOpts = { loaded?: (mp: unknown) => void };
+      type InitEntry = [string, LoadedOpts, (string | undefined)?];
+      let queued: InitEntry[];
+      try {
+        api.init();
+        queued = (window.mixpanel as unknown as { _i: InitEntry[] })._i.slice();
+      } finally {
+        insertBeforeSpy.mockRestore();
+      }
+
+      const { root, primary, secondary } = createDualMockMixpanel();
+      window.mixpanel = root as unknown as typeof window.mixpanel;
+      queued.forEach(([, opts, name]) => {
+        if (opts && typeof opts.loaded === 'function') {
+          opts.loaded(name === 'secondary' ? secondary : primary);
+        }
+      });
+
+      // onInstanceLoaded wrapped primary.track via patchInstanceTrack, so the
+      // real spy is the original it forwards to.
+      const trackSpy = (primary.track as unknown as { _ppOriginal: ReturnType<typeof vi.fn> })._ppOriginal;
+
+      // The drained 'pageview' carries the cookie set AFTER buffering, proving
+      // enrichment ran at drain time — not when the event was first buffered.
+      const call = trackSpy.mock.calls.find((c: unknown[]) => c[0] === 'pageview');
+      expect(call).toBeTruthy();
+      const props = call![1] as Record<string, unknown>;
+      expect(props.pp_user_id).toBe('USER-LATE');
+      expect(props.a).toBe(1); // original caller prop preserved
+    });
   });
 
   describe('back-compat: legacy flat configure shape', () => {
@@ -350,32 +402,8 @@ describe('dual-instance native coverage', () => {
     });
   });
 
-  describe('identity-sync (secondary mirroring primary)', () => {
-    it('syncs $device_id and identified distinct_id from primary to secondary on init flow', async () => {
-      // Drive the full SDK init flow so the orchestrator chains primary
-      // → secondary and runs syncIdentityFromPrimary at the right moment.
-      const api = await freshLoadDual();
-
-      // Build dual mock and mark them "loaded"-ish so the orchestrator's
-      // onInstanceLoaded path can attach them.
-      const { root, primary, secondary } = createDualMockMixpanel();
-      primary.get_property = vi.fn((key: string) => {
-        if (key === '$device_id') return 'P-DEV';
-        return undefined;
-      });
-      primary.get_distinct_id = vi.fn(() => 'user-99');
-      (window as any).mixpanel = root;
-
-      // Manually invoke primary's loaded callback by calling init().
-      // The orchestrator chains secondary via the same path.
-      // Note: this exercises identity-sync.ts's syncIdentityFromPrimary
-      // which would otherwise be uncovered.
-      // We don't actually call init() because that would try to load the
-      // real Mixpanel script. Instead we directly drive the syncIdentityFromPrimary
-      // path by calling api.secondary.identify (mirror) and verifying
-      // dispatch routes properly with the mock in place.
-      api.secondary.identify('user-99');
-      expect(secondary.identify).toHaveBeenCalledWith('user-99');
-    });
-  });
+  // identity-sync's real contract (the $device anonymous guard, the no-primary
+  // skip, error handling, resyncAfterReset) is covered by direct unit tests in
+  // ./identity-sync.test.ts. The former test here only exercised the dispatch
+  // facade (api.secondary.identify), not the sync logic, so it was removed.
 });
