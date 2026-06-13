@@ -1,0 +1,45 @@
+name: CI
+
+# Runs the typecheck + test suite on every pull request and on pushes to the
+# pre-production branches. Production releases (push to main) are gated by the
+# `test` job inside release.yml instead, so no single event runs the suite
+# twice. Until this existed, release.yml shipped to production without ever
+# executing vitest — the 2400+ tests gated nothing automatically.
+on:
+  pull_request:
+  push:
+    branches: [canary, staging]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        # Version omitted on purpose — pnpm/action-setup@v4 reads the
+        # packageManager field from package.json, matching release.yml.
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Run tests
+        run: pnpm run test

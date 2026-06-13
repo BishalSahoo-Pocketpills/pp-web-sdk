@@ -8,7 +8,36 @@ permissions:
   contents: write
 
 jobs:
+  # Gate: a production release must never ship without a green typecheck + test
+  # run. build-and-release `needs` this job, so a push to main with failing
+  # tests cannot produce a tagged release served to pocketpills.com pages.
+  test:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Run tests
+        run: pnpm run test
+
   build-and-release:
+    needs: test
     runs-on: ubuntu-latest
     # Skip CI-triggered commits (version bumps) to prevent infinite loop
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
