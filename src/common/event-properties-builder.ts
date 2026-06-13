@@ -1129,11 +1129,18 @@ export function createEventPropertiesBuilder(
 
     const eventProperties: BuiltEventProperties = {
       // Per the event-attribute contract:
-      //   url         = exact URL of the page being visited (full href)
+      //   url         = full href of the page, but PII-sanitized — the
+      //                 PII_QUERY_PARAM_DENYLIST params (access_token, email,
+      //                 otp, patient_id, rx_number, …) and the #fragment are
+      //                 stripped before this leaves for Mixpanel / GA4. On a
+      //                 pharmacy domain a magic-link / password-reset / patient
+      //                 deep-link landing must NOT exfiltrate those verbatim.
+      //                 Non-PII params (utm_*, etc.) are preserved. Mirrors the
+      //                 sanitization already applied to `landingPage`.
       //   current_url = generic URL after removing params (pathname)
       // The nested page.url (BuiltPage) stays as pathname — matches the
       // contract sample shape.
-      url: win.location.href,
+      url: sanitizeLandingPage((win.location && win.location.href) || '/'),
       current_url: win.location.pathname || '/',
       device_id: deviceId,
       // Anonymous visitors (no cookie, or the main app's '-1' logged-out
