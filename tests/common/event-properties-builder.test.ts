@@ -229,6 +229,38 @@ describe('createEventPropertiesBuilder', () => {
       expect(bundle.eventProperties.initial_referrer).toBe('');
     });
 
+    it('strips PII query params and the fragment from the url field (Mixpanel/GA4)', () => {
+      const originalLocation = window.location;
+      Object.defineProperty(window, 'location', {
+        value: {
+          href: 'https://www.pocketpills.com/welcome?access_token=secret&email=a%40b.com&utm_source=google#section',
+          pathname: '/welcome',
+          search: '?access_token=secret&email=a%40b.com&utm_source=google',
+          hostname: 'www.pocketpills.com',
+          protocol: 'https:',
+        },
+        writable: true,
+        configurable: true,
+      });
+      try {
+        const flat = createEventPropertiesBuilder(window, makePPLib({})).buildFlat();
+        const url = flat.url as string;
+        // PII params and the fragment are gone before this reaches Mixpanel/GA4.
+        expect(url).not.toContain('access_token');
+        expect(url).not.toContain('email');
+        expect(url).not.toContain('#section');
+        // Non-PII campaign params survive.
+        expect(url).toContain('utm_source=google');
+        expect(url).toContain('/welcome');
+      } finally {
+        Object.defineProperty(window, 'location', {
+          value: originalLocation,
+          writable: true,
+          configurable: true,
+        });
+      }
+    });
+
     it('treats appAuth=true as logged-in regardless of userId/patientId', () => {
       const ppLib = makePPLib({ cookies: { app_is_authenticated: 'true' } });
       const bundle = createEventPropertiesBuilder(window, ppLib).build();
