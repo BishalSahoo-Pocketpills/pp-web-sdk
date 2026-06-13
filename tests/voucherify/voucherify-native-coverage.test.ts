@@ -3436,6 +3436,40 @@ describe('Voucherify native coverage', () => {
     expect(capturedUrl).toContain('ad_source%3Agoogle');
   });
 
+  it('click ID: wbraid (iOS Google click, no gclid) resolves to ad_source:google', async () => {
+    await freshLoad();
+    setupDOM();
+
+    // wbraid/gbraid arrive on iOS / app Google campaigns WITHOUT gclid — these
+    // were missing from the registry and silently dropped into the default
+    // segment before the fix.
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, search: '?wbraid=Cj0xyz', href: 'https://try.pocketpills.com/ed?wbraid=Cj0xyz' },
+      writable: true,
+      configurable: true,
+    });
+
+    let capturedUrl = '';
+    window.fetch = vi.fn((url: string) => {
+      capturedUrl = url;
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve({ segment: 'ad_source:google', products: {}, timestamp: 0 }),
+      });
+    }) as unknown as typeof window.fetch;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false },
+      consent: { required: false },
+    });
+    window.ppLib.voucherify.init();
+
+    await window.ppLib.voucherify.fetchPricing();
+
+    expect(capturedUrl).toContain('ad_source%3Agoogle');
+  });
+
   it('click ID: fbclid + utm_source=instagram resolves to ad_source:instagram', async () => {
     await freshLoad();
     setupDOM();

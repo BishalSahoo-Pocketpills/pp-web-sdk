@@ -112,12 +112,14 @@ export const CLICK_ID_PLATFORM_MAP: ReadonlyArray<{ params: string[]; platform: 
   { params: ['sccid'], platform: 'snapchat_ads' },
 ];
 
-// Used by `detectPlatform`'s priority-3 referrer-based classification. Kept
-// distinct from `SEARCH_ENGINE_PATTERNS` above: that one feeds the 5-step UTM
-// resolver (utm_source = engine NAME), while these substrings only need to
-// answer "is this an organic search referrer?" for the normalized platform
-// field. The two lists agree on the common cases but evolved separately.
-export const ORGANIC_SEARCH_DOMAINS: ReadonlyArray<string> = ['google.', 'bing.', 'yahoo.', 'duckduckgo.', 'baidu.', 'yandex.'];
+// Used by `detectPlatform`'s priority-3 referrer-based classification. DERIVED
+// from `SEARCH_ENGINE_PATTERNS` (the same curated engine list that feeds the
+// 5-step UTM resolver) so the two can't drift — previously this was a separate
+// literal that had fallen behind (missing ecosia / brave), so those engines
+// classified as 'referral' here while getSearchEngineName() correctly named
+// them. Each entry is the engine token followed by '.', matching the
+// substring form detectPlatform tests against.
+export const ORGANIC_SEARCH_DOMAINS: ReadonlyArray<string> = SEARCH_ENGINE_PATTERNS.map((p) => p.token + '.');
 export const ORGANIC_SOCIAL_DOMAINS: ReadonlyArray<string> = ['facebook.', 'instagram.', 'twitter.', 'x.com', 'linkedin.', 'tiktok.', 'pinterest.', 'reddit.'];
 
 // Custom param aliases — non-standard query params that map onto the
