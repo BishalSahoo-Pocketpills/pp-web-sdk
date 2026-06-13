@@ -46,6 +46,7 @@ import {
   dispatch,
   drainIfReady,
   drainToReady,
+  setDegraded,
 } from '@src/mixpanel/dispatch';
 import { size as queueSize } from '@src/mixpanel/pre-init-queue';
 import { configureLoader, loadMixpanelSDK } from '@src/mixpanel/loader';
@@ -509,6 +510,14 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
         clearWatchdog();
         onAllLoaded();
       }
+
+      // Flush any pre-init backlog now that this instance is live. Safe to call
+      // unconditionally — drainIfReady() no-ops unless ALL enabled instances are
+      // ready, and onAllLoaded already drained on the normal path above. This is
+      // the recovery path for a stuck instance that loads AFTER the watchdog
+      // latched allLoadedFired: onAllLoaded() would early-return there, so
+      // without this the backlog buffered while degraded would strand forever.
+      drainIfReady();
     }
 
     function allEnabledLoaded(): boolean {
@@ -611,6 +620,13 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
         const enabled = getEnabledStates();
         const stuck = enabled.filter((s) => !s.initialized);
         const stuckNames = stuck.map((s) => s.name).join('+');
+
+        // Enter degraded mode: from now on dispatch allows partial fan-out to
+        // whichever instances ARE ready instead of buffering (then dropping at
+        // the queue cap) every event that targets the stuck instance. A healthy
+        // primary keeps sending live; the stuck instance self-heals if it loads
+        // later (its loaded callback adopts the ref and drains the backlog).
+        if (stuck.length > 0) setDegraded(true);
 
         // Bypass `drainIfReady`'s "all enabled ready" gate. drainToReady
         // replays through `dispatch`, which routes only to instances that
