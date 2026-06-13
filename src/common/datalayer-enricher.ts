@@ -51,6 +51,15 @@ export function createDataLayerEnricher(win: Window & typeof globalThis, ppLib: 
           composed = enrichers[i](composed);
         }
         return composed.apply(dl, args);
+      } catch (e) {
+        // win.dataLayer.push is a HOST-page global also called by GTM, Webflow
+        // embeds, and third-party scripts. A throwing enricher (including a
+        // page-supplied one registered via ppLib.registerEnricher) must NEVER
+        // propagate to that caller — an embedded SDK breaking the host page is
+        // the cardinal failure. Swallow, log, and still push the RAW event so
+        // it reaches the dataLayer and the caller gets a normal return value.
+        ppLib.log('error', '[ppEnricher] enricher threw; pushed raw event', ppLib.safeLogError(e));
+        return originalPush.apply(dl, args);
       } finally {
         processing = false;
       }
