@@ -4,19 +4,23 @@
  * Provides a shared session ID (cross-subdomain cookie, 30-min inactivity
  * timeout) for event enrichment. Independent of Mixpanel's session tracking.
  *
- * Storage strategy: dual-write to BOTH the legacy long-form names
- * (`pp_analytics_session_id` / `pp_analytics_last_activity`) AND the short
- * opaque names (`_pps` / `_ppsa`). The long-form names are the read
- * primary — that's what downstream consumers (GTM tags, BigQuery exports,
- * Angular webapp side reading on the same domain) key off. The short
- * names are written as a fallback so the v3.3.0 hardening intent
- * (obscure names that are less inviting for inspection / tampering)
- * stays usable if the long names get cleared or blocked.
+ * Storage strategy: the long-form names (`pp_analytics_session_id` /
+ * `pp_analytics_last_activity`) are the SOLE write target — that's what
+ * downstream consumers (GTM tags, BigQuery exports, the Angular webapp reading
+ * on the same domain) key off. The short opaque `_pps` / `_ppsa` names are a
+ * v3.3.0 dual-write bridge that has since been retired: they are still READ as
+ * a one-time fallback (so a session persisted by an older build migrates
+ * forward), then swept once per page. They are never written.
  *
  * Read order: `pp_analytics_session_id` → `_pps` → legacy localStorage
- * → generate fresh. The `pp_analytics_*` cookies are NOT purged after
- * read (unlike the prior one-time migration) — we keep both names alive
- * for the lifetime of the session.
+ * → generate fresh.
+ *
+ * Hot-path cost: getOrCreateSessionId() runs on every event build and inside
+ * each Mixpanel instance's track wrapper (3-4x per tracked event). To avoid
+ * re-scanning and re-writing cookies that many times, the resolved id is cached
+ * in memory and the activity cookie is re-persisted at most once every
+ * ACTIVITY_WRITE_THROTTLE_MS — far below the 30-min inactivity window, so a
+ * slightly-stale persisted timestamp can never wrongly expire a live session.
  */
 import type { PPLib } from '@src/types/common.types';
 import { generateUuid } from '@src/common/uuid';
@@ -106,16 +110,21 @@ export function createSessionService(
 
   function writeSessionId(sessionId: string): void {
     writeCookie(SESSION_KEY, sessionId);
-    // Clean up legacy fallback cookies — the dual-write was a v3.3.0
-    // migration bridge that doubled session cookie footprint. The
-    // long-form names have been stable since then; the fallbacks now
-    // just waste header budget.
-    try { pp.deleteCookie(SESSION_FALLBACK_KEY); } catch (_e) { /* best-effort */ }
   }
 
   function writeActivity(now: number): void {
-    const value = String(now);
-    writeCookie(ACTIVITY_KEY, value);
+    writeCookie(ACTIVITY_KEY, String(now));
+  }
+
+  // One-time sweep of the retired v3.3.0 `_pps` / `_ppsa` fallback cookies.
+  // Runs once per page AFTER the first read (so the fallback-read migration
+  // path still works) instead of on every getOrCreateSessionId() write, where
+  // it cost two extra document.cookie deletes per call, 3-4x per event.
+  let fallbackSwept = false;
+  function sweepFallbacksOnce(): void {
+    if (fallbackSwept) return;
+    fallbackSwept = true;
+    try { pp.deleteCookie(SESSION_FALLBACK_KEY); } catch (_e) { /* best-effort */ }
     try { pp.deleteCookie(ACTIVITY_FALLBACK_KEY); } catch (_e) { /* best-effort */ }
   }
 
@@ -172,24 +181,41 @@ export function createSessionService(
     return 0;
   }
 
+  // In-memory cache + activity-write throttle (see header). Reset on
+  // clearSession so a cleared session regenerates rather than returning a
+  // stale id.
+  let cachedSessionId: string | null = null;
+  let lastActivityWriteMs = 0;
+  const ACTIVITY_WRITE_THROTTLE_MS = 30 * 1000; // re-persist activity at most every 30s
+
   function getOrCreateSessionId(): string {
     try {
       const now = Date.now();
+      // Fast path: within the throttle window, trust the cache and touch no
+      // cookies. The throttle (30s) is far below the inactivity window (30min),
+      // so the persisted last-activity being up to 30s stale can never wrongly
+      // expire an active session.
+      if (cachedSessionId && (now - lastActivityWriteMs) < ACTIVITY_WRITE_THROTTLE_MS) {
+        return cachedSessionId;
+      }
+
       const lastActivity = readActivity();
       let sessionId = readSessionId();
 
       if (!sessionId || (now - lastActivity) > TIMEOUT_MS) {
         sessionId = generateUuid();
         writeSessionId(sessionId);
-      } else {
-        // Defensive: make sure the dual-write invariant holds even if
-        // an earlier write only hit one cookie (e.g., browser blocking
-        // one of the names). Re-writing the existing id to both costs
-        // ~2 setCookie calls per page event — negligible.
+      } else if (sessionId !== cachedSessionId) {
+        // Persist only when the id differs from the cache (first read this
+        // page, or a fallback/legacy migration). Drops the per-event defensive
+        // rewrite that previously fired on every single call.
         writeSessionId(sessionId);
       }
 
+      cachedSessionId = sessionId;
       writeActivity(now);
+      lastActivityWriteMs = now;
+      sweepFallbacksOnce();
       return sessionId;
     } catch (e) {
       // Storage unavailable — return an ephemeral ID so the caller can
@@ -217,6 +243,8 @@ export function createSessionService(
   }
 
   function clearSession(): void {
+    cachedSessionId = null;
+    lastActivityWriteMs = 0;
     deleteCookie(SESSION_KEY);
     deleteCookie(SESSION_FALLBACK_KEY);
     deleteCookie(ACTIVITY_KEY);

@@ -238,8 +238,15 @@ export function createTracker(
         page_path: SafeUtils.get(win, 'location.pathname', '')
       };
 
+      // Avoid a duplicate GTM/GA4 page_view. When the datalayer module is
+      // loaded it emits the canonical page_view — richer (hashed user data for
+      // Google Ads enhanced conversions, page/user blocks) — to the dataLayer
+      // on its own ready cycle. Defer to it so GA4 isn't double-counted. The
+      // Mixpanel page_view below is a separate destination and still fires.
+      const datalayerEmitsPageView = !!ppLib.datalayer;
+
       /*! v8 ignore start */
-      if (SafeUtils.get(CONFIG, 'platforms.gtm.enabled', true)) {
+      if (!datalayerEmitsPageView && SafeUtils.get(CONFIG, 'platforms.gtm.enabled', true)) {
       /*! v8 ignore stop */
         eventQueue.add({
           type: 'gtm',
