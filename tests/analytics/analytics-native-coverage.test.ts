@@ -134,6 +134,25 @@ describe('Analytics native coverage', () => {
 
   // ==========================================================================
   // HAPPY PATH — exercises maximum branches in one evaluation
+  it('trackPageView defers the GTM page_view to the datalayer module, keeps the Mixpanel one', async () => {
+    await freshLoad();
+    const queue = window.ppAnalyticsDebug.queue;
+    const addSpy = vi.spyOn(queue, 'add');
+
+    // Simulate the datalayer module being loaded — it owns the canonical
+    // (richer) page_view, so analytics must not also emit a GTM page_view.
+    window.ppLib.datalayer = { version: '0' } as unknown as typeof window.ppLib.datalayer;
+    window.ppAnalyticsDebug.tracker.trackPageView();
+
+    const addedGtmPageView = addSpy.mock.calls.some(([evt]) =>
+      evt.type === 'gtm' && (evt.data as { event?: string }).event === 'page_view');
+    const addedMixpanelPageView = addSpy.mock.calls.some(([evt]) =>
+      evt.type === 'mixpanel' && (evt.data as { eventName?: string }).eventName === 'page_view');
+
+    expect(addedGtmPageView).toBe(false);   // deferred to datalayer
+    expect(addedMixpanelPageView).toBe(true); // separate destination, still fires
+  });
+
   // ==========================================================================
   it('happy path: UTM params, auto-capture, GTM + Mixpanel attribution, page view, track', async () => {
     setUrl('https://example.com/landing?utm_source=google&utm_medium=cpc&utm_campaign=spring&gclid=abc123&ref=partner1');
