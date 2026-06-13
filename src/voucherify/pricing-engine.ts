@@ -234,7 +234,22 @@ export function createPricingEngine(deps: PricingEngineDeps): PricingEngine {
       '?products=' + encodeURIComponent(ids.join(',')) +
       '&basePrices=' + encodeURIComponent(basePrices.join(','));
 
-    const response = await win.fetch(url);
+    // Deadline the edge fetch with an AbortController — same pattern as the
+    // proxy/direct paths (api-client fetchOnce). Browser default fetch timeouts
+    // are far too long (Chrome ~5min, Safari effectively forever), so without
+    // this a stalled edge Worker would hang fetchPricing indefinitely and the
+    // page would never fall back to baseline / direct pricing.
+    const timeoutMs = CONFIG.retry.requestTimeoutMs;
+    const controller = timeoutMs > 0 ? new win.AbortController() : null;
+    const timer = controller
+      ? win.setTimeout(function () { controller.abort(); }, timeoutMs)
+      : null;
+    let response: Response;
+    try {
+      response = await win.fetch(url, controller ? { signal: controller.signal } : {});
+    } finally {
+      if (timer !== null) win.clearTimeout(timer);
+    }
     if (!response.ok) {
       throw new VoucherifyApiError('Edge pricing API non-OK', { endpoint: '/api/pricing', status: response.status });
     }
@@ -272,7 +287,18 @@ export function createPricingEngine(deps: PricingEngineDeps): PricingEngine {
     return results;
   }
 
-  let inflightPricing: Promise<PricingResult[]> | null = null;
+  // Keyed by a canonical request signature so concurrent callers are only
+  // coalesced when they ask for the SAME products. A single slot (the previous
+  // design) returned the in-flight promise regardless of productIds, so a
+  // scoped fetchPricing(['x']) racing the autoFetch full-page scan got the
+  // wrong product set — and a scoped call landing first left the rest of the
+  // page's prices unresolved.
+  const inflightPricing = new Map<string, Promise<PricingResult[]>>();
+
+  function inflightKey(productIds?: string[]): string {
+    if (!productIds || productIds.length === 0) return '*'; // full-page scan
+    return productIds.slice().sort().join(',');
+  }
 
   async function fetchPricingImpl(productIds?: string[]): Promise<PricingResult[]> {
     // Hoisted out of the try block so the catch can reuse the same DOM scan
@@ -300,18 +326,24 @@ export function createPricingEngine(deps: PricingEngineDeps): PricingEngine {
       if (CONFIG.edge.mode === 'cms') {
         const segment = determineSegment();
 
+        // CMS pages always have server-rendered base prices, so there is
+        // nothing to hide — uncloak up front so EVERY exit path below (anonymous
+        // no-op, member-without-opt-in no-op, member+opt-in, rule-resolved
+        // fetch) leaves the product cards visible. Previously three of the four
+        // branches returned without uncloaking, leaving those visitor classes
+        // staring at a permanently invisible product section.
+        removeCloakAttribute();
+
         // Rule-resolved custom segment: always fetch from edge
         if (segment !== 'anonymous' && segment !== 'member') {
           addLoadingClass(products);
           try {
             const segEdgeResults = await fetchPricingEdge(products, ids);
             injectPricing(products, segEdgeResults);
-            removeCloakAttribute();
             ppLib.log('info', '[ppVoucherify] CMS mode: segment "' + segment + '" pricing fetched for ' + ids.length + ' product(s)');
             return segEdgeResults;
           } catch (e) {
             ppLib.log('warn', '[ppVoucherify] Edge fetch failed in CMS mode for segment "' + segment + '", keeping CMS prices');
-            removeCloakAttribute();
             return [];
           } finally {
             removeLoadingClass(products);
@@ -404,9 +436,12 @@ export function createPricingEngine(deps: PricingEngineDeps): PricingEngine {
   }
 
   async function fetchPricing(productIds?: string[]): Promise<PricingResult[]> {
-    if (inflightPricing) return inflightPricing;
-    inflightPricing = fetchPricingImpl(productIds);
-    try { return await inflightPricing; } finally { inflightPricing = null; }
+    const key = inflightKey(productIds);
+    const existing = inflightPricing.get(key);
+    if (existing) return existing;
+    const promise = fetchPricingImpl(productIds);
+    inflightPricing.set(key, promise);
+    try { return await promise; } finally { inflightPricing.delete(key); }
   }
 
   return {

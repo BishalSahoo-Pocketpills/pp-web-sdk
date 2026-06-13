@@ -93,14 +93,13 @@ export function createSegmentResolver(
   }
 
   function persistSegmentCookie(segment: string): void {
-    const maxAge = CONFIG.segments.cookieMaxAgeMinutes * 60;
-    doc.cookie =
-      CONFIG.segments.cookieName +
-      '=' +
-      encodeURIComponent(segment) +
-      ';path=/;max-age=' +
-      maxAge +
-      ';SameSite=Lax';
+    // Route through the hardened helper so the cookie inherits Secure
+    // auto-derivation (https), CR/LF/NUL guards, and consistent encoding rather
+    // than a raw document.cookie write. Host-scoped (no domain) as before.
+    ppLib.setCookie(CONFIG.segments.cookieName, segment, {
+      maxAgeSeconds: CONFIG.segments.cookieMaxAgeMinutes * 60,
+      sameSite: 'Lax'
+    });
   }
 
   function resolveSegmentFromRules(): string | null {
