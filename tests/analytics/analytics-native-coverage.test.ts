@@ -134,6 +134,25 @@ describe('Analytics native coverage', () => {
 
   // ==========================================================================
   // HAPPY PATH — exercises maximum branches in one evaluation
+  it('trackPageView defers the GTM page_view to the datalayer module, keeps the Mixpanel one', async () => {
+    await freshLoad();
+    const queue = window.ppAnalyticsDebug.queue;
+    const addSpy = vi.spyOn(queue, 'add');
+
+    // Simulate the datalayer module being loaded — it owns the canonical
+    // (richer) page_view, so analytics must not also emit a GTM page_view.
+    window.ppLib.datalayer = { version: '0' } as unknown as typeof window.ppLib.datalayer;
+    window.ppAnalyticsDebug.tracker.trackPageView();
+
+    const addedGtmPageView = addSpy.mock.calls.some(([evt]) =>
+      evt.type === 'gtm' && (evt.data as { event?: string }).event === 'page_view');
+    const addedMixpanelPageView = addSpy.mock.calls.some(([evt]) =>
+      evt.type === 'mixpanel' && (evt.data as { eventName?: string }).eventName === 'page_view');
+
+    expect(addedGtmPageView).toBe(false);   // deferred to datalayer
+    expect(addedMixpanelPageView).toBe(true); // separate destination, still fires
+  });
+
   // ==========================================================================
   it('happy path: UTM params, auto-capture, GTM + Mixpanel attribution, page view, track', async () => {
     setUrl('https://example.com/landing?utm_source=google&utm_medium=cpc&utm_campaign=spring&gclid=abc123&ref=partner1');
@@ -240,6 +259,24 @@ describe('Analytics native coverage', () => {
   it('consent: not required returns true immediately', async () => {
     await freshLoad();
     expect(window.ppAnalytics.consent.status()).toBe(true);
+  });
+
+  it('consent: isRequired() reflects the configured gate', async () => {
+    await freshLoad();
+    expect(window.ppAnalytics.consent.isRequired()).toBe(false); // shipped default
+    window.ppAnalytics.config({ consent: { required: true } as any });
+    expect(window.ppAnalytics.consent.isRequired()).toBe(true);
+  });
+
+  it('consent: ppLib.consent.revoke() is honoured despite the disarmed analytics delegate', async () => {
+    // Full-bundle regression: with analytics' default consent.required:false,
+    // its delegate reports a permissive granted. ppLib.consent.revoke() must
+    // still win (deny) rather than being neutered (or re-opting the user in).
+    await freshLoad();
+    expect(window.ppLib.consent.isGranted()).toBe(true); // opt-out default, gate open
+    window.ppLib.consent.revoke();
+    expect(window.ppLib.consent.status()).toBe('denied');
+    expect(window.ppLib.consent.isGranted()).toBe(false);
   });
 
   it('consent: reflects an external CMP revoke immediately — no stale cache (F19)', async () => {

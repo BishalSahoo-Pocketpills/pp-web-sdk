@@ -381,6 +381,84 @@ describe('H4 — watchdog force-drain to ready instances', () => {
     expect(tracked).toContain('orphan-2');
   });
 
+  // Regression: after the one-shot watchdog force-drains with a stuck instance,
+  // the module must enter DEGRADED mode so a healthy primary keeps sending live.
+  // Pre-fix, every later dual-target event still hit the strict-parity buffer
+  // (secondary never ready), the queue filled to its 200 cap, and ALL further
+  // events were dropped silently even though primary was fully healthy.
+  it('post-watchdog degraded mode: a healthy primary keeps sending live instead of re-buffering every event', () => {
+    vi.useFakeTimers();
+    loadWithCommon('mixpanel');
+
+    (window as any).ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'p' },
+      secondary: { enabled: true, token: 's' },
+    });
+    setupScriptEnv();
+    (window as any).ppLib.mixpanel.init();
+
+    const queued = (window as any).mixpanel._i.slice();
+    // Primary-only mock — secondary stays stuck forever.
+    const primary = createMockMixpanel();
+    (window as any).mixpanel = primary;
+    const primaryEntry = queued.find((e: any[]) => e[2] === undefined || e[2] === 'mixpanel');
+    primaryEntry[1].loaded(primary);
+
+    // Watchdog fires → degraded mode latches.
+    vi.advanceTimersByTime(15001);
+
+    const trackSpy = ((primary.track as any)._ppOriginal as ReturnType<typeof vi.fn>);
+    trackSpy.mockClear();
+
+    // NEW events AFTER the watchdog must reach primary live (not buffered).
+    (window as any).ppLib.mixpanel.track('post-watchdog-1', { a: 1 });
+    (window as any).ppLib.mixpanel.track('post-watchdog-2', { a: 2 });
+
+    const tracked = trackSpy.mock.calls.map((c: any[]) => c[0]);
+    expect(tracked).toContain('post-watchdog-1');
+    expect(tracked).toContain('post-watchdog-2');
+  });
+
+  // The degraded approach (vs disabling the stuck instance) lets a slow
+  // secondary self-heal: once its loaded callback fires it is adopted and
+  // subsequent events fan out to BOTH instances again. Also exercises the
+  // unconditional drainIfReady() added to onInstanceLoaded for the post-latch
+  // recovery path.
+  it('post-watchdog degraded mode: a stuck secondary that loads later self-heals and receives events again', () => {
+    vi.useFakeTimers();
+    loadWithCommon('mixpanel');
+
+    (window as any).ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'p' },
+      secondary: { enabled: true, token: 's' },
+    });
+    setupScriptEnv();
+    (window as any).ppLib.mixpanel.init();
+
+    const queued = (window as any).mixpanel._i.slice();
+    const { root, primary, secondary } = createDualMockMixpanel();
+    (window as any).mixpanel = root;
+
+    // Only primary loads before the watchdog.
+    const primaryEntry = queued.find((e: any[]) => e[2] === undefined || e[2] === 'mixpanel');
+    primaryEntry[1].loaded(primary);
+    vi.advanceTimersByTime(15001); // watchdog → degraded
+
+    // Secondary recovers AFTER the watchdog latched allLoadedFired.
+    const secondaryEntry = queued.find((e: any[]) => e[2] === 'secondary');
+    secondaryEntry[1].loaded(secondary);
+
+    const pSpy = ((primary.track as any)._ppOriginal as ReturnType<typeof vi.fn>);
+    const sSpy = ((secondary.track as any)._ppOriginal as ReturnType<typeof vi.fn>);
+    pSpy.mockClear();
+    sSpy.mockClear();
+
+    (window as any).ppLib.mixpanel.track('healed', { x: 1 });
+
+    expect(pSpy.mock.calls.map((c: any[]) => c[0])).toContain('healed');
+    expect(sSpy.mock.calls.map((c: any[]) => c[0])).toContain('healed');
+  });
+
   it('clears the watchdog when all enabled instances load before the timeout', () => {
     vi.useFakeTimers();
     loadWithCommon('mixpanel');

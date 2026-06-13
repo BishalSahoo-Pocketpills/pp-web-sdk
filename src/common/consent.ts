@@ -9,7 +9,13 @@
  * Resolution order:
  *   1. If `win.ppAnalytics.consent.status` is wired up (the customer's
  *      ppAnalytics module owns consent UX), delegate to it. Single source
- *      of truth.
+ *      of truth — BUT only when the delegate's own gate is actually armed.
+ *      A delegate that exposes `isRequired()` and reports `false` (the
+ *      analytics module's shipped `consent.required:false` default) is
+ *      disarmed: its `status()` returns a permissive `true` that must not
+ *      override an explicit `ppLib.consent.revoke()`, so we skip it and let
+ *      the persisted/explicit state decide. Delegates without `isRequired`
+ *      (an external, non-analytics CMP) are always honoured for back-compat.
  *   2. localStorage `pp_consent` — `'denied'` blocks, anything else allows
  *      under the default. Honours an explicit user choice persisted by a
  *      cookie banner.
@@ -52,6 +58,7 @@ export interface ConsentService {
 interface PpAnalyticsLike {
   consent?: {
     status?: () => boolean;
+    isRequired?: () => boolean;
   };
 }
 
@@ -97,8 +104,18 @@ export function createConsentService(
   function readDelegated(): ConsentStatus {
     try {
       const ppAnalytics = (win as unknown as { ppAnalytics?: PpAnalyticsLike }).ppAnalytics;
-      if (ppAnalytics && ppAnalytics.consent && typeof ppAnalytics.consent.status === 'function') {
-        return ppAnalytics.consent.status() ? 'granted' : 'denied';
+      const delegate = ppAnalytics && ppAnalytics.consent;
+      if (delegate && typeof delegate.status === 'function') {
+        // A delegate that advertises a DISARMED gate (analytics
+        // consent.required:false — the shipped default) has no authoritative
+        // opinion: its status() short-circuits to a permissive `true` without
+        // reading the persisted choice, which would silently neuter an explicit
+        // ppLib.consent.revoke(). Skip it so the persisted/explicit state below
+        // wins. Delegates without isRequired (an external CMP) are honoured.
+        if (typeof delegate.isRequired === 'function' && !delegate.isRequired()) {
+          return 'unknown';
+        }
+        return delegate.status() ? 'granted' : 'denied';
       }
     } catch (e) {
       // ppAnalytics not present or threw — fall through

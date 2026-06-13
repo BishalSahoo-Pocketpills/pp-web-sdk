@@ -1356,7 +1356,7 @@ describe('handleInteraction() — via click events', () => {
   });
 
   it('prunes stale debounce entries after 100 isDuplicate calls', () => {
-    createMockDataLayer();
+    const dataLayer = createMockDataLayer();
 
     // Button A — creates a stale entry
     const btnA = document.createElement('button');
@@ -1391,9 +1391,14 @@ describe('handleInteraction() — via click events', () => {
       vi.advanceTimersByTime(301);
     }
 
-    // Pruning ran: A's stale entry deleted, B's fresh entry kept
-    // Verify no errors occurred
-    expect(true).toBe(true);
+    // All 100 non-duplicate clicks (1 A + 99 B) must have fired an add_to_cart
+    // — the prune sweep crossing the threshold must not drop or error on any
+    // event. (The prune's map-shrink contract is asserted deterministically in
+    // tests/common/debounce.test.ts via the size() hook.)
+    const addToCart = (dataLayer as Array<Record<string, unknown>>).filter(
+      (e) => e.event === 'add_to_cart',
+    );
+    expect(addToCart.length).toBe(100);
   });
 });
 
