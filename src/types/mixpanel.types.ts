@@ -126,6 +126,16 @@ export interface SharedMixpanelConfig extends SdkSecurityOptions {
    * Caller-passed properties win on collision in all modes.
    */
   emitMode: 'flat' | 'dual' | 'nested';
+  /**
+   * Boot-time cookie-size warning thresholds (bytes). The orchestrator
+   * keeps only the primary project's `mp_<token>_mixpanel` cookie (secondary
+   * uses localStorage) and warns when the primary cookie or the total
+   * `document.cookie` payload approaches the browser/server limits that
+   * trigger HTTP 400/431 ("request header/cookie too large"). Override to
+   * match your CDN/server header cap; omit for the defaults
+   * (3584 / 7168 bytes). Provide BOTH fields when overriding.
+   */
+  cookieSizeWarnBytes?: { primary: number; total: number };
 }
 
 export interface DualMixpanelConfig {
@@ -153,6 +163,7 @@ export interface MixpanelConfig extends SdkSecurityOptions {
   apiHost?: string;
   enrichTrack: boolean;
   emitMode: 'flat' | 'dual' | 'nested';
+  cookieSizeWarnBytes?: { primary: number; total: number };
 }
 
 export interface SessionManager {
