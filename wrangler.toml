@@ -1,24 +1,74 @@
-# Cloudflare Pages configuration
-# Connect this repo in Cloudflare Dashboard → Pages → Create project
+# Cloudflare Workers config — per-environment, fail-safe by design.
 #
-# Build settings (also configurable in dashboard):
-#   Build command: npm run build
-#   Build output directory: dist
-#   Root directory: /
+# THE TOP-LEVEL `name` IS A NON-PROD PLACEHOLDER ON PURPOSE.
+# A bare `wrangler deploy` (someone forgot --env / --name) lands on the
+# throwaway `pp-sdk-unbound` Worker — NEVER on production. Every real
+# deploy MUST pass an environment:
 #
-# Cloudflare Pages will:
-# 1. Pull from your private GitHub repo on push to main
-# 2. Run `npm install` + `npm run build`
-# 3. Deploy dist/ to Cloudflare's CDN
+#   wrangler deploy --env staging      → pp-sdk-staging
+#   wrangler deploy --env canary       → pp-sdk-canary
+#   wrangler deploy --env perf         → pp-sdk-perf       (isolated preview)
+#   wrangler deploy --env production   → pp-web-sdk   (PRODUCTION)
 #
-# Each deploy gets:
-#   - Production URL: https://<project>.pages.dev/
-#   - Immutable URL:  https://<hash>.<project>.pages.dev/ (for version pinning)
+# Cloudflare Workers Builds: each Worker's build Deploy command MUST use
+# its --env flag (or --name <worker>). The branch → Worker wiring:
+#   bishal/staging → pp-sdk-staging   (deploy cmd: npx wrangler deploy --env staging)
+#   bishal/canary  → pp-sdk-canary    (deploy cmd: npx wrangler deploy --env canary)
+#   bishal/perf    → pp-sdk-perf       (deploy cmd: npx wrangler deploy --env perf)
+#   bishal/main    → pp-web-sdk        (deploy cmd: npx wrangler deploy --env production)
+#
+# `perf` is a throwaway PREVIEW lane for validating a branch that is OUT OF
+# SYNC with staging/canary/main — e.g. a hotfix RC branched off an older tag
+# (the cookie-too-large fix shipped here as 3.10.4-rc.1 off the v3.10.4 prod
+# baseline). Reset `perf` to whatever commit you want to test and push it to
+# `bishal`; it deploys to pp-sdk-perf in isolation, leaving staging/canary/
+# main (and what they're each testing) completely untouched.
+#
+# See docs/RELEASE-DEPLOY.md for the full model.
 
-name = "pp-web-sdk"
+name = "pp-sdk-unbound"
 compatibility_date = "2026-03-07"
 workers_dev = true
-preview_urls = false
 
 [assets]
+directory = "./dist"
+
+# ---------------------------------------------------------------------------
+# Staging — bishal/staging → *.webflow.io
+# ---------------------------------------------------------------------------
+[env.staging]
+name = "pp-sdk-staging"
+workers_dev = true
+
+[env.staging.assets]
+directory = "./dist"
+
+# ---------------------------------------------------------------------------
+# Canary — bishal/canary → test pages / cohort
+# ---------------------------------------------------------------------------
+[env.canary]
+name = "pp-sdk-canary"
+workers_dev = true
+
+[env.canary.assets]
+directory = "./dist"
+
+# ---------------------------------------------------------------------------
+# Perf / Preview — bishal/perf → pp-sdk-perf  (isolated out-of-sync testing)
+# ---------------------------------------------------------------------------
+[env.perf]
+name = "pp-sdk-perf"
+workers_dev = true
+
+[env.perf.assets]
+directory = "./dist"
+
+# ---------------------------------------------------------------------------
+# Production — bishal/main → try.pocketpills.com (mktg) + www.pocketpills.info (core)
+# ---------------------------------------------------------------------------
+[env.production]
+name = "pp-web-sdk"
+workers_dev = true
+
+[env.production.assets]
 directory = "./dist"
