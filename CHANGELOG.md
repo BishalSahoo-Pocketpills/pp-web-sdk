@@ -4,6 +4,36 @@ All notable changes to **pp-web-sdk** are documented here. The project follows
 [Semantic Versioning](https://semver.org/) — breaking changes require a major
 or, at minimum, a documented migration path in this file.
 
+## Unreleased
+
+### Changed
+
+- **Mixpanel cookie hygiene is now centralized and primary-anchored.** The
+  per-secondary "legacy cookie sweep" (`sweepLegacyCookie` boot-profile flag)
+  is replaced by `pruneNonPrimaryMixpanelCookies`, which runs once during
+  `init()` and deletes **every** `mp_<token>_mixpanel` cookie whose token is
+  not the **current primary** token (across the configured cross-subdomain
+  `cookieDomain` and the host-only path). Secondary still persists to
+  `localStorage`, so only the primary project ever writes a cookie. This
+  guarantees a single Mixpanel cookie survives a **project swap** (old primary
+  token → secondary, new token → primary) and a full secondary deprecation —
+  preventing the two-cookie doubling that can trip the server "request
+  header / cookie too large" (HTTP 400/431) error. _Migration:_ none — the
+  prune is keyed on whatever is configured as primary, so swaps and
+  staging/prod token differences need no code change.
+
+### Added
+
+- **Boot-time cookie-size telemetry (`reportPrimaryCookieSize`).** After the
+  SDK loads, the orchestrator measures the primary `mp_<token>_mixpanel`
+  cookie and the total `document.cookie` payload (UTF-8 byte count) and logs
+  a `warn` when either crosses a threshold — visibility for the
+  "cookie too large" failure before it becomes a hard error. Pure
+  observability; never mutates Mixpanel's cookie.
+- **`shared.cookieSizeWarnBytes` config** (`{ primary, total }`, defaults
+  `3584` / `7168` bytes) to tune the telemetry thresholds to your CDN/server
+  header limit.
+
 ## [3.11.0] — 2026-06-03
 
 ### Changed
