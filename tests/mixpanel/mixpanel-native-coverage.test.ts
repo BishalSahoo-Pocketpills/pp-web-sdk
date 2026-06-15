@@ -1532,6 +1532,20 @@ describe('Mixpanel native coverage', () => {
         expect(document.cookie).toContain('pp_segment=keepme');
       });
 
+      it('GUARDRAIL: deletes nothing when no primary token is configured', async () => {
+        // Enabled primary but empty token (misconfig). The prune runs before
+        // the NO_TOKEN bail; its guardrail must no-op rather than blind-delete,
+        // so an existing Mixpanel cookie is left intact (we never touch a cookie
+        // when we can't identify the active one).
+        await freshLoad();
+        window.ppLib.mixpanel.configure({ primary: { enabled: true, token: '' } });
+        setCookie('mp_stale123_mixpanel', 'stale');
+        setupScriptEnv();
+        window.ppLib.mixpanel.init();
+
+        expect(document.cookie).toContain('mp_stale123_mixpanel');
+      });
+
       it('also expires the orphan on the configured cross-subdomain cookieDomain', async () => {
         await freshLoad({ token: 'primarytok99' });
         // Drives the `if (domain)` branch in expireMixpanelCookieAllScopes.
