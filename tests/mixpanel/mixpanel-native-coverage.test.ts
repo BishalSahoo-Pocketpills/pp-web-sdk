@@ -1486,6 +1486,185 @@ describe('Mixpanel native coverage', () => {
   });
 
   // ==========================================================================
+  // 17b. Cookie-size hardening — prune non-primary cookies + size telemetry
+  // ==========================================================================
+  describe('cookie-size hardening', () => {
+    // Loaded-callback queue accessor (`_i` is a stub-internal field absent
+    // from the MixpanelGlobal type — narrow through unknown, no `any`).
+    type QueuedLoaded = (mp: unknown) => void;
+    function getQueuedLoaded(index: number): QueuedLoaded {
+      const queue = (
+        window.mixpanel as unknown as { _i: Array<[string, { loaded: QueuedLoaded }, string?]> }
+      )._i;
+      return queue[index][1].loaded;
+    }
+
+    describe('pruneNonPrimaryMixpanelCookies (runs during init)', () => {
+      it('deletes a non-primary mp_ cookie and logs the prune', async () => {
+        await freshLoad({ token: 'primarytok99' });
+        setCookie('mp_orphan123_mixpanel', 'staleblob');
+        const logSpy = vi.spyOn(window.ppLib, 'log');
+        setupScriptEnv();
+        window.ppLib.mixpanel.init();
+
+        expect(document.cookie).not.toContain('mp_orphan123_mixpanel');
+        expect(logSpy).toHaveBeenCalledWith(
+          'info',
+          expect.stringContaining('pruned non-primary Mixpanel cookie'),
+        );
+      });
+
+      it('keeps the current primary mp_ cookie', async () => {
+        await freshLoad({ token: 'primarytok99' });
+        setCookie('mp_primarytok99_mixpanel', 'primarystate');
+        setupScriptEnv();
+        window.ppLib.mixpanel.init();
+
+        expect(document.cookie).toContain('mp_primarytok99_mixpanel');
+      });
+
+      it('ignores non-Mixpanel cookies (no-match branch)', async () => {
+        await freshLoad({ token: 'primarytok99' });
+        setCookie('pp_segment', 'keepme');
+        setupScriptEnv();
+        window.ppLib.mixpanel.init();
+
+        expect(document.cookie).toContain('pp_segment=keepme');
+      });
+
+      it('also expires the orphan on the configured cross-subdomain cookieDomain', async () => {
+        await freshLoad({ token: 'primarytok99' });
+        // Drives the `if (domain)` branch in expireMixpanelCookieAllScopes.
+        window.ppLib.config.cookieDomain = '.pocketpills.com';
+        setCookie('mp_orphan123_mixpanel', 'stale');
+        setupScriptEnv();
+        window.ppLib.mixpanel.init();
+
+        expect(document.cookie).not.toContain('mp_orphan123_mixpanel');
+      });
+
+      it('logs a warn when cookie access throws during prune', async () => {
+        await freshLoad({ token: 'primarytok99' });
+        const logSpy = vi.spyOn(window.ppLib, 'log');
+        const originalCookieDescriptor =
+          Object.getOwnPropertyDescriptor(Document.prototype, 'cookie') ||
+          Object.getOwnPropertyDescriptor(document, 'cookie');
+        Object.defineProperty(document, 'cookie', {
+          get() {
+            throw new Error('cookie access denied');
+          },
+          set() {
+            /* swallow writes while the trap is installed */
+          },
+          configurable: true,
+        });
+
+        setupScriptEnv();
+        window.ppLib.mixpanel.init();
+
+        if (originalCookieDescriptor) {
+          Object.defineProperty(document, 'cookie', originalCookieDescriptor);
+        }
+        expect(logSpy).toHaveBeenCalledWith(
+          'warn',
+          expect.stringContaining('non-primary Mixpanel cookie prune failed'),
+          expect.anything(),
+        );
+      });
+    });
+
+    describe('reportPrimaryCookieSize (runs in onAllLoaded)', () => {
+      it('warns when the primary cookie exceeds the default size threshold', async () => {
+        const loadedCallback = await initAndGetLoadedCallback({ token: 'sizetok' });
+        // Larger than DEFAULTS.COOKIE_WARN_PRIMARY_BYTES (3584).
+        setCookie('mp_sizetok_mixpanel', 'x'.repeat(4000));
+        const logSpy = vi.spyOn(window.ppLib, 'log');
+        invokeLoadedCallback(loadedCallback, createMockMixpanel());
+
+        expect(logSpy).toHaveBeenCalledWith(
+          'warn',
+          expect.stringContaining('cookie size over threshold'),
+        );
+      });
+
+      it('warns when the total payload exceeds threshold even if primary is small', async () => {
+        const loadedCallback = await initAndGetLoadedCallback({ token: 'sizetok' });
+        setCookie('mp_sizetok_mixpanel', 'small'); // primary well under limit
+        setCookie('pp_bulk', 'y'.repeat(8000)); // total over 7168
+        const logSpy = vi.spyOn(window.ppLib, 'log');
+        invokeLoadedCallback(loadedCallback, createMockMixpanel());
+
+        expect(logSpy).toHaveBeenCalledWith(
+          'warn',
+          expect.stringContaining('cookie size over threshold'),
+        );
+      });
+
+      it('does NOT warn when cookies are within thresholds', async () => {
+        const loadedCallback = await initAndGetLoadedCallback({ token: 'sizetok' });
+        setCookie('mp_sizetok_mixpanel', 'tiny');
+        const logSpy = vi.spyOn(window.ppLib, 'log');
+        invokeLoadedCallback(loadedCallback, createMockMixpanel());
+
+        const sizeWarn = logSpy.mock.calls.find(
+          (c) => c[0] === 'warn' && /cookie size over threshold/.test(String(c[1])),
+        );
+        expect(sizeWarn).toBeUndefined();
+      });
+
+      it('reports zero primary bytes when no primary cookie exists (no warn)', async () => {
+        const loadedCallback = await initAndGetLoadedCallback({ token: 'sizetok' });
+        // No mp_sizetok_mixpanel seeded — getCookie returns null → 0 bytes.
+        const logSpy = vi.spyOn(window.ppLib, 'log');
+        invokeLoadedCallback(loadedCallback, createMockMixpanel());
+
+        const sizeWarn = logSpy.mock.calls.find(
+          (c) => c[0] === 'warn' && /cookie size over threshold/.test(String(c[1])),
+        );
+        expect(sizeWarn).toBeUndefined();
+      });
+
+      it('falls back to default thresholds when cookieSizeWarnBytes is unset', async () => {
+        await freshLoad();
+        window.ppLib.mixpanel.configure({
+          primary: { enabled: true, token: 'sizetok' },
+          shared: { cookieSizeWarnBytes: undefined },
+        });
+        setupScriptEnv();
+        window.ppLib.mixpanel.init();
+        setCookie('mp_sizetok_mixpanel', 'x'.repeat(4000)); // > default 3584
+        const logSpy = vi.spyOn(window.ppLib, 'log');
+        invokeLoadedCallback(getQueuedLoaded(0), createMockMixpanel());
+
+        expect(logSpy).toHaveBeenCalledWith(
+          'warn',
+          expect.stringContaining('cookie size over threshold'),
+        );
+      });
+
+      it('logs a warn when the size measurement throws', async () => {
+        const loadedCallback = await initAndGetLoadedCallback({ token: 'sizetok' });
+        const realGetCookie = window.ppLib.getCookie;
+        // Throw ONLY for the primary cookie read inside reportPrimaryCookieSize;
+        // shared-context's getCookie calls (userId/ipAddress) still resolve so
+        // onAllLoaded reaches the telemetry step.
+        vi.spyOn(window.ppLib, 'getCookie').mockImplementation((name: string) => {
+          if (name === 'mp_sizetok_mixpanel') throw new Error('boom');
+          return realGetCookie(name);
+        });
+        const logSpy = vi.spyOn(window.ppLib, 'log');
+        invokeLoadedCallback(loadedCallback, createMockMixpanel());
+
+        expect(logSpy).toHaveBeenCalledWith(
+          'warn',
+          expect.stringContaining('cookie size telemetry failed'),
+          expect.anything(),
+        );
+      });
+    });
+  });
+
+  // ==========================================================================
   // 18. CSP nonce support
   // ==========================================================================
   describe('nonce config', () => {

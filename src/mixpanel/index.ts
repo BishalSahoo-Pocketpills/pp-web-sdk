@@ -108,6 +108,10 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
         // Analytics events spec. dataLayer / GTM still gets the nested
         // GA4 shape via its own enricher.
         emitMode: 'flat',
+        cookieSizeWarnBytes: {
+          primary: DEFAULTS.COOKIE_WARN_PRIMARY_BYTES,
+          total: DEFAULTS.COOKIE_WARN_TOTAL_BYTES,
+        },
       },
     };
 
@@ -149,6 +153,9 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       if ('enrichTrack' in legacy) shared.enrichTrack = legacy.enrichTrack as boolean;
       if ('emitMode' in legacy)
         shared.emitMode = legacy.emitMode as SharedMixpanelConfig['emitMode'];
+      if ('cookieSizeWarnBytes' in legacy)
+        shared.cookieSizeWarnBytes =
+          legacy.cookieSizeWarnBytes as SharedMixpanelConfig['cookieSizeWarnBytes'];
       if ('nonce' in legacy) shared.nonce = legacy.nonce as string;
       if ('cdnUrl' in legacy) shared.cdnUrl = legacy.cdnUrl as string;
       if ('integrity' in legacy) shared.integrity = legacy.integrity as string;
@@ -233,6 +240,10 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       deleteLegacyPpDeviceIdCookie();
       // Shared super-props (base, cookies, experiments, UTM, marketing, VWO).
       registerSharedContext(win, doc);
+      // Cookie-size observability — the primary Mixpanel cookie has now been
+      // written by the SDK; warn if it (or the total cookie payload) is large
+      // enough to risk the "cookie too large" server error.
+      reportPrimaryCookieSize(getState('primary').config.token);
       // Replay any pre-init buffered ops through the full enrichment path.
       drainIfReady();
       // Release the readiness gate — modules waiting on
@@ -245,28 +256,92 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
     }
 
     /**
-     * Delete any pre-existing `mp_<token>_mixpanel` cookie left over from
-     * a prior cookie-based persistence deployment (used today only for
-     * secondary, which moved to `persistence: 'localStorage'`). Without
-     * explicit cleanup the cookie sits in HTTP headers for up to 365
-     * days. Idempotent — no-op when absent.
+     * Cookie-size hardening — keep EXACTLY ONE Mixpanel cookie: the current
+     * primary project's `mp_<primaryToken>_mixpanel`.
      *
-     * Belt-and-braces: clears on the configured cross-subdomain scope
-     * (matches how Mixpanel wrote the cookie) and on the host-only path
-     * in case any subdomain ever wrote it without a domain attribute.
+     * Mixpanel persists per-token state in a `mp_<token>_mixpanel` cookie.
+     * Only the primary instance uses cookie persistence (secondary is pinned
+     * to localStorage — see INSTANCE_BOOT_PROFILE). But a project swap (the
+     * old primary token becomes secondary, a new token becomes primary)
+     * leaves the OLD primary's cookie orphaned in the browser. Two
+     * `mp_*_mixpanel` cookies plus the rest of the `.pocketpills.com` cookie
+     * set can push the request header past the server limit, producing HTTP
+     * 400/431 ("request header / cookie too large").
+     *
+     * This sweeps EVERY `mp_<token>_mixpanel` cookie whose token is not the
+     * current primary token, so only the live primary cookie survives —
+     * regardless of which token was primary in a prior deploy, and regardless
+     * of whether the orphan was ever the configured secondary. Strictly
+     * bounded to the Mixpanel cookie name pattern (`[a-zA-Z0-9]` tokens —
+     * real Mixpanel tokens are 32-char hex); never touches any other cookie.
+     * Idempotent — safe to run on every boot.
      */
-    function deleteLegacyInstanceCookie(token: string): void {
-      if (!token) return;
+    function pruneNonPrimaryMixpanelCookies(primaryToken: string): void {
+      // Strict — only the Mixpanel SDK's own cookie name shape, anchored so
+      // no other cookie can ever match.
+      const mpCookie = /^mp_([a-zA-Z0-9]+)_mixpanel$/;
       try {
-        const name = `mp_${token}_mixpanel`;
-        const expired = 'Thu, 01 Jan 1970 00:00:00 GMT';
-        const domain = ppLib.config?.cookieDomain;
-        if (typeof domain === 'string' && domain.length > 0) {
-          document.cookie = `${name}=; expires=${expired}; path=/; domain=${domain}`;
+        const pairs = document.cookie.split(/\s*;\s*/);
+        for (let i = 0; i < pairs.length; i++) {
+          const name = pairs[i].split('=')[0];
+          const m = mpCookie.exec(name);
+          if (!m) continue; // never touch non-Mixpanel cookies
+          if (m[1] === primaryToken) continue; // keep the live primary cookie
+          expireMixpanelCookieAllScopes(name);
+          ppLib.log('info', M.MP_COOKIE_PRUNED(name));
         }
-        document.cookie = `${name}=; expires=${expired}; path=/`;
       } catch (e) {
-        ppLib.log('warn', 'deleteLegacyInstanceCookie failed', ppLib.safeLogError(e));
+        ppLib.log('warn', M.MP_COOKIE_PRUNE_FAILED, ppLib.safeLogError(e));
+      }
+    }
+
+    /**
+     * Expire a cookie on the scopes Mixpanel could have written it: the
+     * configured cross-subdomain `cookieDomain` (e.g. `.pocketpills.com`,
+     * how `cross_subdomain_cookie: true` writes it) and the host-only path
+     * (no Domain attribute). A delete on a scope the cookie was NOT written
+     * with is a harmless no-op. Same deletion shape as the proven legacy
+     * `pp_device_id` sweep below.
+     */
+    function expireMixpanelCookieAllScopes(name: string): void {
+      const expired = 'Thu, 01 Jan 1970 00:00:00 GMT';
+      const domain = ppLib.config.cookieDomain;
+      if (domain) {
+        document.cookie = `${name}=; expires=${expired}; path=/; domain=${domain}`;
+      }
+      document.cookie = `${name}=; expires=${expired}; path=/`;
+    }
+
+    /**
+     * Boot-time cookie-size telemetry. Measures the primary Mixpanel cookie
+     * and the total `document.cookie` payload and warns when either crosses
+     * the configured threshold — the visibility lever for the "cookie too
+     * large" failure we've seen in prod. Pure observability: never mutates
+     * cookies (Mixpanel owns its cookie's internals; truncating it would
+     * corrupt distinct_id / $device_id). The fix for genuine bloat is
+     * trimming what we persist via `register` — see shared-context.ts.
+     * Cookie limits are byte-counted (UTF-8), not UTF-16 code units.
+     */
+    function reportPrimaryCookieSize(primaryToken: string): void {
+      try {
+        const totalBytes = new TextEncoder().encode(document.cookie).length;
+        const cookieName = `mp_${primaryToken}_mixpanel`;
+        const value = ppLib.getCookie(cookieName);
+        const primaryBytes = value
+          ? new TextEncoder().encode(`${cookieName}=${value}`).length
+          : 0;
+        const limits = CONFIG.shared.cookieSizeWarnBytes || {
+          primary: DEFAULTS.COOKIE_WARN_PRIMARY_BYTES,
+          total: DEFAULTS.COOKIE_WARN_TOTAL_BYTES,
+        };
+        if (primaryBytes > limits.primary || totalBytes > limits.total) {
+          ppLib.log(
+            'warn',
+            M.COOKIE_SIZE_WARN(primaryBytes, totalBytes, limits.primary, limits.total),
+          );
+        }
+      } catch (e) {
+        ppLib.log('warn', M.COOKIE_SIZE_REPORT_FAILED, ppLib.safeLogError(e));
       }
     }
 
@@ -324,16 +399,19 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
      *   secondary uses `localStorage` so HTTP headers carry only primary's
      *   `mp_<token>_mixpanel`. Identity stays consistent via
      *   `syncIdentityFromPrimary` re-pinning secondary on every page load.
-     * - `sweepLegacyCookie`: delete the pre-localStorage `mp_<token>_mixpanel`
-     *   cookie left over from the dual-cookie era (idempotent — no-op when
-     *   absent). Primary owns its cookie so the sweep stays off.
+     *
+     * Orphaned `mp_<token>_mixpanel` cookies (from a prior cookie-based
+     * secondary, or an old primary token after a project swap) are cleaned
+     * up centrally by `pruneNonPrimaryMixpanelCookies` in `initAll`, which
+     * is keyed on the CURRENT primary token rather than per-instance — so
+     * the cleanup is correct across swaps and full secondary deprecation.
      */
     const INSTANCE_BOOT_PROFILE: Record<
       InstanceName,
-      { persistence: 'cookie' | 'localStorage'; sweepLegacyCookie: boolean }
+      { persistence: 'cookie' | 'localStorage' }
     > = {
-      primary: { persistence: 'cookie', sweepLegacyCookie: false },
-      secondary: { persistence: 'localStorage', sweepLegacyCookie: true },
+      primary: { persistence: 'cookie' },
+      secondary: { persistence: 'localStorage' },
     };
 
     function buildInitOptions(
@@ -382,14 +460,6 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       const opts = buildInitOptions(name, state.config, function loadedCb(mp: MixpanelGlobal) {
         onInstanceLoaded(name, mp);
       });
-
-      // One-shot sweep of the legacy `mp_<token>_mixpanel` cookie for any
-      // instance whose boot profile opts in. Pre-`persistence: 'localStorage'`
-      // deployments wrote a secondary cookie that now sits orphaned in HTTP
-      // headers for up to 365 days. Idempotent — no-op when absent.
-      if (INSTANCE_BOOT_PROFILE[name].sweepLegacyCookie) {
-        deleteLegacyInstanceCookie(state.config.token);
-      }
 
       // For primary, mp.init(token, opts) writes to window.mixpanel itself.
       // For secondary, mp.init(token, opts, 'secondary') queues onto the
@@ -507,6 +577,13 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
         secondaryState.enabled = false;
         CONFIG.secondary.enabled = false;
       }
+
+      // Cookie-size hardening — delete any orphaned `mp_<token>_mixpanel`
+      // cookie that isn't the current primary's BEFORE the SDK loads and
+      // writes the (new) primary cookie. Runs unconditionally and
+      // independently of the SDK script load (e.g. SRI fail-closed below)
+      // so the orphan is cleared even when the SDK never loads.
+      pruneNonPrimaryMixpanelCookies(primaryState.config.token);
 
       // Refresh module-scoped state from the resolved CONFIG. The wiring
       // helpers were also called at IIFE boot with the default config so
