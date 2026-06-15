@@ -276,27 +276,38 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
     }
 
     /**
-     * Cookie-size hardening — keep EXACTLY ONE Mixpanel cookie: the current
-     * primary project's `mp_<primaryToken>_mixpanel`.
+     * Cookie-size hardening — clear ONLY STALE Mixpanel cookies, and NEVER the
+     * one the active primary project is using.
      *
-     * Mixpanel persists per-token state in a `mp_<token>_mixpanel` cookie.
-     * Only the primary instance uses cookie persistence (secondary is pinned
-     * to localStorage — see INSTANCE_BOOT_PROFILE). But a project swap (the
-     * old primary token becomes secondary, a new token becomes primary)
-     * leaves the OLD primary's cookie orphaned in the browser. Two
-     * `mp_*_mixpanel` cookies plus the rest of the `.pocketpills.com` cookie
-     * set can push the request header past the server limit, producing HTTP
-     * 400/431 ("request header / cookie too large").
+     * SAFETY CONTRACT (the active cookie is sacred):
+     *   - The "active" cookie is the current primary's `mp_<primaryToken>_mixpanel`
+     *     — the only instance using cookie persistence (secondary is pinned to
+     *     localStorage; see INSTANCE_BOOT_PROFILE). This function MUST NOT touch
+     *     it, ever.
+     *   - A cookie is "stale" only if its token differs from the active primary
+     *     token. Those are the leftovers a project swap or a prior cookie-based
+     *     secondary orphaned in the browser.
+     *   - If we cannot positively identify the active token (empty `primaryToken`),
+     *     we delete NOTHING — better to leave a stale cookie than risk nuking the
+     *     active one. (Belt-and-suspenders: `initAll` already refuses to reach
+     *     here without a configured token.)
      *
-     * This sweeps EVERY `mp_<token>_mixpanel` cookie whose token is not the
-     * current primary token, so only the live primary cookie survives —
-     * regardless of which token was primary in a prior deploy, and regardless
-     * of whether the orphan was ever the configured secondary. Strictly
-     * bounded to the Mixpanel cookie name pattern (`[a-zA-Z0-9]` tokens —
-     * real Mixpanel tokens are 32-char hex); never touches any other cookie.
-     * Idempotent — safe to run on every boot.
+     * Why: an orphaned old-primary cookie alongside the new primary cookie —
+     * plus the rest of the `.pocketpills.com` cookie set — can push the request
+     * header past the server limit (HTTP 400/431 "request header / cookie too
+     * large"). Clearing the stale one keeps a single Mixpanel cookie.
+     *
+     * Scalable & swap-safe: keyed on whatever is configured as primary RIGHT NOW,
+     * so it stays correct across project swaps, staging/prod token differences,
+     * and full secondary deprecation with no code change. Strictly bounded to the
+     * Mixpanel cookie name shape (`[a-zA-Z0-9]` tokens — real Mixpanel tokens are
+     * 32-char hex); never matches any non-Mixpanel cookie. Idempotent.
      */
     function pruneNonPrimaryMixpanelCookies(primaryToken: string): void {
+      // GUARDRAIL: with no known active token we cannot tell stale from active,
+      // so we refuse to delete anything. Prevents a misconfig from wiping the
+      // live Mixpanel cookie.
+      if (!primaryToken) return;
       // Strict — only the Mixpanel SDK's own cookie name shape, anchored so
       // no other cookie can ever match.
       const mpCookie = /^mp_([a-zA-Z0-9]+)_mixpanel$/;
@@ -306,7 +317,10 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
           const name = pairs[i].split('=')[0];
           const m = mpCookie.exec(name);
           if (!m) continue; // never touch non-Mixpanel cookies
-          if (m[1] === primaryToken) continue; // keep the live primary cookie
+          // ACTIVE-COOKIE GUARD: the current primary's cookie is what Mixpanel
+          // is actively reading/writing — keep it untouched. Only tokens that
+          // differ are stale and eligible for deletion.
+          if (m[1] === primaryToken) continue;
           expireMixpanelCookieAllScopes(name);
           ppLib.log('info', M.MP_COOKIE_PRUNED(name));
         }
@@ -613,6 +627,15 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
         ppLib.log('info', M.MODULE_DISABLED);
         return;
       }
+
+      // Cookie-size hardening — clear STALE Mixpanel cookies (never the active
+      // primary's) BEFORE the SDK loads and writes the new primary cookie, and
+      // independently of whether the SDK ultimately loads (SRI fail-closed
+      // below). Runs even on the no-token misconfig path that follows: its own
+      // guardrail no-ops when the primary token is absent, so we never blind-
+      // delete when we can't identify the active cookie.
+      pruneNonPrimaryMixpanelCookies(primaryState.config.token);
+
       /*! v8 ignore start */
       if (!primaryState.config.token) {
       /*! v8 ignore stop */
@@ -637,13 +660,6 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
         secondaryState.enabled = false;
         CONFIG.secondary.enabled = false;
       }
-
-      // Cookie-size hardening — delete any orphaned `mp_<token>_mixpanel`
-      // cookie that isn't the current primary's BEFORE the SDK loads and
-      // writes the (new) primary cookie. Runs unconditionally and
-      // independently of the SDK script load (e.g. SRI fail-closed below)
-      // so the orphan is cleared even when the SDK never loads.
-      pruneNonPrimaryMixpanelCookies(primaryState.config.token);
 
       // Refresh module-scoped state from the resolved CONFIG. The wiring
       // helpers were also called at IIFE boot with the default config so
