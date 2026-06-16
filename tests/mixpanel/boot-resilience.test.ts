@@ -13,10 +13,53 @@
  * Loaded via IIFE — behavior tests live here; native-import coverage tests
  * for the same paths can live in dual-instance-coverage.test.ts.
  */
+import type { MixpanelGlobal } from '@src/types/window';
 import { loadWithCommon } from '../helpers/iife-loader.ts';
-import { createDualMockMixpanel, createMockMixpanel } from '../helpers/mock-mixpanel.ts';
+import {
+  createDualMockMixpanel,
+  createMockMixpanel,
+  type MockMixpanel,
+} from '../helpers/mock-mixpanel.ts';
 
-let insertBeforeSpy: any;
+/**
+ * A queued `mp.init(token, opts, name)` entry on the loader stub's `_i[]`
+ * array. The orchestrator installs its own `loaded` callback and pins
+ * `persistence` per instance; tests read both back off the queued entry.
+ */
+interface StubInitOptions {
+  loaded?: (mp: MockMixpanel) => void;
+  persistence?: 'cookie' | 'localStorage';
+  [key: string]: unknown;
+}
+type StubInitEntry = [token: string, options: StubInitOptions, instanceName?: string];
+
+/** A vi mock function's recorded calls, narrowed to event-name-first args. */
+type TrackCallArgs = [event: string, properties?: Record<string, unknown>];
+
+/** Read the loader stub's queued `mp.init` entries. `_i` is a stub-internal
+ *  property not present on the MixpanelGlobal type, so narrow via unknown. */
+function stubQueue(): StubInitEntry[] {
+  return (window.mixpanel as unknown as { _i: StubInitEntry[] })._i;
+}
+
+/** Install a mock as the live Mixpanel handle (mirrors the real SDK
+ *  replacing the stub). MockMixpanel implements the surface the SDK calls. */
+function setMixpanelHandle(mp: MockMixpanel): void {
+  window.mixpanel = mp as unknown as MixpanelGlobal;
+}
+
+/** `patchInstanceTrack` replaces `mp.track` with a wrapper that forwards to
+ *  the original spy stored on `_ppOriginal`. Recover it for call assertions. */
+function originalTrackSpy(mp: MockMixpanel): ReturnType<typeof vi.fn> {
+  return (mp.track as unknown as { _ppOriginal: ReturnType<typeof vi.fn> })._ppOriginal;
+}
+
+/** Event names recorded by a (possibly wrapped) track spy. */
+function trackedEventNames(spy: ReturnType<typeof vi.fn>): string[] {
+  return (spy.mock.calls as TrackCallArgs[]).map((call) => call[0]);
+}
+
+let insertBeforeSpy: ReturnType<typeof vi.spyOn> | null;
 
 function setupScriptEnv() {
   if (!document.getElementsByTagName('script').length) {
@@ -42,10 +85,10 @@ beforeEach(() => {
     document.cookie = c.split('=')[0] + '=;expires=' + new Date(0).toUTCString() + ';path=/';
   });
   localStorage.clear();
-  delete (window as any).mixpanel;
-  delete (window as any).ppLib;
-  delete (window as any).ppLibReady;
-  delete (window as any)._enrichers;
+  Reflect.deleteProperty(window, 'mixpanel');
+  delete window.ppLib;
+  delete window.ppLibReady;
+  Reflect.deleteProperty(window, '_enrichers');
 });
 
 afterEach(() => {
@@ -59,7 +102,7 @@ describe('H3 — initOptions reserved-key denylist', () => {
     const callerLoaded = vi.fn();
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
-    (window as any).ppLib.mixpanel.configure({
+    window.ppLib.mixpanel.configure({
       primary: {
         enabled: true,
         token: 'primary-tok',
@@ -68,10 +111,10 @@ describe('H3 — initOptions reserved-key denylist', () => {
     });
 
     setupScriptEnv();
-    (window as any).ppLib.mixpanel.init();
+    window.ppLib.mixpanel.init();
 
     // The orchestrator's callback must still be installed on the stub queue.
-    const queuedOpts = (window as any).mixpanel._i[0][1];
+    const queuedOpts = stubQueue()[0][1];
     expect(typeof queuedOpts.loaded).toBe('function');
     expect(queuedOpts.loaded).not.toBe(callerLoaded);
 
@@ -93,7 +136,7 @@ describe('H3 — initOptions reserved-key denylist', () => {
     loadWithCommon('mixpanel');
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
-    (window as any).ppLib.mixpanel.configure({
+    window.ppLib.mixpanel.configure({
       primary: {
         enabled: true,
         token: 'primary-tok',
@@ -101,9 +144,9 @@ describe('H3 — initOptions reserved-key denylist', () => {
       },
     });
     setupScriptEnv();
-    (window as any).ppLib.mixpanel.init();
+    window.ppLib.mixpanel.init();
 
-    const queuedOpts = (window as any).mixpanel._i[0][1];
+    const queuedOpts = stubQueue()[0][1];
     expect(queuedOpts[reservedKey]).not.toBe('caller-supplied-value');
 
     const warned = logSpy.mock.calls.some(
@@ -116,7 +159,7 @@ describe('H3 — initOptions reserved-key denylist', () => {
 
   it('non-reserved initOptions still pass through to mp.init', () => {
     loadWithCommon('mixpanel');
-    (window as any).ppLib.mixpanel.configure({
+    window.ppLib.mixpanel.configure({
       primary: {
         enabled: true,
         token: 'primary-tok',
@@ -128,9 +171,9 @@ describe('H3 — initOptions reserved-key denylist', () => {
       },
     });
     setupScriptEnv();
-    (window as any).ppLib.mixpanel.init();
+    window.ppLib.mixpanel.init();
 
-    const queuedOpts = (window as any).mixpanel._i[0][1];
+    const queuedOpts = stubQueue()[0][1];
     expect(queuedOpts.persistence_name).toBe('pp_custom');
     expect(queuedOpts.debug).toBe(true);
     expect(queuedOpts.property_blacklist).toEqual(['$current_url']);
@@ -140,12 +183,12 @@ describe('H3 — initOptions reserved-key denylist', () => {
     loadWithCommon('mixpanel');
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
-    (window as any).ppLib.mixpanel.configure({
+    window.ppLib.mixpanel.configure({
       primary: { enabled: true, token: 'p', initOptions: { loaded: vi.fn() } },
       secondary: { enabled: true, token: 's', initOptions: { loaded: vi.fn() } },
     });
     setupScriptEnv();
-    (window as any).ppLib.mixpanel.init();
+    window.ppLib.mixpanel.init();
 
     const warnings = logSpy.mock.calls.filter(
       (c) => c[0] === 'warn' && /initOptions\.loaded is reserved/.test(String(c[1])),
@@ -155,85 +198,176 @@ describe('H3 — initOptions reserved-key denylist', () => {
   });
 });
 
-describe('Per-instance boot profile — persistence + legacy cookie sweep', () => {
+describe('Per-instance boot profile — persistence + cookie-size hardening', () => {
   it('primary inits with `persistence: "cookie"`', () => {
     loadWithCommon('mixpanel');
-    (window as any).ppLib.mixpanel.configure({
-      primary: { enabled: true, token: 'p-tok' },
+    window.ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'ptok' },
     });
     setupScriptEnv();
-    (window as any).ppLib.mixpanel.init();
+    window.ppLib.mixpanel.init();
 
-    const queued = (window as any).mixpanel._i;
+    const queued = stubQueue();
     const primaryEntry = queued.find(
-      (e: any[]) => e[0] === 'p-tok' && (e[2] === undefined || e[2] === 'mixpanel'),
+      (e: StubInitEntry) => e[0] === 'ptok' && (e[2] === undefined || e[2] === 'mixpanel'),
     );
     expect(primaryEntry).toBeTruthy();
-    expect(primaryEntry[1].persistence).toBe('cookie');
+    expect(primaryEntry![1].persistence).toBe('cookie');
   });
 
   it('secondary inits with `persistence: "localStorage"` so only primary writes a cookie', () => {
     loadWithCommon('mixpanel');
-    (window as any).ppLib.mixpanel.configure({
-      primary: { enabled: true, token: 'p-tok' },
-      secondary: { enabled: true, token: 's-tok' },
+    window.ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'ptok' },
+      secondary: { enabled: true, token: 'stok' },
     });
     setupScriptEnv();
-    (window as any).ppLib.mixpanel.init();
+    window.ppLib.mixpanel.init();
 
-    const queued = (window as any).mixpanel._i;
-    const secondaryEntry = queued.find((e: any[]) => e[2] === 'secondary');
+    const queued = stubQueue();
+    const secondaryEntry = queued.find((e: StubInitEntry) => e[2] === 'secondary');
     expect(secondaryEntry).toBeTruthy();
-    expect(secondaryEntry[1].persistence).toBe('localStorage');
+    expect(secondaryEntry![1].persistence).toBe('localStorage');
   });
 
-  it('deletes legacy `mp_<secondary_token>_mixpanel` cookie on secondary init', () => {
+  it('prunes the secondary project cookie (former dual-cookie era) on init', () => {
     // Seed a leftover cookie from the dual-cookie era.
-    document.cookie = 'mp_s-tok_mixpanel=stale-blob; path=/';
-    expect(document.cookie).toContain('mp_s-tok_mixpanel=stale-blob');
+    document.cookie = 'mp_stok_mixpanel=stale-blob; path=/';
+    expect(document.cookie).toContain('mp_stok_mixpanel=stale-blob');
 
     loadWithCommon('mixpanel');
-    (window as any).ppLib.mixpanel.configure({
-      primary: { enabled: true, token: 'p-tok' },
-      secondary: { enabled: true, token: 's-tok' },
+    window.ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'ptok' },
+      secondary: { enabled: true, token: 'stok' },
     });
     setupScriptEnv();
-    (window as any).ppLib.mixpanel.init();
+    window.ppLib.mixpanel.init();
 
-    expect(document.cookie).not.toContain('mp_s-tok_mixpanel=stale-blob');
+    expect(document.cookie).not.toContain('mp_stok_mixpanel=stale-blob');
   });
 
-  it('legacy cookie sweep is a no-op when secondary cookie is absent (idempotent)', () => {
-    // No mp_*_mixpanel cookie seeded.
+  it('SWAP: prunes the OLD primary cookie when a NEW token becomes primary', () => {
+    // Returning user arrives with the cookie written when OLD was primary.
+    document.cookie = 'mp_oldtok_mixpanel=old-primary-state; path=/';
+    // New release: NEW becomes primary, OLD moves to secondary (localStorage).
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'newtok' },
+      secondary: { enabled: true, token: 'oldtok' },
+    });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    // The orphaned old-primary cookie is gone; only the new primary will
+    // write its own cookie — no doubling that could blow the header limit.
+    expect(document.cookie).not.toContain('mp_oldtok_mixpanel');
+  });
+
+  it('prunes an orphan even when secondary is disabled (primary-only deploy)', () => {
+    // A token that is neither the current primary nor a configured secondary
+    // — e.g. a fully-deprecated old project. Must still be swept.
+    document.cookie = 'mp_ghosttok_mixpanel=ghost; path=/';
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'ptok' },
+    });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    expect(document.cookie).not.toContain('mp_ghosttok_mixpanel');
+  });
+
+  it('prune is silent when no orphan cookie is present (idempotent, no warn)', () => {
     loadWithCommon('mixpanel');
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
-    (window as any).ppLib.mixpanel.configure({
-      primary: { enabled: true, token: 'p-tok' },
-      secondary: { enabled: true, token: 's-tok' },
+    window.ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'ptok' },
+      secondary: { enabled: true, token: 'stok' },
     });
     setupScriptEnv();
-    (window as any).ppLib.mixpanel.init();
+    window.ppLib.mixpanel.init();
 
-    // No warning surface — sweep ran cleanly.
-    const sweepWarn = logSpy.mock.calls.find(
-      (c) => c[0] === 'warn' && /deleteLegacyInstanceCookie failed/.test(String(c[1])),
+    const pruneFail = logSpy.mock.calls.find(
+      (c) => c[0] === 'warn' && /Mixpanel cookie prune failed/.test(String(c[1])),
     );
-    expect(sweepWarn).toBeFalsy();
+    expect(pruneFail).toBeFalsy();
   });
 
-  it('does NOT delete primary cookie (primary stays the persisted source)', () => {
-    document.cookie = 'mp_p-tok_mixpanel=primary-state; path=/';
+  it('does NOT delete the current primary cookie (it stays the persisted source)', () => {
+    document.cookie = 'mp_ptok_mixpanel=primary-state; path=/';
 
     loadWithCommon('mixpanel');
-    (window as any).ppLib.mixpanel.configure({
-      primary: { enabled: true, token: 'p-tok' },
-      secondary: { enabled: true, token: 's-tok' },
+    window.ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'ptok' },
+      secondary: { enabled: true, token: 'stok' },
     });
     setupScriptEnv();
-    (window as any).ppLib.mixpanel.init();
+    window.ppLib.mixpanel.init();
 
-    expect(document.cookie).toContain('mp_p-tok_mixpanel=primary-state');
+    expect(document.cookie).toContain('mp_ptok_mixpanel=primary-state');
+  });
+
+  it('never touches non-Mixpanel cookies', () => {
+    document.cookie = 'pp_segment=keep-me; path=/';
+    document.cookie = 'mp_orphantok_mixpanel=drop-me; path=/';
+
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'ptok' },
+    });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    expect(document.cookie).toContain('pp_segment=keep-me');
+    expect(document.cookie).not.toContain('mp_orphantok_mixpanel');
+  });
+});
+
+describe('Cookie-size telemetry', () => {
+  // Fire a full boot so onAllLoaded() runs reportPrimaryCookieSize. The mock
+  // SDK doesn't write the mp cookie itself, so we seed the primary cookie
+  // under the primary token (the prune keeps it) to drive the measurement.
+  // Returns the logSpy installed AFTER configure() but before the loaded
+  // callback fires (so it captures the telemetry warn).
+  function bootAndCaptureLog(primaryToken: string, shared?: Record<string, unknown>) {
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({
+      primary: { enabled: true, token: primaryToken },
+      ...(shared ? { shared } : {}),
+    });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    const queued = stubQueue().slice();
+    const primary = createMockMixpanel();
+    setMixpanelHandle(primary);
+    const entry = queued.find((e: StubInitEntry) => e[2] === undefined || e[2] === 'mixpanel');
+    entry![1].loaded!(primary);
+    return logSpy;
+  }
+
+  it('warns when the primary cookie exceeds the configured threshold', () => {
+    // Seed an oversized primary cookie (token kept by the prune).
+    document.cookie = 'mp_bigtok_mixpanel=' + 'x'.repeat(200) + '; path=/';
+    const logSpy = bootAndCaptureLog('bigtok', {
+      cookieSizeWarnBytes: { primary: 100, total: 1_000_000 },
+    });
+
+    const sizeWarn = logSpy.mock.calls.find(
+      (c) => c[0] === 'warn' && /cookie size over threshold/.test(String(c[1])),
+    );
+    expect(sizeWarn).toBeTruthy();
+  });
+
+  it('does NOT warn when cookies are within threshold', () => {
+    document.cookie = 'mp_smalltok_mixpanel=tiny; path=/';
+    const logSpy = bootAndCaptureLog('smalltok');
+
+    const sizeWarn = logSpy.mock.calls.find(
+      (c) => c[0] === 'warn' && /cookie size over threshold/.test(String(c[1])),
+    );
+    expect(sizeWarn).toBeFalsy();
   });
 });
 
@@ -242,27 +376,27 @@ describe('H4 — watchdog force-drain to ready instances', () => {
     vi.useFakeTimers();
     loadWithCommon('mixpanel');
 
-    (window as any).ppLib.mixpanel.configure({
+    window.ppLib.mixpanel.configure({
       primary: { enabled: true, token: 'p' },
       secondary: { enabled: true, token: 's' },
     });
     setupScriptEnv();
 
     // Buffer some events BEFORE either instance is ready.
-    (window as any).ppLib.mixpanel.track('pre-init-1', { n: 1 });
-    (window as any).ppLib.mixpanel.track('pre-init-2', { n: 2 });
+    window.ppLib.mixpanel.track('pre-init-1', { n: 1 });
+    window.ppLib.mixpanel.track('pre-init-2', { n: 2 });
 
-    (window as any).ppLib.mixpanel.init();
+    window.ppLib.mixpanel.init();
 
     // Capture queued init entries BEFORE overwriting window.mixpanel.
-    const queued = (window as any).mixpanel._i.slice();
+    const queued = stubQueue().slice();
 
     // Install a primary-only mock — NO `.secondary` child so the
     // auto-promotion path in dispatch.resolveMpRef can't find secondary
     // and secondary stays stuck (the failure mode the watchdog must
     // rescue).
     const primary = createMockMixpanel();
-    (window as any).mixpanel = primary;
+    setMixpanelHandle(primary);
 
     // Fire ONLY primary's loaded callback. The orchestrator's
     // onInstanceLoaded runs identity sync (no-op since there's no
@@ -270,7 +404,7 @@ describe('H4 — watchdog force-drain to ready instances', () => {
     // sets state.initialized=true. The pre-init queue still won't
     // drain (drainIfReady gates on all-enabled-ready), so it stays
     // buffered until the watchdog.
-    const primaryEntry = queued.find((e: any[]) => e[2] === undefined || e[2] === 'mixpanel');
+    const primaryEntry = queued.find((e: StubInitEntry) => e[2] === undefined || e[2] === 'mixpanel');
     expect(primaryEntry).toBeTruthy();
     primaryEntry[1].loaded(primary);
 
@@ -280,7 +414,7 @@ describe('H4 — watchdog force-drain to ready instances', () => {
     // is a wrapper that forwards to the original vi.fn() spy via
     // `_ppOriginal`. Capture the spy so we can assert against the real
     // call list rather than the (un-spied) wrapper.
-    const trackSpy = ((primary.track as any)._ppOriginal as ReturnType<typeof vi.fn>);
+    const trackSpy = originalTrackSpy(primary);
 
     // Advance past the 15s watchdog.
     vi.advanceTimersByTime(15001);
@@ -310,16 +444,16 @@ describe('H4 — watchdog force-drain to ready instances', () => {
     vi.useFakeTimers();
     loadWithCommon('mixpanel');
 
-    (window as any).ppLib.mixpanel.configure({
+    window.ppLib.mixpanel.configure({
       primary: { enabled: true, token: 'p' },
       secondary: { enabled: true, token: 's' },
     });
     setupScriptEnv();
 
-    (window as any).ppLib.mixpanel.track('orphan-1');
-    (window as any).ppLib.mixpanel.track('orphan-2');
+    window.ppLib.mixpanel.track('orphan-1');
+    window.ppLib.mixpanel.track('orphan-2');
 
-    (window as any).ppLib.mixpanel.init();
+    window.ppLib.mixpanel.init();
     // Don't install any mp ref — both instances stay stuck.
 
     const logSpy = vi.spyOn(window.ppLib, 'log');
@@ -342,23 +476,23 @@ describe('H4 — watchdog force-drain to ready instances', () => {
     vi.useFakeTimers();
     loadWithCommon('mixpanel');
 
-    (window as any).ppLib.mixpanel.configure({
+    window.ppLib.mixpanel.configure({
       primary: { enabled: true, token: 'p' },
       secondary: { enabled: true, token: 's' },
     });
     setupScriptEnv();
-    (window as any).ppLib.mixpanel.init();
+    window.ppLib.mixpanel.init();
 
     // Capture the loader-stub's queued `_i[]` BEFORE we overwrite
     // window.mixpanel with the dual mock. The real SDK does this in
     // reverse: it replaces the stub with the real implementation, then
     // replays the captured `_i[]`. We mirror that ordering.
-    const queued = (window as any).mixpanel._i.slice();
+    const queued = stubQueue().slice();
 
     const { root, primary, secondary } = createDualMockMixpanel();
-    (window as any).mixpanel = root;
+    setMixpanelHandle(root);
 
-    queued.forEach((entry: any[]) => {
+    queued.forEach((entry: StubInitEntry) => {
       const [, opts, name] = entry;
       if (typeof opts.loaded === 'function') {
         const mp = name === 'secondary' ? secondary : primary;

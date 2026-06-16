@@ -21,9 +21,10 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup pnpm
+        # Version omitted — pnpm/action-setup@v4 reads packageManager from
+        # package.json (pnpm@11.1.3). v10 fails the frozen install because the
+        # overrides moved to pnpm-workspace.yaml (a pnpm v11 feature).
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
