@@ -367,4 +367,35 @@ describe('createEventPropertiesEnricher', () => {
     const deviceType = mockPush.mock.calls[0][0].eventProperties.device_type;
     expect(['desktop', 'mobile', 'tablet']).toContain(deviceType);
   });
+
+  it('adds GA4 page_location + page_referrer (full absolute URL) on page_view', () => {
+    Object.defineProperty(document, 'referrer', {
+      value: 'https://www.google.com/search?q=pocketpills',
+      configurable: true,
+    });
+
+    const enricher = createEventPropertiesEnricher(window, makePPLib(), makeConfig());
+    const mockPush = vi.fn(() => 1);
+    const wrapped = enricher(mockPush);
+    wrapped({ event: 'page_view' });
+
+    const arg = mockPush.mock.calls[0][0];
+    // GA4 reads these at the top level of the event — full absolute URL.
+    expect(arg.page_location).toBe(window.location.href);
+    expect(arg.page_location).toMatch(/^https?:\/\//); // absolute, not a relative path
+    expect(arg.page_referrer).toBe('https://www.google.com/search?q=pocketpills');
+
+    Object.defineProperty(document, 'referrer', { value: '', configurable: true });
+  });
+
+  it('does NOT add page_location / page_referrer to non-page_view events', () => {
+    const enricher = createEventPropertiesEnricher(window, makePPLib(), makeConfig());
+    const mockPush = vi.fn(() => 1);
+    const wrapped = enricher(mockPush);
+    wrapped({ event: 'add_to_cart' });
+
+    const arg = mockPush.mock.calls[0][0];
+    expect(arg.page_location).toBeUndefined();
+    expect(arg.page_referrer).toBeUndefined();
+  });
 });

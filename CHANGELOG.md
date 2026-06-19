@@ -43,6 +43,14 @@ or, at minimum, a documented migration path in this file.
 - **`shared.cookieSizeWarnBytes` config** (`{ primary, total }`, defaults
   `3584` / `7168` bytes) to tune the telemetry thresholds to your CDN/server
   header limit.
+- **GA4 `page_location` + `page_referrer` on the dataLayer `page_view`.** The
+  canonical dataLayer `page_view` now carries top-level `page_location`
+  (`window.location.href`) and `page_referrer` (`document.referrer`) as the
+  **full absolute URL**, so GTM → GA4 records the real page URL instead of an
+  auto/container fallback. GA4/dataLayer-only — Mixpanel is unchanged.
+  _Note:_ these are the **raw** values (not run through the SDK's
+  `sanitizeLandingPage` PII stripping that applies to the Mixpanel `url`
+  property), so any PII in the URL path/query reaches GA4 verbatim.
 
 ## [3.11.0] — 2026-06-03
 
