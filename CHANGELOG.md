@@ -21,6 +21,16 @@ or, at minimum, a documented migration path in this file.
   header / cookie too large" (HTTP 400/431) error. _Migration:_ none — the
   prune is keyed on whatever is configured as primary, so swaps and
   staging/prod token differences need no code change.
+- **SDK no longer sets Mixpanel identity at boot.** The boot-time
+  `unifyDistinctIdWithPpDistinctId()` mapping (login cookies →
+  `mixpanel.identify()`) is disabled. Identity is now owned by the funnel
+  app's `mixpanel.identify($user_id)` under Simplified ID Merge; the
+  landing-page SDK stays anonymous and only provides the shared
+  cross-subdomain `$device_id`, so its boot identify can't interfere with the
+  funnel app's identification. _Note:_ a returning already-logged-in user who
+  lands on a Webflow page first won't be re-identified by the SDK — their
+  landing events stay anonymous unless the shared Mixpanel cookie already
+  carries `$user_id` from a prior funnel identify.
 
 ### Added
 
