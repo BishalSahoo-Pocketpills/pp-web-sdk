@@ -37,7 +37,12 @@ export function registerSharedContext(win: Window & typeof globalThis, doc: Docu
   registerExperimentCookie();
   registerCampaignParams(doc);
   registerMarketingAttribution();
-  unifyDistinctIdWithPpDistinctId();
+  // DISABLED: the SDK no longer sets Mixpanel identity at boot. Identity is
+  // owned by the funnel app's `mixpanel.identify($user_id)` (Simplified ID
+  // Merge); the landing SDK stays anonymous and only provides the shared
+  // cross-subdomain $device_id. Re-enable by uncommenting to restore the
+  // boot-time login→identify mapping.
+  // unifyDistinctIdWithPpDistinctId();
   bridgeVwoProps(win);
 }
 

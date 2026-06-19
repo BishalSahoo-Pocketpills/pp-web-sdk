@@ -705,21 +705,21 @@ describe('Mixpanel native coverage', () => {
       expect(mp.identify).not.toHaveBeenCalledWith('user-x');
     });
 
-    it('unifies Mixpanel distinct_id with SDK pp_distinct_id when they differ (logged-in user)', async () => {
-      // Logged-in: pp_distinct_id resolves to userId. Requires either
-      // app_is_authenticated=true, or both userId + patientId.
+    it('does NOT identify even a logged-in user — boot-time identify is disabled (funnel app owns identity)', async () => {
+      // The SDK no longer maps login cookies → mixpanel.identify() at boot:
+      // unifyDistinctIdWithPpDistinctId() is intentionally disabled
+      // (shared-context.ts). Identity is owned by the funnel app's
+      // mixpanel.identify($user_id) under Simplified ID Merge; the landing
+      // SDK stays anonymous and only provides the shared cross-subdomain
+      // $device_id. So even a logged-in visitor must NOT be identified here.
       setCookie('userId', 'pp-user-42');
       setCookie('app_is_authenticated', 'true');
       const loadedCallback = await initAndGetLoadedCallback();
       const mp = createMockMixpanel();
-      // Mixpanel auto-generated an anonymous device_id that doesn't match
-      // the SDK's pp_user_id.
       mp.get_distinct_id = vi.fn(() => '$device:auto-mp-id');
       invokeLoadedCallback(loadedCallback, mp);
 
-      // Unification step calls identify with SDK's pp_distinct_id, aligning
-      // Mixpanel with our identity system for cross-tool joins.
-      expect(mp.identify).toHaveBeenCalledWith('pp-user-42');
+      expect(mp.identify).not.toHaveBeenCalled();
     });
 
     it('does NOT identify anonymous visitors (Simplified ID Merge contract)', async () => {
