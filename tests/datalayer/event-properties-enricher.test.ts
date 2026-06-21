@@ -388,6 +388,29 @@ describe('createEventPropertiesEnricher', () => {
     Object.defineProperty(document, 'referrer', { value: '', configurable: true });
   });
 
+  it('mirrors page_location + page_referrer into nested page.url / page.referrer on page_view', () => {
+    Object.defineProperty(document, 'referrer', {
+      value: 'https://refer.example.com/',
+      configurable: true,
+    });
+
+    const enricher = createEventPropertiesEnricher(window, makePPLib(), makeConfig());
+    const mockPush = vi.fn(() => 1);
+    const wrapped = enricher(mockPush);
+    wrapped({ event: 'page_view' });
+
+    const arg = mockPush.mock.calls[0][0];
+    // Top-level GA4 fields.
+    expect(arg.page_location).toBe(window.location.href);
+    expect(arg.page_referrer).toBe('https://refer.example.com/');
+    // Nested fallback — existing GTM DLV variables ({{DLV - page.url}},
+    // {{DLV - page.referrer}}) continue to resolve correctly.
+    expect((arg.page as Record<string, unknown>).url).toBe(window.location.href);
+    expect((arg.page as Record<string, unknown>).referrer).toBe('https://refer.example.com/');
+
+    Object.defineProperty(document, 'referrer', { value: '', configurable: true });
+  });
+
   it('does NOT add page_location / page_referrer to non-page_view events', () => {
     const enricher = createEventPropertiesEnricher(window, makePPLib(), makeConfig());
     const mockPush = vi.fn(() => 1);
