@@ -333,7 +333,7 @@ describe('dual-instance native coverage', () => {
       expect(api.track('pageview', { a: 1 })).toBe(true);
 
       // Context arrives AFTER the event was buffered.
-      document.cookie = 'userId=USER-LATE;path=/';
+      document.cookie = 'userId=999999;path=/';
 
       // init() injects the real SDK <script>; stub the DOM insert.
       if (!document.getElementsByTagName('script').length) {
@@ -370,7 +370,7 @@ describe('dual-instance native coverage', () => {
       const call = trackSpy.mock.calls.find((c: unknown[]) => c[0] === 'pageview');
       expect(call).toBeTruthy();
       const props = call![1] as Record<string, unknown>;
-      expect(props.pp_user_id).toBe('USER-LATE');
+      expect(props.pp_user_id).toBe(999999);
       expect(props.a).toBe(1); // original caller prop preserved
     });
   });

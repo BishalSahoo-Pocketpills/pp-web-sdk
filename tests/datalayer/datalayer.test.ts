@@ -206,8 +206,8 @@ describe('User Object', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user.pp_user_id).toBe('42');
-    expect(event.user.pp_patient_id).toBe('99');
+    expect(event.user.pp_user_id).toBe(42);
+    expect(event.user.pp_patient_id).toBe(99);
     expect(event.user.logged_in).toBe('true');
   });
 
@@ -237,21 +237,21 @@ describe('User Object', () => {
     setCookie('userId', '42');
     setCookie('patientId', '99');
 
-    window.ppLib.datalayer.setUser({ pp_user_id: 'override-100', logged_in: 'false' });
+    window.ppLib.datalayer.setUser({ pp_user_id: 100, logged_in: 'false' });
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user.pp_user_id).toBe('override-100');
-    expect(event.user.pp_patient_id).toBe('99');
+    expect(event.user.pp_user_id).toBe(100);
+    expect(event.user.pp_patient_id).toBe(99);
     expect(event.user.logged_in).toBe('false');
   });
 
   it('setUser with pp_patient_id override', () => {
-    window.ppLib.datalayer.setUser({ pp_patient_id: 'pat-500' });
+    window.ppLib.datalayer.setUser({ pp_patient_id: 500 });
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user.pp_patient_id).toBe('pat-500');
+    expect(event.user.pp_patient_id).toBe(500);
   });
 });
 
@@ -909,14 +909,14 @@ describe('Core Event Push', () => {
   });
 
   it('loginSuccess() forces logged_in = true and pushes login_success', () => {
-    window.ppLib.datalayer.loginSuccess({ method: 'email', pp_user_id: '123', pp_patient_id: '456' });
+    window.ppLib.datalayer.loginSuccess({ method: 'email', pp_user_id: 123, pp_patient_id: 456 });
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     expect(event.event).toBe('login_success');
     expect(event.method).toBe('email');
     expect(event.user.logged_in).toBe('true');
-    expect(event.user.pp_user_id).toBe('123');
-    expect(event.user.pp_patient_id).toBe('456');
+    expect(event.user.pp_user_id).toBe(123);
+    expect(event.user.pp_patient_id).toBe(456);
   });
 
   it('loginSuccess() without optional IDs still forces logged_in', () => {
@@ -945,14 +945,14 @@ describe('Core Event Push', () => {
   });
 
   it('signupComplete() forces logged_in = true with optional IDs', () => {
-    window.ppLib.datalayer.signupComplete({ method: 'email', pp_user_id: '789', pp_patient_id: '012' });
+    window.ppLib.datalayer.signupComplete({ method: 'email', pp_user_id: 789, pp_patient_id: 12 });
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     expect(event.event).toBe('signup_complete');
     expect(event.method).toBe('email');
     expect(event.user.logged_in).toBe('true');
-    expect(event.user.pp_user_id).toBe('789');
-    expect(event.user.pp_patient_id).toBe('012');
+    expect(event.user.pp_user_id).toBe(789);
+    expect(event.user.pp_patient_id).toBe(12);
   });
 
   it('signupComplete() without optional IDs still forces logged_in', () => {
@@ -1051,7 +1051,7 @@ describe('Ecommerce Push', () => {
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     expect(event.user).toBeDefined();
-    expect(event.user.pp_user_id).toBe('42');
+    expect(event.user.pp_user_id).toBe(42);
     expect(event.userData).toBeDefined();
     expect(event.page).toBeDefined();
     expect(event.pp_timestamp).toBeDefined();
@@ -1704,8 +1704,8 @@ describe('Integration', () => {
     expect(event.custom).toBe(true);
 
     // User
-    expect(event.user.pp_user_id).toBe('100');
-    expect(event.user.pp_patient_id).toBe('200');
+    expect(event.user.pp_user_id).toBe(100);
+    expect(event.user.pp_patient_id).toBe(200);
     expect(event.user.logged_in).toBe('true');
 
     // User data
@@ -1736,7 +1736,7 @@ describe('Integration', () => {
     const event = window.dataLayer[window.dataLayer.length - 1];
     expect(event.event).toBe('purchase');
     expect(event.transaction_id).toBe('TXN-INT');
-    expect(event.user.pp_user_id).toBe('55');
+    expect(event.user.pp_user_id).toBe(55);
     expect(event.user.logged_in).toBe('true');
     expect(event.userData.sha256_email_address).toBe('f'.repeat(64));
     expect(event.ecommerce.items).toHaveLength(2);

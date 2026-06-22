@@ -111,8 +111,8 @@ export interface BuiltEventProperties {
   current_url: string;
   url: string;
   device_id: string;
-  pp_user_id: string | null;
-  pp_patient_id: string | null;
+  pp_user_id: number | null;
+  pp_patient_id: number | null;
   pp_session_id: string;
   pp_timestamp: number;
   platform: string;
@@ -1148,8 +1148,8 @@ export function createEventPropertiesBuilder(
       // dropped by 3E's strip, but `pp_user_id` / `pp_patient_id` are on the
       // ALLOW_NULL list in `stripEmptyProps`, so the explicit null is
       // preserved and stays queryable / filterable in Mixpanel and GA4.
-      pp_user_id: userId && userId !== '-1' ? userId : null,
-      pp_patient_id: patientId && patientId !== '-1' ? patientId : null,
+      pp_user_id: userId && userId !== '-1' ? parseInt(userId, 10) : null,
+      pp_patient_id: patientId && patientId !== '-1' ? parseInt(patientId, 10) : null,
       pp_session_id: ppLib.session ? ppLib.session.getOrCreateSessionId() : '',
       pp_timestamp: Date.now(),
       platform: defaultPlatform,
