@@ -705,21 +705,21 @@ describe('Mixpanel native coverage', () => {
       expect(mp.identify).not.toHaveBeenCalledWith('user-x');
     });
 
-    it('unifies Mixpanel distinct_id with SDK pp_distinct_id when they differ (logged-in user)', async () => {
-      // Logged-in: pp_distinct_id resolves to userId. Requires either
-      // app_is_authenticated=true, or both userId + patientId.
+    it('does NOT identify even a logged-in user — boot-time identify is disabled (funnel app owns identity)', async () => {
+      // The SDK no longer maps login cookies → mixpanel.identify() at boot:
+      // unifyDistinctIdWithPpDistinctId() is intentionally disabled
+      // (shared-context.ts). Identity is owned by the funnel app's
+      // mixpanel.identify($user_id) under Simplified ID Merge; the landing
+      // SDK stays anonymous and only provides the shared cross-subdomain
+      // $device_id. So even a logged-in visitor must NOT be identified here.
       setCookie('userId', 'pp-user-42');
       setCookie('app_is_authenticated', 'true');
       const loadedCallback = await initAndGetLoadedCallback();
       const mp = createMockMixpanel();
-      // Mixpanel auto-generated an anonymous device_id that doesn't match
-      // the SDK's pp_user_id.
       mp.get_distinct_id = vi.fn(() => '$device:auto-mp-id');
       invokeLoadedCallback(loadedCallback, mp);
 
-      // Unification step calls identify with SDK's pp_distinct_id, aligning
-      // Mixpanel with our identity system for cross-tool joins.
-      expect(mp.identify).toHaveBeenCalledWith('pp-user-42');
+      expect(mp.identify).not.toHaveBeenCalled();
     });
 
     it('does NOT identify anonymous visitors (Simplified ID Merge contract)', async () => {
@@ -793,6 +793,81 @@ describe('Mixpanel native coverage', () => {
 
       expect(mp.opt_in_tracking).not.toHaveBeenCalled();
     });
+
+    // F3: consent denial → native opt-out (so raw window.mixpanel.track is
+    // suppressed too), and never opt-in.
+    it('opts OUT (not in) when consent is denied', async () => {
+      const loadedCallback = await initAndGetLoadedCallback({ optOutByDefault: false });
+      window.ppLib.consent.configure({ mode: 'opt-in' }); // opt-in, ungranted → denied
+      const mp = createMockMixpanel();
+      invokeLoadedCallback(loadedCallback, mp);
+
+      expect(mp.opt_out_tracking).toHaveBeenCalled();
+      expect(mp.opt_in_tracking).not.toHaveBeenCalled();
+    });
+
+    // F3 / Meta P1+P2: denied consent must skip the raw mp.identify/register in
+    // the migration + identity-sync paths (native opt-out does NOT suppress those).
+    it('skips identity migration when consent is denied', async () => {
+      setCookie('mp_test-token-abc_mixpanel', JSON.stringify({ distinct_id: 'user-123' }));
+      const loadedCallback = await initAndGetLoadedCallback({ crossSubdomainCookie: true });
+      window.ppLib.consent.configure({ mode: 'opt-in' }); // denied
+      const mp = createMockMixpanel();
+      mp.get_distinct_id = vi.fn(() => 'new-distinct-id-456');
+      invokeLoadedCallback(loadedCallback, mp);
+
+      expect(mp.identify).not.toHaveBeenCalledWith('user-123'); // migration skipped under denial
+    });
+
+    it('treats an absent consent service as granted (defensive || arm)', async () => {
+      const loadedCallback = await initAndGetLoadedCallback({ optOutByDefault: false });
+      delete (window.ppLib as { consent?: unknown }).consent;
+      const mp = createMockMixpanel();
+      invokeLoadedCallback(loadedCallback, mp);
+
+      expect(mp.opt_in_tracking).toHaveBeenCalled();
+    });
+
+    // PR3b: post-boot consent changes flip the live instance's native opt-in/out.
+    it('propagates a post-boot consent revoke to native opt_out', async () => {
+      const loadedCallback = await initAndGetLoadedCallback({ optOutByDefault: false });
+      window.ppLib.consent.configure({ mode: 'opt-out' }); // granted at boot
+      const mp = createMockMixpanel();
+      invokeLoadedCallback(loadedCallback, mp);
+      expect(mp.opt_in_tracking).toHaveBeenCalled(); // opted in at boot
+      mp.opt_out_tracking.mockClear();
+
+      window.ppLib.consent.revoke();
+      expect(mp.opt_out_tracking).toHaveBeenCalled(); // live opt-out on revoke
+    });
+
+    it('propagates a post-boot consent grant to native opt_in', async () => {
+      const loadedCallback = await initAndGetLoadedCallback({ optOutByDefault: false });
+      const mp = createMockMixpanel();
+      invokeLoadedCallback(loadedCallback, mp);
+      mp.opt_in_tracking.mockClear();
+
+      window.ppLib.consent.grant();
+      expect(mp.opt_in_tracking).toHaveBeenCalled(); // live opt-in on grant
+    });
+
+    it('does NOT opt in on a post-boot grant when optOutByDefault is true', async () => {
+      const loadedCallback = await initAndGetLoadedCallback({ optOutByDefault: true });
+      const mp = createMockMixpanel();
+      invokeLoadedCallback(loadedCallback, mp);
+      mp.opt_in_tracking.mockClear();
+
+      window.ppLib.consent.grant();
+      expect(mp.opt_in_tracking).not.toHaveBeenCalled(); // hard-off stays dark
+    });
+
+    it('swallows a throwing native opt_in/out (legacy mock without the API)', async () => {
+      const loadedCallback = await initAndGetLoadedCallback({ optOutByDefault: false });
+      const mp = createMockMixpanel();
+      mp.opt_in_tracking = vi.fn(() => { throw new Error('no opt_in on legacy mock'); });
+      // The boot path calls opt_in_tracking → throws → caught, non-fatal.
+      expect(() => invokeLoadedCallback(loadedCallback, mp)).not.toThrow();
+    });
   });
 
   // ==========================================================================
@@ -835,6 +910,8 @@ describe('Mixpanel native coverage', () => {
   // ==========================================================================
   describe('loaded callback — resetCampaign', () => {
     it('sets utm_* [last touch] to spec defaults on session timeout when no utm params present', async () => {
+      // Auth boot-path: people.* gated on isAuthenticated (anonymous-profile fix).
+      setCookie('app_is_authenticated', 'true');
       const loadedCallback = await initAndGetLoadedCallback({ sessionTimeout: 1 });
       const mp = createMockMixpanel();
 
@@ -1079,6 +1156,9 @@ describe('Mixpanel native coverage', () => {
   // ==========================================================================
   describe('loaded callback — experiment cookie', () => {
     it('parses valid JSON experiment cookie and registers data', async () => {
+      // Auth boot-path: registerExperimentCookie's people.set_once gated
+      // on isAuthenticated (anonymous-profile fix).
+      setCookie('app_is_authenticated', 'true');
       const expData = { experiment_a: 'variant_1', experiment_b: 'control' };
       setCookie('exp', JSON.stringify(expData));
 
@@ -1219,6 +1299,9 @@ describe('Mixpanel native coverage', () => {
     });
 
     it('registers last touch and first touch UTM params when present', async () => {
+      // Auth boot-path: people.set / people.set_once gated on
+      // isAuthenticated (anonymous-profile fix).
+      setCookie('app_is_authenticated', 'true');
       Object.defineProperty(document, 'URL', {
         value: 'http://localhost/test?utm_source=google&utm_medium=cpc&utm_campaign=spring&utm_content=ad1&utm_term=shoes',
         writable: true,

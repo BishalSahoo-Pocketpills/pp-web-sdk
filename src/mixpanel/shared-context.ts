@@ -11,6 +11,7 @@
 import type { PPLib } from '@src/types/common.types';
 import type { MixpanelCookieNames } from '@src/types/mixpanel.types';
 import { pollUntil } from '@src/common/retry';
+import { isAuthenticated } from '@src/mixpanel/auth-state';
 import { dispatch } from '@src/mixpanel/dispatch';
 import { getState } from '@src/mixpanel/instance-state';
 import { registerCampaignParams } from '@src/mixpanel/campaign';
@@ -36,7 +37,12 @@ export function registerSharedContext(win: Window & typeof globalThis, doc: Docu
   registerExperimentCookie();
   registerCampaignParams(doc);
   registerMarketingAttribution();
-  unifyDistinctIdWithPpDistinctId();
+  // DISABLED: the SDK no longer sets Mixpanel identity at boot. Identity is
+  // owned by the funnel app's `mixpanel.identify($user_id)` (Simplified ID
+  // Merge); the landing SDK stays anonymous and only provides the shared
+  // cross-subdomain $device_id. Re-enable by uncommenting to restore the
+  // boot-time login→identify mapping.
+  // unifyDistinctIdWithPpDistinctId();
   bridgeVwoProps(win);
 }
 
@@ -56,7 +62,7 @@ function registerCookieIdentity(): void {
   if (!pp || !cookieNames) return;
   const userId = pp.getCookie(cookieNames.userId);
   /*! v8 ignore start */
-  if (userId) {
+  if (userId && userId !== '-1') {
   /*! v8 ignore stop */
     dispatch('register', [{ pp_user_id: userId }]);
   }
@@ -84,7 +90,13 @@ function registerExperimentCookie(): void {
   Object.keys(expObj).forEach(function (item: string) {
     data[item] = expObj[item];
   });
-  dispatch('people.set_once', [data]);
+  // Profile writes are gated on authentication per Mixpanel's Simplified
+  // ID Merge guidance — see auth-state.ts for the rationale. The
+  // super-property `register` below stays unconditional because it
+  // attaches to events going forward, not to a profile.
+  if (isAuthenticated(pp)) {
+    dispatch('people.set_once', [data]);
+  }
   dispatch('register', [data]);
 }
 
@@ -94,7 +106,12 @@ function registerMarketingAttribution(): void {
     const marketingAttribution = pp.eventPropertiesBuilder.getMarketingAttribution();
     if (marketingAttribution) {
       dispatch('register', [{ marketingAttribution: marketingAttribution }]);
-      dispatch('people.set', [{ marketingAttribution: marketingAttribution }]);
+      // Profile write gated on authentication — see auth-state.ts. Super-
+      // property `register` above stays unconditional so anonymous events
+      // still carry the marketingAttribution column.
+      if (isAuthenticated(pp)) {
+        dispatch('people.set', [{ marketingAttribution: marketingAttribution }]);
+      }
       pp.log('info', M.MARKETING_ATTR_REGISTERED);
     }
   } catch (e) {
@@ -199,7 +216,13 @@ function bridgeVwoProps(win: Window & typeof globalThis): void {
       const props = readVWOProps();
       if (props) {
         const okRegister = dispatch('register', [props]);
-        const okPeopleSet = dispatch('people.set', [props]);
+        // Profile write gated on authentication — see auth-state.ts. For
+        // anonymous visitors we treat the people.set as a no-op success so
+        // the bridge still flips `registered = true` and stops polling.
+        // The super-property `register` above already carries the
+        // experiment exposure to every event, which is what downstream
+        // segmentation actually needs.
+        const okPeopleSet = isAuthenticated(pp) ? dispatch('people.set', [props]) : true;
         // Dispatch swallows per-instance throws internally (so primary
         // failure doesn't block secondary). Surface a combined failure as
         // warn here for back-compat with the legacy single-instance log

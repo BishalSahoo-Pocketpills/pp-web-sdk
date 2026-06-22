@@ -1,5 +1,9 @@
 export interface DebounceTracker {
   isDuplicate: (key: string) => boolean;
+  /** Current number of tracked keys. Observability hook for the memory-leak
+   *  protection (the prune sweep) — lets callers/tests verify the map shrinks
+   *  rather than growing unbounded. */
+  size: () => number;
 }
 
 /**
@@ -35,5 +39,9 @@ export function createDebounceTracker(config: { debounceMs: number }, pruneThres
     return false;
   }
 
-  return { isDuplicate: isDuplicate };
+  function size(): number {
+    return Object.keys(lastEventMap).length;
+  }
+
+  return { isDuplicate: isDuplicate, size: size };
 }

@@ -18,6 +18,7 @@
  * `marketingAttribution` super-property.
  */
 import type { PPLib } from '@src/types/common.types';
+import { isAuthenticated } from '@src/mixpanel/auth-state';
 import { dispatch } from '@src/mixpanel/dispatch';
 import { utmFallback } from '@src/common/utm-fallback';
 
@@ -64,7 +65,13 @@ function buildTouchParams(
  */
 export function resetSessionCampaign(): void {
   const params = buildTouchParams(emptyUtmTouch(), '[last touch]');
-  dispatch('people.set', [params]);
+  // Profile write gated on authentication — see auth-state.ts. Anonymous
+  // visitors keep their `$device:<uuid>` distinct_id; the super-property
+  // `register` below still attaches the reset last-touch to subsequent
+  // events, which is what session-reset is supposed to accomplish.
+  if (pp && isAuthenticated(pp)) {
+    dispatch('people.set', [params]);
+  }
   dispatch('register', [params]);
 }
 
@@ -105,8 +112,20 @@ export function registerCampaignParams(doc: Document): void {
     lastParams['fbclid'] = fbclid;
   }
 
-  dispatch('people.set', [lastParams]);
+  // Profile writes are gated on authentication — see auth-state.ts.
+  // Super-property writes (`register` / `register_once`) stay
+  // unconditional so anonymous events still carry the UTM touch keys.
+  // First-touch's server-side `set_once` lock is intentionally NOT
+  // applied to the anonymous `$device:<uuid>` profile — when the visitor
+  // later authenticates, the boot path will re-fire `set_once` on the
+  // real identified profile and the first-touch UTM gets locked there.
+  const authenticated = isAuthenticated(pp);
+  if (authenticated) {
+    dispatch('people.set', [lastParams]);
+  }
   dispatch('register', [lastParams]);
-  dispatch('people.set_once', [firstParams]);
+  if (authenticated) {
+    dispatch('people.set_once', [firstParams]);
+  }
   dispatch('register_once', [firstParams]);
 }

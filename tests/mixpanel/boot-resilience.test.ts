@@ -212,7 +212,7 @@ describe('Per-instance boot profile — persistence + cookie-size hardening', ()
       (e: StubInitEntry) => e[0] === 'ptok' && (e[2] === undefined || e[2] === 'mixpanel'),
     );
     expect(primaryEntry).toBeTruthy();
-    expect(primaryEntry![1].persistence).toBe('cookie');
+    expect(primaryEntry[1].persistence).toBe('cookie');
   });
 
   it('secondary inits with `persistence: "localStorage"` so only primary writes a cookie', () => {
@@ -227,7 +227,7 @@ describe('Per-instance boot profile — persistence + cookie-size hardening', ()
     const queued = stubQueue();
     const secondaryEntry = queued.find((e: StubInitEntry) => e[2] === 'secondary');
     expect(secondaryEntry).toBeTruthy();
-    expect(secondaryEntry![1].persistence).toBe('localStorage');
+    expect(secondaryEntry[1].persistence).toBe('localStorage');
   });
 
   it('prunes the secondary project cookie (former dual-cookie era) on init', () => {
@@ -342,8 +342,7 @@ describe('Cookie-size telemetry', () => {
     const queued = stubQueue().slice();
     const primary = createMockMixpanel();
     setMixpanelHandle(primary);
-    const entry = queued.find((e: StubInitEntry) => e[2] === undefined || e[2] === 'mixpanel');
-    entry![1].loaded!(primary);
+    queued.find((e: StubInitEntry) => e[2] === undefined || e[2] === 'mixpanel')[1].loaded(primary);
     return logSpy;
   }
 
@@ -470,6 +469,127 @@ describe('H4 — watchdog force-drain to ready instances', () => {
         /buffered events remain queued/.test(String(c[1])),
     );
     expect(noReadyWarn).toBeTruthy();
+  });
+
+  // F15: a nothing-loaded watchdog must NOT latch allLoadedFired, so a late
+  // `loaded` callback (instance recovers after the 15s timeout) can still run
+  // onAllLoaded — otherwise shared context never registers and buffered events
+  // stay stuck forever.
+  it('recovers after a nothing-loaded watchdog: a late loaded still drains the buffer', () => {
+    vi.useFakeTimers();
+    loadWithCommon('mixpanel');
+
+    window.ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'p' },
+      secondary: { enabled: true, token: 's' },
+    });
+    setupScriptEnv();
+
+    window.ppLib.mixpanel.track('orphan-1');
+    window.ppLib.mixpanel.track('orphan-2');
+
+    window.ppLib.mixpanel.init();
+    const queued = stubQueue().slice();
+
+    // Watchdog fires with NOTHING loaded.
+    vi.advanceTimersByTime(15001);
+
+    // Both instances recover AFTER the watchdog.
+    const { root, primary, secondary } = createDualMockMixpanel();
+    setMixpanelHandle(root);
+    queued.forEach((entry: StubInitEntry) => {
+      const [, opts, name] = entry;
+      if (typeof opts.loaded === 'function') {
+        opts.loaded(name === 'secondary' ? secondary : primary);
+      }
+    });
+
+    // onAllLoaded ran on recovery → the buffered events drained to primary.
+    // Pre-fix, the watchdog had latched allLoadedFired so onAllLoaded
+    // early-returned and these were lost. (patchInstanceTrack wrapped
+    // primary.track, so assert against the underlying spy via _ppOriginal.)
+    const trackSpy = originalTrackSpy(primary);
+    const tracked = trackedEventNames(trackSpy);
+    expect(tracked).toContain('orphan-1');
+    expect(tracked).toContain('orphan-2');
+  });
+
+  // Regression: after the one-shot watchdog force-drains with a stuck instance,
+  // the module must enter DEGRADED mode so a healthy primary keeps sending live.
+  // Pre-fix, every later dual-target event still hit the strict-parity buffer
+  // (secondary never ready), the queue filled to its 200 cap, and ALL further
+  // events were dropped silently even though primary was fully healthy.
+  it('post-watchdog degraded mode: a healthy primary keeps sending live instead of re-buffering every event', () => {
+    vi.useFakeTimers();
+    loadWithCommon('mixpanel');
+
+    window.ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'p' },
+      secondary: { enabled: true, token: 's' },
+    });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    const queued = stubQueue().slice();
+    // Primary-only mock — secondary stays stuck forever.
+    const primary = createMockMixpanel();
+    setMixpanelHandle(primary);
+    const primaryEntry = queued.find((e: StubInitEntry) => e[2] === undefined || e[2] === 'mixpanel');
+    primaryEntry[1].loaded(primary);
+
+    // Watchdog fires → degraded mode latches.
+    vi.advanceTimersByTime(15001);
+
+    const trackSpy = originalTrackSpy(primary);
+    trackSpy.mockClear();
+
+    // NEW events AFTER the watchdog must reach primary live (not buffered).
+    window.ppLib.mixpanel.track('post-watchdog-1', { a: 1 });
+    window.ppLib.mixpanel.track('post-watchdog-2', { a: 2 });
+
+    const tracked = trackedEventNames(trackSpy);
+    expect(tracked).toContain('post-watchdog-1');
+    expect(tracked).toContain('post-watchdog-2');
+  });
+
+  // The degraded approach (vs disabling the stuck instance) lets a slow
+  // secondary self-heal: once its loaded callback fires it is adopted and
+  // subsequent events fan out to BOTH instances again. Also exercises the
+  // unconditional drainIfReady() added to onInstanceLoaded for the post-latch
+  // recovery path.
+  it('post-watchdog degraded mode: a stuck secondary that loads later self-heals and receives events again', () => {
+    vi.useFakeTimers();
+    loadWithCommon('mixpanel');
+
+    window.ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'p' },
+      secondary: { enabled: true, token: 's' },
+    });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    const queued = stubQueue().slice();
+    const { root, primary, secondary } = createDualMockMixpanel();
+    setMixpanelHandle(root);
+
+    // Only primary loads before the watchdog.
+    const primaryEntry = queued.find((e: StubInitEntry) => e[2] === undefined || e[2] === 'mixpanel');
+    primaryEntry[1].loaded(primary);
+    vi.advanceTimersByTime(15001); // watchdog → degraded
+
+    // Secondary recovers AFTER the watchdog latched allLoadedFired.
+    const secondaryEntry = queued.find((e: StubInitEntry) => e[2] === 'secondary');
+    secondaryEntry[1].loaded(secondary);
+
+    const pSpy = originalTrackSpy(primary);
+    const sSpy = originalTrackSpy(secondary);
+    pSpy.mockClear();
+    sSpy.mockClear();
+
+    window.ppLib.mixpanel.track('healed', { x: 1 });
+
+    expect(trackedEventNames(pSpy)).toContain('healed');
+    expect(trackedEventNames(sSpy)).toContain('healed');
   });
 
   it('clears the watchdog when all enabled instances load before the timeout', () => {

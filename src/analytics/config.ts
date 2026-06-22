@@ -49,7 +49,7 @@ export function createAnalyticsConfig(ppLib: PPLib): AnalyticsConfig {
         events: {
           firstTouch: 'first_touch_attribution',
           lastTouch: 'last_touch_attribution',
-          pageView: 'attribution_page_view'
+          pageView: 'page_view'
         },
         rateLimitMax: 100,
         rateLimitWindow: 60000
@@ -62,7 +62,8 @@ export function createAnalyticsConfig(ppLib: PPLib): AnalyticsConfig {
     performance: {
       useRequestIdleCallback: true,
       queueEnabled: true,
-      maxQueueSize: 50
+      maxQueueSize: 50,
+      drainBatchSize: 25
     },
 
     /*! v8 ignore start */

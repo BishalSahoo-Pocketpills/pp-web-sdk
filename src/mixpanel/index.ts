@@ -46,6 +46,7 @@ import {
   dispatch,
   drainIfReady,
   drainToReady,
+  setDegraded,
 } from '@src/mixpanel/dispatch';
 import { size as queueSize } from '@src/mixpanel/pre-init-queue';
 import { configureLoader, loadMixpanelSDK } from '@src/mixpanel/loader';
@@ -252,6 +253,25 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       if (typeof ppLib._resolveMixpanelReady === 'function') {
         ppLib._resolveMixpanelReady();
       }
+
+      // Propagate POST-boot consent changes to each instance's native
+      // opt-in/out (a mid-session CMP revoke/grant). The boot check above only
+      // runs once; without this a user who revokes after load keeps a natively
+      // opted-in Mixpanel handle that raw window.mixpanel.track calls could use.
+      // Subscribed once (onAllLoaded is guarded by allLoadedFired); `consent` is
+      // installed by common (same bundle), guarded defensively for absence.
+      if (ppLib.consent) {
+        ppLib.consent.subscribe(function(next) {
+          const granted = next === 'granted';
+          // All enabled instances are loaded by now (onAllLoaded gate), so each
+          // has a live mpRef; filter defensively in case one was torn down.
+          const ready = getEnabledStates().filter(function(s) { return s.mpRef; });
+          for (let i = 0; i < ready.length; i++) {
+            applyNativeConsent(ready[i].name, ready[i].mpRef as MixpanelGlobal, granted);
+          }
+        });
+      }
+
       ppLib.log('info', M.INITIALIZED_SUCCESSFULLY);
     }
 
@@ -315,7 +335,7 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
      * how `cross_subdomain_cookie: true` writes it) and the host-only path
      * (no Domain attribute). A delete on a scope the cookie was NOT written
      * with is a harmless no-op. Same deletion shape as the proven legacy
-     * `pp_device_id` sweep below.
+     * `pp_device_id` / per-instance sweeps below.
      */
     function expireMixpanelCookieAllScopes(name: string): void {
       const expired = 'Thu, 01 Jan 1970 00:00:00 GMT';
@@ -491,6 +511,28 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
     }
 
     /**
+     * Align an instance's native Mixpanel opt-in/out with the consent state.
+     * The dispatch facade already gates on consent, but raw / legacy
+     * `window.mixpanel.track` calls bypass it — so on a denial we flip the
+     * instance's own opt_out_tracking(), and only opt in when granted.
+     * `optOutByDefault: true` is an intentional hard-off that stays dark
+     * regardless of consent. Shared by boot (onInstanceLoaded) and the
+     * post-boot consent subscription (onAllLoaded).
+     */
+    function applyNativeConsent(name: InstanceName, mp: MixpanelGlobal, granted: boolean): void {
+      try {
+        if (granted && !CONFIG.shared.optOutByDefault) {
+          mp.opt_in_tracking();
+        } else if (!granted) {
+          mp.opt_out_tracking();
+          ppLib.log('info', '[ppMixpanel] consent denied — ' + name + ' opted out of native tracking');
+        }
+      } catch (_e) {
+        /* legacy mock may not implement opt_in/opt_out — non-fatal */
+      }
+    }
+
+    /**
      * Per-instance loaded callback. Runs once per instance after the real
      * Mixpanel SDK has replayed its `_i[]` entry and created the live
      * Mixpanel handle (window.mixpanel for primary, window.mixpanel.secondary
@@ -500,24 +542,34 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       const state = getState(name);
       state.mpRef = mp;
 
-      // Opt-in tracking unless explicitly opted-out at boot.
-      if (!CONFIG.shared.optOutByDefault) {
-        try {
-          mp.opt_in_tracking();
-        } catch (_e) {
-          /* legacy mock may not implement — non-fatal */
-        }
-      }
+      // Align Mixpanel's native opt-in/out state with the unified consent
+      // gate. The dispatch facade already gates on consent, but raw / legacy
+      // `window.mixpanel.track` calls bypass it — so on a denial we also flip
+      // Mixpanel's own opt_out_tracking(), and we only opt in when consent is
+      // granted. `optOutByDefault: true` is an intentional hard-off that keeps
+      // the instance dark regardless of consent. (`ppLib.consent` is installed
+      // by common; guarded defensively — an absent service is treated as
+      // granted, consistent with the dispatch gate. Default consent mode is
+      // 'opt-out' ⇒ granted, so this opt-out branch is dormant by default.)
+      const consentGranted = !ppLib.consent || ppLib.consent.isGranted();
+      applyNativeConsent(name, mp, consentGranted);
 
       // PRIMARY-ONLY: subdomain cookie migration + pp_distinct_id unification.
-      // Both are migration-era concerns that the secondary (fresh project)
-      // has no state to migrate from.
-      if (name === 'primary') {
-        applyMigrationIfNeeded(mp, primaryMigrationCtx);
-      } else {
-        // SECONDARY: pin $device_id from primary BEFORE any tracks fire.
-        // syncIdentityFromPrimary internally guards if primary isn't ready.
-        syncIdentityFromPrimary(mp);
+      // SECONDARY: pin $device_id from primary BEFORE any tracks fire.
+      // Both issue RAW mp.identify/register that Mixpanel's native opt-out does
+      // NOT suppress and that bypass the dispatch consent gate — so skip them
+      // entirely when consent is denied, otherwise a denied user's identity /
+      // migration would still reach Mixpanel. (A post-boot grant does NOT
+      // retroactively run migration here — it self-heals on the next page load,
+      // where boot-time consent is granted; only native opt-in/out is flipped
+      // live, via the consent subscription wired in onAllLoaded.)
+      if (consentGranted) {
+        if (name === 'primary') {
+          applyMigrationIfNeeded(mp, primaryMigrationCtx);
+        } else {
+          // syncIdentityFromPrimary internally guards if primary isn't ready.
+          syncIdentityFromPrimary(mp);
+        }
       }
 
       // Patch this instance's `mp.track` so SessionManager.check() runs
@@ -542,6 +594,14 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
         clearWatchdog();
         onAllLoaded();
       }
+
+      // Flush any pre-init backlog now that this instance is live. Safe to call
+      // unconditionally — drainIfReady() no-ops unless ALL enabled instances are
+      // ready, and onAllLoaded already drained on the normal path above. This is
+      // the recovery path for a stuck instance that loads AFTER the watchdog
+      // latched allLoadedFired: onAllLoaded() would early-return there, so
+      // without this the backlog buffered while degraded would strand forever.
+      drainIfReady();
     }
 
     function allEnabledLoaded(): boolean {
@@ -654,6 +714,13 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
         const stuck = enabled.filter((s) => !s.initialized);
         const stuckNames = stuck.map((s) => s.name).join('+');
 
+        // Enter degraded mode: from now on dispatch allows partial fan-out to
+        // whichever instances ARE ready instead of buffering (then dropping at
+        // the queue cap) every event that targets the stuck instance. A healthy
+        // primary keeps sending live; the stuck instance self-heals if it loads
+        // later (its loaded callback adopts the ref and drains the backlog).
+        if (stuck.length > 0) setDegraded(true);
+
         // Bypass `drainIfReady`'s "all enabled ready" gate. drainToReady
         // replays through `dispatch`, which routes only to instances that
         // resolve via `resolveMpRef`. Entries that can't reach any ready
@@ -677,17 +744,16 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
           }
         }
 
-        // Mark all-loaded fired so a late `loaded` callback (after the
-        // watchdog) doesn't double-fire `onAllLoaded`. Identity sync /
-        // shared context still need to run for whichever instances DID
-        // load — but only when at least one is ready.
+        // Run the all-loaded handler (shared context, identity sync, the
+        // readiness gate) for whichever instances DID load — but only when at
+        // least one is ready, since onAllLoaded dispatches register()/identify().
+        // When NOTHING loaded, do NOT latch `allLoadedFired`: a late `loaded`
+        // callback (if a stuck instance recovers after the watchdog) must still
+        // be able to run onAllLoaded so shared context registers and the
+        // readiness gate resolves. onAllLoaded's own guard prevents a
+        // double-fire (F15).
         if (enabled.some((s) => s.initialized && !!s.mpRef)) {
           onAllLoaded();
-        } else {
-          // Nothing loaded — `onAllLoaded` would dispatch register()
-          // into the void. Skip; the late `loaded` callback path will
-          // run it if/when an instance recovers.
-          allLoadedFired = true;
         }
       }, WATCHDOG_MS);
     }

@@ -5,6 +5,7 @@ import type { AnalyticsUtils } from '@src/analytics/utils';
 export interface AnalyticsConsent {
   state: string;
   isGranted: () => boolean;
+  isRequired: () => boolean;
   checkOneTrust: () => boolean;
   checkCookieYes: () => boolean;
   getStoredConsent: () => boolean;
@@ -26,29 +27,21 @@ export function createAnalyticsConsent(
   const SafeUtils = ppLib.SafeUtils;
   const Security = ppLib.Security;
 
-  /*! v8 ignore start */
-  let consentCacheResult: boolean | null = null;
-  let consentCacheTime: number = 0;
-  const CONSENT_CACHE_TTL = 60000; // 60 seconds
-  /*! v8 ignore stop */
-
   const api: AnalyticsConsent = {
     state: SafeUtils.get(CONFIG, 'consent.defaultState', 'approved') as string,
 
+    // No result cache (F19): every check reflects the CURRENT framework /
+    // storage state. The underlying reads (array indexOf, cookie parse,
+    // localStorage read) are cheap, whereas a stale cache would let tracking
+    // continue for up to a minute after an external CMP revoke that mutates
+    // OneTrust groups / the CookieYes cookie directly (without calling
+    // setConsent), which is exactly the gap this gate exists to close.
     isGranted: function(): boolean {
       try {
-        /*! v8 ignore start */
         if (!SafeUtils.get(CONFIG, 'consent.required', false)) {
-        /*! v8 ignore stop */
           return true;
         }
 
-        const now = Date.now();
-        if (consentCacheResult !== null && (now - consentCacheTime) < CONSENT_CACHE_TTL) {
-          return consentCacheResult;
-        }
-
-        /*! v8 ignore start */
         let result: boolean | null = null;
 
         if (SafeUtils.get(CONFIG, 'consent.frameworks.custom.enabled', false)) {
@@ -73,27 +66,26 @@ export function createAnalyticsConsent(
         if (result === null) {
           result = api.getStoredConsent();
         }
-        /*! v8 ignore stop */
 
-        consentCacheResult = result;
-        consentCacheTime = Date.now();
         return result;
       } catch (e) {
-        /*! v8 ignore start */
         utils.log('error', 'Consent check error', e);
-        consentCacheResult = api.state === 'approved';
-        consentCacheTime = Date.now();
-        return consentCacheResult;
-        /*! v8 ignore stop */
+        return api.state === 'approved';
       }
+    },
+
+    // Whether this module's consent gate is armed. When false (the shipped
+    // default), isGranted() short-circuits to true regardless of the persisted
+    // choice, so the unified common-consent service treats this delegate as
+    // having no authoritative opinion and lets an explicit revoke() win.
+    isRequired: function(): boolean {
+      return SafeUtils.get(CONFIG, 'consent.required', false) === true;
     },
 
     checkOneTrust: function(): boolean {
       try {
         const groups = win.OnetrustActiveGroups;
-        /*! v8 ignore start */
         if (SafeUtils.exists(groups)) {
-        /*! v8 ignore stop */
           const categoryId = SafeUtils.get(CONFIG, 'consent.frameworks.oneTrust.categoryId', 'C0002');
           return groups.indexOf(categoryId) !== -1;
         }
@@ -108,9 +100,7 @@ export function createAnalyticsConsent(
         const cookieName = SafeUtils.get(CONFIG, 'consent.frameworks.cookieYes.cookieName', 'cookieyes-consent');
         const cookie = ppLib.getCookie(cookieName);
 
-        /*! v8 ignore start */
         if (SafeUtils.exists(cookie)) {
-        /*! v8 ignore stop */
           const consent = Security.json.parse(cookie as string);
           const categoryId = SafeUtils.get(CONFIG, 'consent.frameworks.cookieYes.categoryId', 'analytics');
           return SafeUtils.get(consent, categoryId) === 'yes';
@@ -126,11 +116,12 @@ export function createAnalyticsConsent(
         const storageKey = SafeUtils.get(CONFIG, 'consent.storageKey', 'pp_consent');
         const stored = win.localStorage.getItem(storageKey);
 
-        /*! v8 ignore start */
         if (SafeUtils.exists(stored)) {
-        /*! v8 ignore stop */
-          api.state = stored as string;
-          return stored === 'approved';
+          // Accept both the analytics vocabulary ('approved') and the shared
+          // common-consent vocabulary ('granted') so the two services agree (C2).
+          const granted = stored === 'approved' || stored === 'granted';
+          api.state = granted ? 'approved' : (stored as string);
+          return granted;
         }
       } catch (e) {
         utils.log('verbose', 'Could not read consent from storage');
@@ -141,7 +132,6 @@ export function createAnalyticsConsent(
 
     setConsent: function(granted: boolean): void {
       try {
-        consentCacheResult = null;
         api.state = granted ? 'approved' : 'denied';
 
         const storageKey = SafeUtils.get(CONFIG, 'consent.storageKey', 'pp_consent');

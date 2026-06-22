@@ -7,22 +7,13 @@
 #
 #   wrangler deploy --env staging      → pp-sdk-staging
 #   wrangler deploy --env canary       → pp-sdk-canary
-#   wrangler deploy --env perf         → pp-sdk-perf       (isolated preview)
 #   wrangler deploy --env production   → pp-web-sdk   (PRODUCTION)
 #
 # Cloudflare Workers Builds: each Worker's build Deploy command MUST use
 # its --env flag (or --name <worker>). The branch → Worker wiring:
 #   bishal/staging → pp-sdk-staging   (deploy cmd: npx wrangler deploy --env staging)
 #   bishal/canary  → pp-sdk-canary    (deploy cmd: npx wrangler deploy --env canary)
-#   bishal/perf    → pp-sdk-perf       (deploy cmd: npx wrangler deploy --env perf)
 #   bishal/main    → pp-web-sdk        (deploy cmd: npx wrangler deploy --env production)
-#
-# `perf` is a throwaway PREVIEW lane for validating a branch that is OUT OF
-# SYNC with staging/canary/main — e.g. a hotfix RC branched off an older tag
-# (the cookie-too-large fix shipped here as 3.10.4-rc.1 off the v3.10.4 prod
-# baseline). Reset `perf` to whatever commit you want to test and push it to
-# `bishal`; it deploys to pp-sdk-perf in isolation, leaving staging/canary/
-# main (and what they're each testing) completely untouched.
 #
 # See docs/RELEASE-DEPLOY.md for the full model.
 
@@ -51,16 +42,6 @@ name = "pp-sdk-canary"
 workers_dev = true
 
 [env.canary.assets]
-directory = "./dist"
-
-# ---------------------------------------------------------------------------
-# Perf / Preview — bishal/perf → pp-sdk-perf  (isolated out-of-sync testing)
-# ---------------------------------------------------------------------------
-[env.perf]
-name = "pp-sdk-perf"
-workers_dev = true
-
-[env.perf.assets]
 directory = "./dist"
 
 # ---------------------------------------------------------------------------

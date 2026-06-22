@@ -42,9 +42,25 @@ import { M } from '@src/mixpanel/messages';
 let pp: PPLib | null = null;
 let shared: SharedMixpanelConfig | null = null;
 
+// Degraded mode — latched by the boot watchdog when it gives up waiting for a
+// stuck instance (see index.ts armWatchdog). Once set, dispatch allows PARTIAL
+// fan-out (same effect as a per-call `force` flag) so a healthy primary keeps
+// sending live instead of buffering — then dropping at the queue cap — every
+// dual-target event while the other instance never loads. A stuck instance that
+// recovers later is picked up automatically on the next dispatch (its mpRef
+// adopts) and the pre-init backlog flushes via drainIfReady() in
+// onInstanceLoaded.
+let degraded = false;
+
+export function setDegraded(value: boolean): void {
+  degraded = value;
+}
+
 export function configureDispatcher(ppLib: PPLib, sharedConfig: SharedMixpanelConfig): void {
   pp = ppLib;
   shared = sharedConfig;
+  // Reset degraded latch so a fresh boot starts with strict-parity buffering.
+  degraded = false;
   setOverflowHandler((dropped) => {
     if (pp) pp.log('warn', M.PRE_INIT_QUEUE_FULL, { op: dropped.op });
   });
@@ -63,7 +79,8 @@ interface OpHandler {
    *  still override via DispatchOptions.instances. */
   defaultInstances?: InstanceName[];
   /** When true, this op is consent-gated (drops silently when consent is
-   *  not granted). Only `track` is gated today — matches legacy behavior. */
+   *  not granted). 12 ops are gated — see the OP_TABLE rationale block below
+   *  (any op that emits or stores PII to Mixpanel). */
   consentGated?: boolean;
   /** When true, this op participates in the track-enrichment pipeline. */
   enrichable?: boolean;
@@ -326,14 +343,17 @@ export function dispatch(op: MixpanelOp, args: unknown[], options?: DispatchOpti
   //   - Normal dispatch: if ANY targeted instance isn't ready, buffer the
   //     whole call so we don't silently break parity by sending to one
   //     instance only. Re-enrichment happens on drain.
-  //   - force=true (watchdog escape hatch): buffer ONLY if NO target is
-  //     ready. Partial fan-out is allowed once we've given up on full
-  //     parity for this boot cycle.
+  //   - force=true (watchdog escape hatch) OR degraded mode (watchdog gave up
+  //     on a stuck instance): buffer ONLY if NO target is ready. Partial
+  //     fan-out is allowed once we've given up on full parity for this boot
+  //     cycle, so a healthy instance keeps sending instead of buffering every
+  //     dual-target event until the queue overflows and drops them silently.
   const readyTargets = targets.filter((n) => isReady(n));
   if (readyTargets.length === 0) {
     return enqueue({ op, args, options: options ? { ...options } : undefined });
   }
-  if (!(options && options.force) && readyTargets.length < targets.length) {
+  const allowPartial = degraded || (options && options.force);
+  if (!allowPartial && readyTargets.length < targets.length) {
     return enqueue({ op, args, options: options ? { ...options } : undefined });
   }
 

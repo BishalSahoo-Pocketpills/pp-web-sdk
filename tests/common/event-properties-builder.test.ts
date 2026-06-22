@@ -229,6 +229,38 @@ describe('createEventPropertiesBuilder', () => {
       expect(bundle.eventProperties.initial_referrer).toBe('');
     });
 
+    it('strips PII query params and the fragment from the url field (Mixpanel/GA4)', () => {
+      const originalLocation = window.location;
+      Object.defineProperty(window, 'location', {
+        value: {
+          href: 'https://www.pocketpills.com/welcome?access_token=secret&email=a%40b.com&utm_source=google#section',
+          pathname: '/welcome',
+          search: '?access_token=secret&email=a%40b.com&utm_source=google',
+          hostname: 'www.pocketpills.com',
+          protocol: 'https:',
+        },
+        writable: true,
+        configurable: true,
+      });
+      try {
+        const flat = createEventPropertiesBuilder(window, makePPLib({})).buildFlat();
+        const url = flat.url as string;
+        // PII params and the fragment are gone before this reaches Mixpanel/GA4.
+        expect(url).not.toContain('access_token');
+        expect(url).not.toContain('email');
+        expect(url).not.toContain('#section');
+        // Non-PII campaign params survive.
+        expect(url).toContain('utm_source=google');
+        expect(url).toContain('/welcome');
+      } finally {
+        Object.defineProperty(window, 'location', {
+          value: originalLocation,
+          writable: true,
+          configurable: true,
+        });
+      }
+    });
+
     it('treats appAuth=true as logged-in regardless of userId/patientId', () => {
       const ppLib = makePPLib({ cookies: { app_is_authenticated: 'true' } });
       const bundle = createEventPropertiesBuilder(window, ppLib).build();
@@ -246,23 +278,27 @@ describe('createEventPropertiesBuilder', () => {
 
       expect(bundle.eventProperties.logged_in).toBe('false');
       expect(bundle.userProperties.pp_distinct_id).toBe(bundle.eventProperties.device_id);
+      // The '-1' logged-out cookie sentinel maps to null, never '-1'.
+      expect(bundle.eventProperties.pp_user_id).toBe(null);
     });
 
-    it('falls back to "-1" sentinel for pp_user_id / pp_patient_id when cookies are absent', () => {
-      // Anonymous visitors (no userId/patientId cookies) get the '-1'
-      // sentinel rather than '' so the fields survive 3E's empty-string
-      // strip and remain queryable / filterable in Mixpanel.
+    it('emits null for pp_user_id / pp_patient_id when cookies are absent', () => {
+      // Anonymous visitors (no userId/patientId cookies) emit null rather
+      // than the legacy '-1' sentinel. null is normally dropped by 3E's
+      // strip, but these two keys are on the ALLOW_NULL list so the explicit
+      // null survives and stays queryable / filterable in Mixpanel.
       const ppLib = makePPLib({ cookies: {} });
       const bundle = createEventPropertiesBuilder(window, ppLib).build();
 
-      expect(bundle.eventProperties.pp_user_id).toBe('-1');
-      expect(bundle.eventProperties.pp_patient_id).toBe('-1');
+      expect(bundle.eventProperties.pp_user_id).toBe(null);
+      expect(bundle.eventProperties.pp_patient_id).toBe(null);
       expect(bundle.eventProperties.logged_in).toBe('false');
 
-      // Verify the flat (Mixpanel) payload preserves '-1' through stripping.
+      // Verify the flat (Mixpanel) payload preserves null through stripping.
       const flat = createEventPropertiesBuilder(window, ppLib).buildFlat();
-      expect(flat.pp_user_id).toBe('-1');
-      expect(flat.pp_patient_id).toBe('-1');
+      expect(flat.pp_user_id).toBe(null);
+      expect(flat.pp_patient_id).toBe(null);
+      expect('pp_user_id' in flat).toBe(true);
     });
 
     it('on a first-ever visit with no prior touch cookies, captures a direct touch', () => {
@@ -394,6 +430,10 @@ describe('createEventPropertiesBuilder', () => {
       expect(bundle.eventProperties['referrer_domain [last touch]']).toBe('www.google.com');
       expect(bundle.eventProperties['landing_page_url [first touch]']).toBe('http://localhost/lp/first?utm_source=facebook');
       expect(bundle.eventProperties['landing_page_url [last touch]']).toBe('http://localhost/lp/last?utm_source=google&utm_medium=cpc');
+
+      // pp_initial_* mirror the first-touch referrer (backup for Mixpanel's $initial_*).
+      expect(bundle.eventProperties['pp_initial_referrer']).toBe('https://www.facebook.com/some-page');
+      expect(bundle.eventProperties['pp_initial_referring_domain']).toBe('www.facebook.com');
     });
 
     it('emits empty referrer/referrer_domain and current-URL landing on a direct first-ever visit', () => {
@@ -408,6 +448,10 @@ describe('createEventPropertiesBuilder', () => {
       expect(bundle.eventProperties['referrer [last touch]']).toBe('');
       expect(bundle.eventProperties['referrer_domain [first touch]']).toBe('');
       expect(bundle.eventProperties['referrer_domain [last touch]']).toBe('');
+      // pp_initial_* carry the raw first-touch value too — empty on a direct
+      // first visit (stripEmptyProps drops them downstream, like the brackets).
+      expect(bundle.eventProperties['pp_initial_referrer']).toBe('');
+      expect(bundle.eventProperties['pp_initial_referring_domain']).toBe('');
       // landing_page_url IS populated from the current visit's URL —
       // captureUtmTouches always records it on first-ever capture.
       expect(typeof bundle.eventProperties['landing_page_url [first touch]']).toBe('string');
@@ -572,6 +616,12 @@ describe('createEventPropertiesBuilder', () => {
       expect(flat['referrer_domain [last touch]']).toBe('www.google.com');
       expect(flat['landing_page_url [first touch]']).toBe('http://localhost/a?utm_source=facebook');
       expect(flat['landing_page_url [last touch]']).toBe('http://localhost/b?utm_source=google');
+
+      // pp_initial_* reach the Mixpanel flat shape (NOT stripped, unlike the
+      // bare `initial_referrer` in MIXPANEL_DUPLICATE_KEYS) — the whole point of
+      // the backup is that it survives where the native $initial_referrer froze $direct.
+      expect(flat['pp_initial_referrer']).toBe('https://www.facebook.com/x');
+      expect(flat['pp_initial_referring_domain']).toBe('www.facebook.com');
     });
 
     it('includes utm_* [first/last touch] and marketingAttribution per-event (parity with dataLayer)', () => {
@@ -946,6 +996,18 @@ describe('createEventPropertiesBuilder', () => {
         expect(ma!.platform).toBe('direct');
         expect(ma!.source).toBe('direct');
       });
+
+      it('unknown utm_source → platform "other"; raw value preserved in source (F13)', () => {
+        // platform is a closed enum dashboards GROUP BY — an unrecognized
+        // (caller-controllable) utm_source must not become a distinct platform.
+        setHref('http://localhost/lp?utm_source=test_abc&utm_medium=test_abc');
+        setReferrer('');
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+
+        expect(ma!.platform).toBe('other');
+        expect(ma!.source).toBe('test_abc'); // verbatim source still available
+      });
     });
 
     describe('cookieDomain override (staging / preview hosts)', () => {
@@ -1183,6 +1245,67 @@ describe('createEventPropertiesBuilder', () => {
         expect(typeof parsed.sessionTs).toBe('number');
         expect(parsed.sessionTs).toBeGreaterThan(sessionTs);
       });
+
+      it('sets the pp_mktg_migrated self-disable marker after a run (F22)', () => {
+        // Even a no-op run (no legacy cookies) marks the device done.
+        expect(window.localStorage.getItem('pp_mktg_migrated')).toBeNull();
+        createEventPropertiesBuilder(window, makePPLib({ attribution: null })).build();
+        expect(window.localStorage.getItem('pp_mktg_migrated')).toBe('1');
+      });
+
+      it('skips the shim entirely when the self-disable marker is already set (F22)', () => {
+        // A returning visitor: marker present, an existing (already-migrated)
+        // pp_utm_first_touch, but a stale legacy cookie still lingering.
+        window.localStorage.setItem('pp_mktg_migrated', '1');
+        window.localStorage.setItem('pp_utm_first_touch', JSON.stringify({
+          utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'spring',
+          utm_content: '', utm_term: '',
+          source: 'google', medium: 'cpc', campaign: 'spring', platform: 'google_ads',
+          clickId: '', referrer: 'https://www.google.com/', referrerDomain: 'www.google.com',
+          landingPage: 'http://localhost/lp', timestamp: '2026-01-01T00:00:00.000Z',
+        }));
+        document.cookie = 'pp_mktg_first_touch=' +
+          encodeURIComponent(JSON.stringify({
+            source: 'facebook', medium: 'social', campaign: 'launch', platform: 'organic_social',
+            clickId: '', landingPage: 'http://localhost/first',
+            referrer: 'https://www.facebook.com/', referrerDomain: 'www.facebook.com',
+            timestamp: '2024-01-01T00:00:00.000Z',
+          })) + ';path=/';
+
+        createEventPropertiesBuilder(window, makePPLib({ attribution: null })).build();
+
+        // Shim short-circuited: the legacy cookie is NOT deleted (the shim
+        // always deletes it when it runs) and its facebook data was NOT folded
+        // into the existing first-touch (which keeps its google data).
+        expect(document.cookie).toMatch(/pp_mktg_first_touch=[^;]+/);
+        const firstRaw = window.localStorage.getItem('pp_utm_first_touch')!;
+        expect(firstRaw).not.toContain('www.facebook.com');
+        expect(firstRaw).toContain('www.google.com');
+      });
+
+      it('still runs the shim when localStorage.getItem throws (marker is best-effort)', () => {
+        document.cookie = 'pp_mktg_first_touch=' +
+          encodeURIComponent(JSON.stringify({
+            source: 'facebook', medium: 'social', campaign: 'launch', platform: 'organic_social',
+            clickId: '', landingPage: 'http://localhost/first',
+            referrer: 'https://www.facebook.com/', referrerDomain: 'www.facebook.com',
+            timestamp: '2024-01-01T00:00:00.000Z',
+          })) + ';path=/';
+
+        const origGet = window.localStorage.getItem.bind(window.localStorage);
+        const spy = vi.spyOn(window.localStorage, 'getItem').mockImplementation((k: string) => {
+          if (k === 'pp_mktg_migrated') throw new Error('blocked');
+          return origGet(k);
+        });
+        try {
+          createEventPropertiesBuilder(window, makePPLib({ attribution: null })).build();
+          // The marker check threw and fell through → the shim still ran and
+          // deleted the legacy cookie.
+          expect(document.cookie).not.toMatch(/pp_mktg_first_touch=[^;]+/);
+        } finally {
+          spy.mockRestore();
+        }
+      });
     });
 
     describe('landingPage PII sanitisation', () => {
@@ -1204,6 +1327,24 @@ describe('createEventPropertiesBuilder', () => {
         expect(ma!.landingPage).not.toContain('secret-abc');
         expect(ma!.landingPage).not.toContain('password');
         expect(ma!.landingPage).not.toContain('hunter2');
+      });
+
+      it('strips one-time-passcode / 2FA params (otp, passcode, verification_code, 2fa)', () => {
+        setHref('http://localhost/verify?utm_source=email&otp=123456&passcode=abc987&verification_code=ZZ77&2fa=tok-xyz');
+        const ma = createEventPropertiesBuilder(window, makePPLib({ attribution: null }))
+          .getMarketingAttribution();
+
+        // Marketing param preserved.
+        expect(ma!.landingPage).toContain('utm_source=email');
+        // OTP / 2FA values and keys dropped.
+        expect(ma!.landingPage).not.toContain('otp');
+        expect(ma!.landingPage).not.toContain('123456');
+        expect(ma!.landingPage).not.toContain('passcode');
+        expect(ma!.landingPage).not.toContain('abc987');
+        expect(ma!.landingPage).not.toContain('verification_code');
+        expect(ma!.landingPage).not.toContain('ZZ77');
+        expect(ma!.landingPage).not.toContain('2fa');
+        expect(ma!.landingPage).not.toContain('tok-xyz');
       });
 
       it('preserves the URL when no PII params are present', () => {

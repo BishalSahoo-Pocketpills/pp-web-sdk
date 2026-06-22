@@ -134,6 +134,25 @@ describe('Analytics native coverage', () => {
 
   // ==========================================================================
   // HAPPY PATH — exercises maximum branches in one evaluation
+  it('trackPageView defers the GTM page_view to the datalayer module, keeps the Mixpanel one', async () => {
+    await freshLoad();
+    const queue = window.ppAnalyticsDebug.queue;
+    const addSpy = vi.spyOn(queue, 'add');
+
+    // Simulate the datalayer module being loaded — it owns the canonical
+    // (richer) page_view, so analytics must not also emit a GTM page_view.
+    window.ppLib.datalayer = { version: '0' } as unknown as typeof window.ppLib.datalayer;
+    window.ppAnalyticsDebug.tracker.trackPageView();
+
+    const addedGtmPageView = addSpy.mock.calls.some(([evt]) =>
+      evt.type === 'gtm' && (evt.data as { event?: string }).event === 'page_view');
+    const addedMixpanelPageView = addSpy.mock.calls.some(([evt]) =>
+      evt.type === 'mixpanel' && (evt.data as { eventName?: string }).eventName === 'page_view');
+
+    expect(addedGtmPageView).toBe(false);   // deferred to datalayer
+    expect(addedMixpanelPageView).toBe(true); // separate destination, still fires
+  });
+
   // ==========================================================================
   it('happy path: UTM params, auto-capture, GTM + Mixpanel attribution, page view, track', async () => {
     setUrl('https://example.com/landing?utm_source=google&utm_medium=cpc&utm_campaign=spring&gclid=abc123&ref=partner1');
@@ -181,7 +200,7 @@ describe('Analytics native coverage', () => {
     expect(ltEvent).toBeDefined();
     expect(ltEvent.last_touch_source).toBe('google');
 
-    const pvEvent = dataLayer.find((e: any) => e.event === 'attribution_page_view');
+    const pvEvent = dataLayer.find((e: any) => e.event === 'page_view');
     expect(pvEvent).toBeDefined();
 
     // Mixpanel should have received register + track(Page View) after becoming ready
@@ -242,14 +261,44 @@ describe('Analytics native coverage', () => {
     expect(window.ppAnalytics.consent.status()).toBe(true);
   });
 
-  it('consent: cache hit returns cached value', async () => {
+  it('consent: isRequired() reflects the configured gate', async () => {
+    await freshLoad();
+    expect(window.ppAnalytics.consent.isRequired()).toBe(false); // shipped default
+    window.ppAnalytics.config({ consent: { required: true } as any });
+    expect(window.ppAnalytics.consent.isRequired()).toBe(true);
+  });
+
+  it('consent: ppLib.consent.revoke() is honoured despite the disarmed analytics delegate', async () => {
+    // Full-bundle regression: with analytics' default consent.required:false,
+    // its delegate reports a permissive granted. ppLib.consent.revoke() must
+    // still win (deny) rather than being neutered (or re-opting the user in).
+    await freshLoad();
+    expect(window.ppLib.consent.isGranted()).toBe(true); // opt-out default, gate open
+    window.ppLib.consent.revoke();
+    expect(window.ppLib.consent.status()).toBe('denied');
+    expect(window.ppLib.consent.isGranted()).toBe(false);
+  });
+
+  it('consent: reflects an external CMP revoke immediately — no stale cache (F19)', async () => {
     await freshLoadConsentRequired();
-    const dbg = window.ppAnalyticsDebug;
-    // First call populates cache (via stored consent / defaultState)
-    const first = window.ppAnalytics.consent.status();
-    // Second call hits cache
-    const second = window.ppAnalytics.consent.status();
-    expect(first).toBe(second);
+    window.OnetrustActiveGroups = ',C0002,'; // granted
+    window.ppAnalytics.config({
+      consent: {
+        required: true,
+        frameworks: {
+          custom: { enabled: false },
+          oneTrust: { enabled: true, categoryId: 'C0002' },
+          cookieYes: { enabled: false }
+        }
+      } as any
+    });
+    expect(window.ppAnalytics.consent.status()).toBe(true);
+
+    // External CMP mutates OneTrust groups directly (NOT via setConsent) — the
+    // gate must flip on the very next read, not after a 60s cache window.
+    window.OnetrustActiveGroups = ',C0001,';
+    expect(window.ppAnalytics.consent.status()).toBe(false);
+    delete (window as any).OnetrustActiveGroups;
   });
 
   it('consent: custom framework returns true', async () => {
@@ -431,6 +480,91 @@ describe('Analytics native coverage', () => {
     expect(clearSpy).toHaveBeenCalled();
   });
 
+  // Branch coverage for the v8-ignore removed in PR4 (F19): absent-state arms
+  // of the framework checks + the isGranted top-level catch.
+  it('consent: oneTrust enabled but groups absent → falls through to stored', async () => {
+    await freshLoadConsentRequired();
+    delete (window as any).OnetrustActiveGroups;
+    window.ppAnalytics.config({
+      consent: { required: true, frameworks: { custom: { enabled: false }, oneTrust: { enabled: true, categoryId: 'C0002' }, cookieYes: { enabled: false } } } as any
+    });
+    localStorage.setItem('pp_consent', 'approved');
+    expect(window.ppAnalytics.consent.status()).toBe(true); // checkOneTrust false (no groups) → stored
+  });
+
+  it('consent: cookieYes enabled but cookie absent → falls through to stored', async () => {
+    await freshLoadConsentRequired();
+    document.cookie = 'cookieyes-consent=; expires=Thu, 01 Jan 1970 00:00:00 GMT'; // ensure absent
+    window.ppAnalytics.config({
+      consent: { required: true, frameworks: { custom: { enabled: false }, oneTrust: { enabled: false }, cookieYes: { enabled: true, cookieName: 'cookieyes-consent', categoryId: 'analytics' } } } as any
+    });
+    localStorage.setItem('pp_consent', 'approved');
+    expect(window.ppAnalytics.consent.status()).toBe(true); // checkCookieYes false (no cookie) → stored
+  });
+
+  it('consent: getStoredConsent falls back to state when nothing is stored', async () => {
+    await freshLoadConsentRequired();
+    localStorage.removeItem('pp_consent');
+    window.ppAnalytics.config({
+      consent: { required: true, frameworks: { custom: { enabled: false }, oneTrust: { enabled: false }, cookieYes: { enabled: false } } } as any
+    });
+    window.ppAnalyticsDebug.consent.state = 'approved';
+    expect(window.ppAnalytics.consent.status()).toBe(true); // all disabled, nothing stored → state
+  });
+
+  it('consent: isGranted top-level catch returns defaultState on unexpected throw', async () => {
+    await freshLoadConsentRequired();
+    window.ppAnalytics.config({
+      consent: { required: true, frameworks: { custom: { enabled: false }, oneTrust: { enabled: true, categoryId: 'C0002' }, cookieYes: { enabled: false } } } as any
+    });
+    window.ppAnalyticsDebug.consent.state = 'approved';
+    (window.ppAnalyticsDebug.consent as any).checkOneTrust = () => { throw new Error('boom'); };
+    expect(window.ppAnalytics.consent.status()).toBe(true); // outer catch → state === 'approved'
+  });
+
+  // Inner-catch coverage for each framework check (no v8-ignore — real throws).
+  it('consent: checkOneTrust inner catch swallows a non-array groups value', async () => {
+    await freshLoadConsentRequired();
+    window.ppAnalytics.config({
+      consent: { required: true, frameworks: { custom: { enabled: false }, oneTrust: { enabled: true, categoryId: 'C0002' }, cookieYes: { enabled: false } } } as any
+    });
+    window.ppAnalyticsDebug.consent.state = 'denied';
+    (window as any).OnetrustActiveGroups = 42; // exists()=true, but (42).indexOf throws
+    expect(window.ppAnalytics.consent.status()).toBe(false); // catch → false → stored/state denied
+    delete (window as any).OnetrustActiveGroups;
+  });
+
+  it('consent: checkCookieYes inner catch swallows a getCookie error', async () => {
+    await freshLoadConsentRequired();
+    window.ppAnalytics.config({
+      consent: { required: true, frameworks: { custom: { enabled: false }, oneTrust: { enabled: false }, cookieYes: { enabled: true, cookieName: 'cookieyes-consent', categoryId: 'analytics' } } } as any
+    });
+    window.ppAnalyticsDebug.consent.state = 'denied';
+    const spy = vi.spyOn(window.ppLib, 'getCookie').mockImplementation(() => { throw new Error('boom'); });
+    expect(window.ppAnalytics.consent.status()).toBe(false); // catch → false → stored/state denied
+    spy.mockRestore();
+  });
+
+  it('consent: custom enabled but checkFunction not a function → falls through to stored', async () => {
+    await freshLoadConsentRequired();
+    window.ppAnalytics.config({
+      consent: { required: true, frameworks: { custom: { enabled: true, checkFunction: null }, oneTrust: { enabled: false }, cookieYes: { enabled: false } } } as any
+    });
+    localStorage.setItem('pp_consent', 'approved');
+    expect(window.ppAnalytics.consent.status()).toBe(true); // checkFn not a function → result null → stored
+  });
+
+  it('consent: getStoredConsent inner catch falls back to state on a localStorage error', async () => {
+    await freshLoadConsentRequired();
+    window.ppAnalytics.config({
+      consent: { required: true, frameworks: { custom: { enabled: false }, oneTrust: { enabled: false }, cookieYes: { enabled: false } } } as any
+    });
+    window.ppAnalyticsDebug.consent.state = 'approved';
+    const spy = vi.spyOn(window.localStorage, 'getItem').mockImplementation(() => { throw new Error('boom'); });
+    expect(window.ppAnalytics.consent.status()).toBe(true); // catch → fallback state 'approved'
+    spy.mockRestore();
+  });
+
   it('consent: getStoredConsent returns state fallback when no stored value', async () => {
     await freshLoadConsentRequired();
     window.ppAnalytics.config({
@@ -564,28 +698,124 @@ describe('Analytics native coverage', () => {
     expect(attr.firstTouch!.utm_source).toBe('test');
   });
 
+  // Direct isValid() coverage via the debug handle (exercises every branch).
+  it('Session.isValid (direct): false when session_start is missing or non-number', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    window.ppLib.Storage.remove('session_start');
+    expect(dbg.session.isValid()).toBe(false); // null → type guard
+    window.ppLib.Storage.set('session_start', 'not-a-number');
+    expect(dbg.session.isValid()).toBe(false); // non-number → type guard
+  });
+
+  it('Session.isValid (direct): true for recent, false for expired', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    window.ppLib.Storage.set('session_start', Date.now());
+    expect(dbg.session.isValid()).toBe(true);
+    window.ppLib.Storage.set('session_start', Date.now() - 31 * 60 * 1000);
+    expect(dbg.session.isValid()).toBe(false);
+  });
+
+  it('Session.isValid (direct): floors a misconfigured sessionTimeout<=0 to 30min (F7)', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    // A recent (10-min-old) session would be INVALID if timeout=0 were trusted.
+    window.ppLib.Storage.set('session_start', Date.now() - 10 * 60 * 1000);
+    dbg.config.attribution.sessionTimeout = 0;
+    expect(dbg.session.isValid()).toBe(true); // floored to 30 → still valid
+    dbg.config.attribution.sessionTimeout = -5;
+    expect(dbg.session.isValid()).toBe(true); // negative also floored
+  });
+
+  it('Session.isValid (direct): returns false if Storage throws', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    const origGet = window.ppLib.Storage.get;
+    window.ppLib.Storage.get = () => { throw new Error('storage boom'); };
+    expect(dbg.session.isValid()).toBe(false); // catch arm
+    window.ppLib.Storage.get = origGet;
+  });
+
   // ==========================================================================
   // EVENT QUEUE
   // ==========================================================================
-  it('EventQueue.add: drops event when queue is full', async () => {
+  it('EventQueue.add: drops the INCOMING event when full, preserving the buffered prefix (F5)', async () => {
     await freshLoad();
     const dbg = window.ppAnalyticsDebug;
-    // Fill the queue to maxQueueSize (50)
     dbg.config.performance.maxQueueSize = 3;
+    dbg.config.performance.useRequestIdleCallback = false; // setTimeout drain won't fire synchronously
     dbg.queue.queue.length = 0;
+    dbg.queue.droppedCount = 0;
     dbg.queue.processing = false;
-    // We need to prevent processing so queue stays full
-    // Override scheduleProcessing to no-op
-    const origSchedule = dbg.queue.scheduleProcessing;
-    dbg.queue.scheduleProcessing = function() {};
     dbg.queue.add({ type: 'gtm', data: { event: 'a' } });
     dbg.queue.add({ type: 'gtm', data: { event: 'b' } });
     dbg.queue.add({ type: 'gtm', data: { event: 'c' } });
     expect(dbg.queue.queue.length).toBe(3);
-    // This should be dropped
+    // Overflow: the incoming 'd' is dropped; the head ('a') and prefix survive.
     dbg.queue.add({ type: 'gtm', data: { event: 'd' } });
     expect(dbg.queue.queue.length).toBe(3);
-    dbg.queue.scheduleProcessing = origSchedule;
+    expect(dbg.queue.queue.map((e: any) => e.data.event)).toEqual(['a', 'b', 'c']);
+    expect(dbg.queue.droppedCount).toBe(1); // counted unconditionally (observable in prod)
+  });
+
+  it('EventQueue.add: floors a misconfigured maxQueueSize=0 to the safe default (no total eviction)', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    dbg.config.performance.maxQueueSize = 0; // would evict everything if trusted
+    dbg.config.performance.useRequestIdleCallback = false;
+    dbg.queue.queue.length = 0;
+    dbg.queue.droppedCount = 0;
+    dbg.queue.add({ type: 'gtm', data: { event: 'kept' } });
+    expect(dbg.queue.queue.length).toBe(1); // floored to 50 → event is queued, not dropped
+    expect(dbg.queue.droppedCount).toBe(0);
+  });
+
+  it('EventQueue.add: ignores a null / non-object event', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    dbg.queue.queue.length = 0;
+    dbg.queue.add(null as any);
+    dbg.queue.add('nope' as any);
+    expect(dbg.queue.queue.length).toBe(0);
+  });
+
+  it('EventQueue.add: processes immediately (bypasses queue) when queueEnabled=false', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    const dataLayer = createMockDataLayer();
+    dbg.config.performance.queueEnabled = false;
+    dbg.queue.queue.length = 0;
+    dbg.queue.add({ type: 'gtm', data: { event: 'direct' } });
+    // Not queued; sent straight through to the platform.
+    expect(dbg.queue.queue.length).toBe(0);
+    expect(dataLayer.find((e: any) => e.event === 'direct')).toBeDefined();
+  });
+
+  it('EventQueue.add: surfaces an error thrown during enqueue', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    dbg.queue.queue.length = 0;
+    // Make push throw to drive the catch arm.
+    const origPush = Array.prototype.push;
+    dbg.config.performance.queueEnabled = true;
+    const evt = { type: 'gtm', data: { event: 'x' } };
+    const spy = vi.spyOn(dbg.queue.queue, 'push').mockImplementation(() => { throw new Error('boom'); });
+    expect(() => dbg.queue.add(evt)).not.toThrow();
+    spy.mockRestore();
+    void origPush;
+  });
+
+  it('EventQueue.scheduleProcessing: early-returns while already processing', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    dbg.queue.queue.length = 0;
+    dbg.queue.processing = true;
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    dbg.queue.scheduleProcessing();
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
+    setTimeoutSpy.mockRestore();
+    dbg.queue.processing = false;
   });
 
   it('EventQueue.scheduleProcessing: uses setTimeout fallback', async () => {
@@ -637,6 +867,23 @@ describe('Analytics native coverage', () => {
     dbg.queue.processQueue();
     expect(dbg.queue.processing).toBe(false);
     dbg.queue.process = origProcess;
+  });
+
+  it('EventQueue.processQueue: catch arm resets processing=false on a thrown drain', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    dbg.queue.processing = false;
+    const origQueue = dbg.queue.queue;
+    // Force the drain loop's `state.queue` access to throw → exercise the catch.
+    Object.defineProperty(dbg.queue, 'queue', {
+      get() { throw new Error('boom'); },
+      configurable: true
+    });
+    expect(() => dbg.queue.processQueue()).not.toThrow();
+    Object.defineProperty(dbg.queue, 'queue', {
+      value: origQueue, writable: true, configurable: true
+    });
+    expect(dbg.queue.processing).toBe(false);
   });
 
   it('EventQueue.checkRateLimit: new key creates entry', async () => {
@@ -714,6 +961,183 @@ describe('Analytics native coverage', () => {
       data: { foo: 'bar' }
     });
     expect(handler).toHaveBeenCalledWith({ foo: 'bar' });
+  });
+
+  it('EventQueue.process: custom event with no valid handler is a no-op', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    // handler absent → the `typeof === function` guard is false; must not throw.
+    expect(() => dbg.queue.process({ type: 'custom', data: { foo: 'bar' } } as any)).not.toThrow();
+    // non-function handler → same false arm.
+    expect(() => dbg.queue.process({ type: 'custom', handler: 'nope', data: {} } as any)).not.toThrow();
+  });
+
+  it('EventQueue.process: ignores a malformed event with no type', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    const dataLayer = createMockDataLayer();
+    expect(() => dbg.queue.process({ data: { event: 'x' } } as any)).not.toThrow();
+    expect(dataLayer.length).toBe(0);
+  });
+
+  it('EventQueue.process: drops the gtm event and logs when rate-limited', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    const dataLayer = createMockDataLayer();
+    // Pre-saturate the 'gtm' bucket so checkRateLimit returns false.
+    dbg.queue.rateLimits = { gtm: { count: 9999, resetAt: Date.now() + 60000 } };
+    dbg.config.platforms.gtm.rateLimitMax = 1;
+    dbg.queue.process({ type: 'gtm', data: { event: 'rl_drop' } });
+    expect(dataLayer.find((e: any) => e.event === 'rl_drop')).toBeUndefined();
+  });
+
+  it('EventQueue.checkRateLimit: empty key returns false', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    expect(dbg.queue.checkRateLimit('', 10, 60000)).toBe(false);
+  });
+
+  it('EventQueue.checkRateLimit: prunes expired entries every 50 writes', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    // A stale entry that should be swept once the prune threshold trips.
+    dbg.queue.rateLimits = { stale: { count: 1, resetAt: Date.now() - 1000 } };
+    // 50 writes on an active key drives rateLimitWriteCount past the threshold.
+    for (let i = 0; i < 50; i++) {
+      dbg.queue.checkRateLimit('active', 100000, 60000);
+    }
+    expect(dbg.queue.rateLimits['stale']).toBeUndefined();
+    expect(dbg.queue.rateLimits['active']).toBeDefined();
+  });
+
+  it('EventQueue.processQueue: yields on idle-deadline exhaustion and reschedules the remainder (F6)', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    createMockDataLayer();
+    dbg.queue.processing = false;
+    dbg.queue.queue = [
+      { type: 'gtm', data: { event: 'q1' } },
+      { type: 'gtm', data: { event: 'q2' } },
+      { type: 'gtm', data: { event: 'q3' } }
+    ];
+    // processQueue reschedules via the closure-local scheduleProcessing, which
+    // (no requestIdleCallback in jsdom) falls through to setTimeout — spy there.
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(() => 0 as any);
+    // Idle budget is ZERO from the very first call. The ≥1-progress guard means
+    // we still drain exactly one event (forward progress, no zero-work spin),
+    // then yield on the second iteration.
+    const deadline = { didTimeout: false, timeRemaining: () => 0 } as IdleDeadline;
+    dbg.queue.processQueue(deadline);
+    expect(dbg.queue.queue.length).toBe(2); // exactly one drained, never zero
+    expect(dbg.queue.processing).toBe(false);
+    expect(setTimeoutSpy).toHaveBeenCalled(); // remainder rescheduled
+    setTimeoutSpy.mockRestore();
+  });
+
+  it('EventQueue.processQueue: drains fully when the idle deadline already timed out', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    createMockDataLayer();
+    dbg.queue.processing = false;
+    dbg.queue.queue = [
+      { type: 'gtm', data: { event: 't1' } },
+      { type: 'gtm', data: { event: 't2' } }
+    ];
+    // didTimeout=true → drain regardless of zero remaining time.
+    const deadline = { didTimeout: true, timeRemaining: () => 0 } as IdleDeadline;
+    dbg.queue.processQueue(deadline);
+    expect(dbg.queue.queue.length).toBe(0);
+  });
+
+  it('EventQueue.processQueue: setTimeout fallback bounds work by drainBatchSize and reschedules (F6)', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    createMockDataLayer();
+    dbg.config.performance.drainBatchSize = 2;
+    dbg.queue.processing = false;
+    dbg.queue.queue = [
+      { type: 'gtm', data: { event: 'b1' } },
+      { type: 'gtm', data: { event: 'b2' } },
+      { type: 'gtm', data: { event: 'b3' } }
+    ];
+    // Reschedule path falls through to setTimeout (no requestIdleCallback in jsdom).
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(() => 0 as any);
+    dbg.queue.processQueue(); // no deadline → batch-bounded
+    expect(dbg.queue.queue.length).toBe(1); // 2 drained, 1 left
+    expect(setTimeoutSpy).toHaveBeenCalled();
+    setTimeoutSpy.mockRestore();
+  });
+
+  it('EventQueue.processQueue: floors a misconfigured drainBatchSize=0 (no stall)', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    createMockDataLayer();
+    dbg.config.performance.drainBatchSize = 0; // would break before draining if trusted
+    dbg.queue.processing = false;
+    dbg.queue.queue = [
+      { type: 'gtm', data: { event: 'f1' } },
+      { type: 'gtm', data: { event: 'f2' } }
+    ];
+    dbg.queue.processQueue(); // floored to 25 → drains fully, no livelock
+    expect(dbg.queue.queue.length).toBe(0);
+  });
+
+  it('EventQueue.flush: drains the queue synchronously', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    const dataLayer = createMockDataLayer();
+    dbg.queue.processing = false;
+    dbg.queue.queue = [
+      { type: 'gtm', data: { event: 'fl1' } },
+      { type: 'gtm', data: { event: 'fl2' } }
+    ];
+    dbg.queue.flush();
+    expect(dbg.queue.queue.length).toBe(0);
+    expect(dataLayer.filter((e: any) => e.event === 'fl1' || e.event === 'fl2').length).toBe(2);
+  });
+
+  it('EventQueue.flush: surfaces an error during drain without throwing', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    const origQueue = dbg.queue.queue;
+    Object.defineProperty(dbg.queue, 'queue', {
+      get() { throw new Error('boom'); },
+      configurable: true
+    });
+    expect(() => dbg.queue.flush()).not.toThrow();
+    Object.defineProperty(dbg.queue, 'queue', { value: origQueue, writable: true, configurable: true });
+  });
+
+  it('EventQueue: flushes the queue on pagehide (navigation safety net)', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    const dataLayer = createMockDataLayer();
+    dbg.queue.processing = false;
+    dbg.queue.queue = [{ type: 'gtm', data: { event: 'unload_evt' } }];
+    window.dispatchEvent(new Event('pagehide'));
+    expect(dbg.queue.queue.length).toBe(0);
+    expect(dataLayer.find((e: any) => e.event === 'unload_evt')).toBeDefined();
+  });
+
+  it('EventQueue: flushes on visibilitychange when hidden, ignores when visible', async () => {
+    await freshLoad();
+    const dbg = window.ppAnalyticsDebug;
+    createMockDataLayer();
+    dbg.queue.processing = false;
+
+    // Getter-based override is reliable in jsdom where the prototype defines a getter.
+    let vis = 'visible';
+    Object.defineProperty(document, 'visibilityState', { get: () => vis, configurable: true });
+
+    // visible → no flush
+    dbg.queue.queue = [{ type: 'gtm', data: { event: 'vis_keep' } }];
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(dbg.queue.queue.length).toBe(1);
+
+    // hidden → flush
+    vis = 'hidden';
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(dbg.queue.queue.length).toBe(0);
   });
 
   // ==========================================================================
@@ -863,12 +1287,12 @@ describe('Analytics native coverage', () => {
     // Process queue
     dbg.queue.processQueue();
 
-    const pvGtm = dataLayer.find((e: any) => e.event === 'attribution_page_view');
+    const pvGtm = dataLayer.find((e: any) => e.event === 'page_view');
     expect(pvGtm).toBeDefined();
     expect(pvGtm.page_url).toBeDefined();
     expect(pvGtm.page_title).toBeDefined();
 
-    expect(mockMp.track).toHaveBeenCalledWith('pageview', expect.objectContaining({
+    expect(mockMp.track).toHaveBeenCalledWith('page_view', expect.objectContaining({
       page_url: expect.any(String)
     }));
   });
@@ -1105,7 +1529,7 @@ describe('Analytics native coverage', () => {
     dbg.tracker.init();
     // Drain the new events
     dbg.queue.processQueue();
-    const pvEvents = dataLayer.filter((e: any) => e.event === 'attribution_page_view');
+    const pvEvents = dataLayer.filter((e: any) => e.event === 'page_view');
     expect(pvEvents.length).toBe(0);
   });
 
@@ -1389,7 +1813,7 @@ describe('Analytics native coverage', () => {
     dbg.queue.processQueue();
 
     // GTM should still get page view
-    expect(dataLayer.find((e: any) => e.event === 'attribution_page_view')).toBeDefined();
+    expect(dataLayer.find((e: any) => e.event === 'page_view')).toBeDefined();
     // Mixpanel should NOT get Page View track
     expect(mockMp.track).not.toHaveBeenCalled();
   });

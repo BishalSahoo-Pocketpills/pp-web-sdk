@@ -4,13 +4,7 @@ All notable changes to **pp-web-sdk** are documented here. The project follows
 [Semantic Versioning](https://semver.org/) — breaking changes require a major
 or, at minimum, a documented migration path in this file.
 
-## [3.10.4-rc.1] — 2026-06-14
-
-Release candidate branched directly off the **v3.10.4** prod baseline (NOT
-`canary`/`main`), containing ONLY the Mixpanel cookie-hygiene change below —
-so it can ship to production without pulling in the 3.10.5/6/7 + 3.11.0 work
-that is not yet cleared for release. The `## Unreleased` section below
-describes `main` changes that are deliberately excluded from this RC.
+## [3.11.1] — 2026-06-17
 
 ### Changed
 
@@ -27,6 +21,16 @@ describes `main` changes that are deliberately excluded from this RC.
   header / cookie too large" (HTTP 400/431) error. _Migration:_ none — the
   prune is keyed on whatever is configured as primary, so swaps and
   staging/prod token differences need no code change.
+- **SDK no longer sets Mixpanel identity at boot.** The boot-time
+  `unifyDistinctIdWithPpDistinctId()` mapping (login cookies →
+  `mixpanel.identify()`) is disabled. Identity is now owned by the funnel
+  app's `mixpanel.identify($user_id)` under Simplified ID Merge; the
+  landing-page SDK stays anonymous and only provides the shared
+  cross-subdomain `$device_id`, so its boot identify can't interfere with the
+  funnel app's identification. _Note:_ a returning already-logged-in user who
+  lands on a Webflow page first won't be re-identified by the SDK — their
+  landing events stay anonymous unless the shared Mixpanel cookie already
+  carries `$user_id` from a prior funnel identify.
 
 ### Added
 
@@ -39,12 +43,421 @@ describes `main` changes that are deliberately excluded from this RC.
 - **`shared.cookieSizeWarnBytes` config** (`{ primary, total }`, defaults
   `3584` / `7168` bytes) to tune the telemetry thresholds to your CDN/server
   header limit.
+- **GA4 `page_location` + `page_referrer` on the dataLayer `page_view`.** The
+  canonical dataLayer `page_view` now carries top-level `page_location`
+  (`window.location.href`) and `page_referrer` (`document.referrer`) as the
+  **full absolute URL**, so GTM → GA4 records the real page URL instead of an
+  auto/container fallback. GA4/dataLayer-only — Mixpanel is unchanged.
+  _Note:_ these are the **raw** values (not run through the SDK's
+  `sanitizeLandingPage` PII stripping that applies to the Mixpanel `url`
+  property), so any PII in the URL path/query reaches GA4 verbatim.
 
-## Unreleased
+## [3.11.0] — 2026-06-03
 
-This section tracks changes that have landed on `main` but have not yet
-been published behind a version tag. Breaking changes are flagged
-**BREAKING** and include migration notes.
+### Changed
+
+- **Consent now gates `analytics.track()` and the dataLayer dispatch (C1).**
+  Previously only `analytics.init()` was consent-gated; `track()` and the
+  datalayer `pushEvent` / `pushEcommerceEvent` paths dispatched regardless.
+  They now check consent before sending. **Behavior change, but inert by
+  default:** with `consent.required = false` (the default), `isGranted()`
+  returns `true`, so events fire exactly as before. Only deployments that set
+  `consent.required = true` (or revoke consent) will see `track()` / datalayer
+  pushes suppressed. _Migration:_ none required unless you depend on consent
+  enforcement — in which case track-time and datalayer events are now correctly
+  blocked when consent is denied.
+
+### Added
+
+- **`ppLib.analytics` namespace + `configure()` alias (C5).** Analytics is now
+  exposed on the unified `ppLib.analytics` surface (alongside the existing
+  `window.ppAnalytics`), matching every other module's `ppLib.<name>` IA. A
+  backward-compatible `configure()` alias of `config()` is also available.
+
+### Fixed
+
+- **Consent vocabulary alignment (C2).** The analytics consent service now
+  accepts both `'approved'` and `'granted'` stored values, so it agrees with the
+  shared `ppLib.consent` service on the `pp_consent` key (previously the two
+  could disagree — the analytics side honored only `'approved'`).
+- **Observability (C4).** GTM events dropped by the rate limiter are now logged
+  with the dropped event name instead of being discarded silently.
+
+### Docs
+
+- Documentation (`pp-docs`) rewritten end-to-end to match shipped v3.x behavior
+  (audit remediation), with a new doc-from-types lint guarding against future
+  signature drift.
+
+## [3.10.7] — 2026-05-29
+
+### Fixed
+
+- **Stop firing boot-time `people.*` dispatches for anonymous visitors.**
+  Closes [Issue #22](https://github.com/Pocketpills-marketing/pp-web-sdk/issues/22),
+  which a 4-Principal documentation review surfaced after the v3.10.4
+  `identify` gate landed. The previous release stopped automatic
+  `identify(userId)` on anonymous visitors but left six boot-time
+  `people.set` / `people.set_once` dispatches firing unconditionally:
+    - `registerExperimentCookie` (shared-context.ts:87) — exp super-prop's
+      `set_once`
+    - `registerMarketingAttribution` (shared-context.ts:97) — marketing
+      attribution profile copy
+    - `bridgeVwoProps` (shared-context.ts:202) — VWO experiment-property
+      bridge
+    - `resetSessionCampaign` (campaign.ts:67) — session-boundary UTM reset
+    - `registerCampaignParams` (campaign.ts:108) — last-touch UTM profile
+    - `registerCampaignParams` (campaign.ts:110) — first-touch UTM `set_once`
+
+  Under Mixpanel's Simplified ID Merge model, `people.*` writes against an
+  anonymous `distinct_id` (`$device:<uuid>`) materialise a real user
+  profile keyed on the device id. This polluted user counts (every
+  anonymous visitor became a unique "user"), inflated DAU/MAU, and
+  required a redundant server-side profile-merge step on the eventual
+  `identify(userId)`.
+
+  Each callsite now short-circuits when the visitor is anonymous via a
+  new `isAuthenticated(pp)` helper in `src/mixpanel/auth-state.ts`. The
+  helper reads the SDK's `logged_in` event property (derived from the
+  `userId` / `patientId` / `app_is_authenticated` cookies Angular owns)
+  — same signal `unifyDistinctIdWithPpDistinctId` already gates on.
+
+  The corresponding `register` / `register_once` (super-property) writes
+  stay unconditional — those attach to events going forward, not to a
+  profile, so anonymous events still carry the right marketing/experiment
+  context.
+
+  **Behavioural impact:**
+  - Anonymous visitors no longer materialise `$device:<uuid>`-keyed
+    Mixpanel profiles at boot. The v3.10.4 release's "eliminates
+    premature user profiles" claim is now complete (it was partially
+    true before — only the `identify` path was gated).
+  - First-touch UTM `set_once` does not lock onto the anonymous profile;
+    instead it locks onto the real identified profile when the visitor
+    later authenticates and the boot path re-fires.
+  - Manual `ppLib.mixpanel.people.*` callers are unaffected — the gate
+    only covers the SDK's six boot-time dispatches. Callers should still
+    gate their own `people.*` writes on auth state; see the warning
+    callouts on every `people.*` API doc page.
+
+  **Verification:** in Mixpanel, the count of profiles where
+  `\$distinct_id LIKE '$device:%'` AND `\$created` is after this fix's
+  deploy should drop to near-zero (some pre-fix events may still flush
+  from queues for ~30 min).
+
+  **Testing:** 4 new test cases in `tests/mixpanel/mixpanel.test.ts`
+  under `Anonymous-profile gate (Issue #22)` — three negative-coverage
+  asserts (each boot-time site does NOT fire `people.*` for anonymous)
+  plus one positive-coverage assert (all dispatches fire when
+  authenticated). Existing 6 tests that asserted the unconditional
+  behaviour were updated to set `app_is_authenticated=true`.
+
+## [3.10.6] — 2026-05-29
+
+No SDK code changes — this version was auto-bumped by the post-merge
+versioning hook one last time after PR #21 (the v3.10.5 CHANGELOG backfill)
+landed, before PR #23 wired the docs-only skip path into `release.yml`.
+The bump is now a closed loop: subsequent docs-only PRs will leave
+`package.json` untouched and no further phantom versions will accumulate.
+
+Use v3.10.4 as the functional baseline. v3.10.5 and v3.10.6 carry no
+behaviour deltas.
+
+## [3.10.5] — 2026-05-29
+
+No SDK code changes — auto-bumped by the post-merge versioning hook
+after PR #20 landed a documentation-only update (the v3.10.4 README +
+ANALYTICS-CONTRACT alignment and the full CHANGELOG backfill from
+v3.6.2 → v3.10.4). The tag is preserved so consumers don't see a missing
+version in the registry.
+
+If you read this entry on a consumer dashboard expecting behaviour deltas
+from v3.10.4: there are none. Use v3.10.4 as the functional baseline.
+
+## [3.10.4] — 2026-05-28
+
+### Fixed
+
+- **Stop calling `identify()` for anonymous visitors.** Per Mixpanel's
+  Simplified ID Merge guidance, the auto-generated `$device:<uuid>`
+  distinct_id must be preserved until the visitor authenticates. The boot
+  path (`unifyDistinctIdWithPpDistinctId`) now hard-short-circuits when
+  `logged_in !== 'true'`, eliminating premature user profiles (anonymous
+  visitor → `$user_id = device_id` profile) and the redundant profile-
+  merge step at login. Authenticated visitors are still auto-identified
+  exactly as before.
+
+## [3.10.3] — 2026-05-28
+
+### Fixed
+
+- **Per-event marketing-attribution key aligned with the super-property
+  name.** Renamed the per-event payload key `marketing_attribution`
+  (snake_case) to `marketingAttribution` (camelCase) to match the
+  Mixpanel super-property registration in `shared-context.ts`. Pre-fix,
+  every Mixpanel event carried both columns with identical values.
+- **Per-event device-model key capitalised.** Renamed `device` to
+  `Device` to match the `Country` proper-noun convention.
+- **Tightened `marketingAttribution` type** from `unknown` to
+  `NormalizedTouch | null` in `BuiltEventProperties` so callers get
+  autocomplete on the 9 fixed fields.
+
+## [3.10.2] — 2026-05-28
+
+### Changed
+
+- **`$device_id` is now read live from Mixpanel for non-Mixpanel
+  destinations.** The event-properties builder calls
+  `window.mixpanel.get_property('$device_id')` each `build()`; the
+  `pp_device_id` SDK-side mirror cookie is removed. Mixpanel's
+  `mp_<token>_mixpanel` cookie is the single source of truth. The
+  mixpanel module sweeps any stale `pp_device_id` cookie once on boot
+  via `deleteLegacyPpDeviceIdCookie()`. Non-Mixpanel destinations
+  (dataLayer/GA4, Braze) see the same UUID Mixpanel uses without any
+  synchronisation lag, and post-`mp.reset()` rotations propagate to the
+  next event without a page reload.
+
+## [3.10.1] — 2026-05-28
+
+### Fixed
+
+- **Unify session ID via the common session service.** The session
+  service is now the single source of truth; modules that previously
+  read session state ad hoc now route through it.
+
+## [3.10.0] — 2026-05-28
+
+### Changed
+
+- **Secondary Mixpanel instance uses `persistence: 'localStorage'`** so
+  only the primary instance writes an `mp_<token>_mixpanel` cookie. Halves
+  cookie footprint for dual-instance deployments; identity stays consistent
+  via `syncIdentityFromPrimary` re-pinning secondary on every page load.
+
+## [3.9.0] — 2026-05-28
+
+### Added
+
+- **Analytics auto-events gate on `ppLib.mixpanelReady`.** Auto-pageview
+  and attribution capture now wait for Mixpanel's `loaded` callback (or
+  the 3-second timeout fallback) before dispatching, so all destinations
+  (Mixpanel + dataLayer + Braze) see the same `$device_id` at event time.
+
+## [3.8.0] — 2026-05-28
+
+### Changed
+
+- **`device_id` source switched from SDK-generated to Mixpanel-sourced.**
+  The event-properties builder now reads the anonymous device identifier
+  from Mixpanel rather than minting and persisting its own UUID. Precursor
+  to the full mirror-cookie removal in v3.10.2.
+
+## [3.7.0] — 2026-05-28
+
+### Added
+
+- **`ppLib.mixpanelReady` Promise.** Resolves after Mixpanel's `mp.init`
+  `loaded` callback fires, with a 3-second timeout fallback so non-Mixpanel
+  destinations still emit events when Mixpanel is blocked. Modules that
+  need consistent identifiers across destinations should `await` this
+  before dispatching initial auto-events.
+
+## [3.6.22] — 2026-05-28
+
+### Changed
+
+- Code cleanup: removed dead code paths, fixed lingering type issues
+  surfaced during the v3.6.21 refactor.
+
+## [3.6.21] — 2026-05-28
+
+### Changed
+
+- Decomposed `src/analytics/index.ts` into 8 sub-modules
+  (tracker, platforms, queue, etc.) for testability and clearer module
+  boundaries.
+
+## [3.6.20] — 2026-05-28
+
+### Changed
+
+- Extracted `determineLoginState` and `buildClickIdAttribution` helpers
+  from `buildFlat()` in the event-properties builder.
+
+## [3.6.19] — 2026-05-28
+
+### Changed
+
+- Guard-clause refactor + structural merge in the UTM capture path of the
+  event-properties builder.
+
+## [3.6.18] — 2026-05-27
+
+### Changed
+
+- Split `event-properties-builder.ts` into `utm-types.ts` (type-only) +
+  `attribution.ts` (resolver). The builder now imports from both.
+
+## [3.6.17] — 2026-05-27
+
+### Changed
+
+- Extracted shared helpers: SRI validation, element-debounce-key derivation,
+  UTM fallback. Reduces module duplication across braze, mixpanel, and the
+  event-source dispatcher.
+
+## [3.6.16] — 2026-05-27
+
+### Changed
+
+- Migrated `event-source` to the shared `createDebounceTracker` helper
+  (consolidates the third inline debounce implementation onto the common
+  primitive introduced earlier in the v3.6 series).
+
+## [3.6.15] — 2026-05-27
+
+### Changed
+
+- Extracted shared `ensureDataLayer` and `isConsentGranted` helpers from
+  the analytics and datalayer modules.
+
+## [3.6.14] — 2026-05-27
+
+### Changed
+
+- Extracted `cloneConfig` helper into `src/common/`; replaced 11 inline
+  `JSON.parse(JSON.stringify(...))` round-trips across the SDK.
+
+## [3.6.13] — 2026-05-27
+
+### Changed
+
+- Extracted the shared Mixpanel-dispatch bridge into `src/common/`. The
+  analytics, ecommerce, and event-source modules now route Mixpanel calls
+  through the same fallback-aware bridge.
+
+## [3.6.12] — 2026-05-27
+
+### Changed
+
+- Extracted shared UUID generator into `src/common/`.
+- Typed `LogLevel` as a string-union literal type rather than bare `string`,
+  so the compiler catches typos at log call sites.
+
+## [3.6.11] — 2026-05-27
+
+### Security
+
+- `validateData` now accepts primitive values (number, boolean, string)
+  in addition to objects, and stringifies them before downstream consumers
+  receive the payload.
+- `ppLib.Storage.get` gained a runtime validator slot so callers can reject
+  malformed persisted state at read time.
+
+## [3.6.10] — 2026-05-27
+
+### Reverted
+
+- The UTM field truncation introduced in v3.6.5 is removed. With UTM touch
+  state living in localStorage (v3.6.9), there is no HTTP-header pressure
+  on the per-field length, so the truncation can safely come out.
+
+## [3.6.9] — 2026-05-27
+
+### Changed
+
+- **`pp_utm_first_touch` and `pp_utm_last_touch` moved from cookies to
+  localStorage.** Eliminates ~1 KB of URL-encoded JSON from every HTTP
+  request header. The legacy cookies are deleted on first read after the
+  upgrade (one-time migration).
+
+## [3.6.8] — 2026-05-27
+
+### Changed
+
+- **Stopped dual-writing session cookies.** The short-name fallbacks
+  (`_pps` / `_ppsa`) introduced in v3.3.0 and used as the dual-write
+  fallback target in v3.6.3 are no longer written. Long-form names
+  (`pp_analytics_session_id` / `pp_analytics_last_activity`) are the
+  only persistent storage now.
+
+## [3.6.7] — 2026-05-27
+
+### Fixed
+
+- **UTM-cookie repair runs eagerly at builder creation.** The v3.6.6 repair
+  was lazy (deferred until the first `build()`), which left a window where
+  the next request still shipped the oversized cookie. The repair now runs
+  synchronously at `createEventPropertiesBuilder()`.
+
+## [3.6.6] — 2026-05-27
+
+### Fixed
+
+- **One-time repair of oversized UTM cookies on boot.** Catches visitors
+  whose pre-v3.6.5 cookies exceed nginx's 8 KB header buffer (typically a
+  campaign with a long `utm_term`/`utm_content`). Cookies that would still
+  overflow after truncation are deleted entirely; the next visit captures
+  fresh attribution.
+
+## [3.6.5] — 2026-05-27
+
+### Fixed
+
+- **Truncate UTM cookie fields to prevent nginx 400 overflow.** Individual
+  UTM fields (source, medium, campaign, content, term) are capped before
+  serialisation so logged-in users with Mixpanel + Angular auth + UTM
+  cookies stay under the 8 KB header buffer. (Later superseded by the
+  localStorage migration in v3.6.9 and reverted in v3.6.10.)
+
+### Docs
+
+- Replaced `docs/ANALYTICS-CONTRACT.md` with a redirect pointer to the
+  pp-docs site (canonical analytics contract now lives at
+  `https://pp-docs.pages.dev/guides/v3`).
+
+## [3.6.4] — 2026-05-24
+
+### Changed
+
+- **Attribution defaults: `utm_content` and `utm_term` default to `'none'`
+  on direct visits** (was `'$direct'`), to distinguish "direct traffic with
+  no creative/keyword context" from "creative/keyword genuinely absent".
+  `utm_source` / `utm_medium` / `utm_campaign` continue to default to
+  `'$direct'`. Reports filtering on `utm_content = '$direct'` /
+  `utm_term = '$direct'` for direct visits should switch to `= 'none'`.
+
+## [3.6.3] — 2026-05-23
+
+### Fixed
+
+- **Session cookies dual-write under both long-form and short names.**
+  Persists `pp_analytics_session_id` / `pp_analytics_last_activity` as the
+  read primary AND `_pps` / `_ppsa` as a fallback. The long-form names are
+  what downstream consumers (GTM tags, BigQuery exports, the Angular
+  webapp) key off; the short opaque names from v3.3.0 stay alive as a
+  hardening fallback. Same 30-min sliding TTL on all four cookies; both
+  names rewritten on every `getOrCreateSessionId()` call.
+  (Later simplified back to the long-form names only in v3.6.8 once the
+  fallback proved unnecessary in practice.)
+
+## [3.6.2] — 2026-05-22
+
+### Docs
+
+- Curated v3.6.0 and v3.6.1 release notes in CHANGELOG.
+
+---
+
+## Pre-v3.6.2 unreleased history
+
+The section below was accumulated under "Unreleased" prior to the
+per-version backfill above. The bullets overlap heavily with the v3.6.0
+and v3.6.1 entries (the original v3.6.0 / v3.6.1 release-note curation
+in [3.6.2] explicitly extracted the per-version content from this list)
+and are retained here as a historical record of the SDK's evolution
+through the dual-instance Mixpanel rollout. Newer per-version sections
+(v3.6.2 onwards) are authoritative; treat the bullets below as legacy.
 
 ### Changed
 

@@ -1,0 +1,46 @@
+#!/bin/sh
+#
+# Guard: block pushing `main` to the Cloudflare-connected remote(s).
+#
+# `bishal` (BishalSahoo-Pocketpills/pp-web-sdk) is wired to Cloudflare
+# Workers Builds — pushing `main` there rebuilds + deploys the PRODUCTION
+# Worker (pp-web-sdk). The `both` remote includes bishal. Production is
+# currently held on v3.10.4 for UAT, so an accidental `git push both main`
+# or `git push bishal main` must not slip through.
+#
+# Allowed: `git push origin main` (org canonical, no deploy).
+# Prod ships ONLY via a PR on bishal (server ruleset blocks direct pushes —
+# `--no-verify` won't help, GitHub rejects with GH013). To ship:
+#   git push bishal main:refs/heads/ship-prod
+#   gh pr create -R BishalSahoo-Pocketpills/pp-web-sdk --base main --head ship-prod ...
+#   gh pr merge ... --merge      # merge → Cloudflare builds → prod deploys
+#
+remote_name="$1"
+remote_url="$2"
+
+# Only guard pushes that reach the bishal repo (directly or via `both`).
+reaches_bishal=0
+case "$remote_name" in
+  both|bishal) reaches_bishal=1 ;;
+esac
+case "$remote_url" in
+  *BishalSahoo-Pocketpills/pp-web-sdk*) reaches_bishal=1 ;;
+esac
+[ "$reaches_bishal" -eq 1 ] || exit 0
+
+# Reject if any ref being pushed targets refs/heads/main.
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  if [ "$remote_ref" = "refs/heads/main" ]; then
+    echo "" >&2
+    echo "BLOCKED: pushing 'main' to '$remote_name' deploys PRODUCTION" >&2
+    echo "         (pp-web-sdk Worker — currently held on v3.10.4 for UAT)." >&2
+    echo "" >&2
+    echo "  • For org canonical only:   git push origin main" >&2
+    echo "  • To intentionally ship prod (UAT signed off):" >&2
+    echo "        git push bishal main --no-verify" >&2
+    echo "" >&2
+    exit 1
+  fi
+done
+
+exit 0
