@@ -155,8 +155,8 @@ describe('createEventPropertiesBuilder', () => {
         pp_distinct_id: '42'
       });
 
-      expect(bundle.eventProperties.pp_user_id).toBe('42');
-      expect(bundle.eventProperties.pp_patient_id).toBe('99');
+      expect(bundle.eventProperties.pp_user_id).toBe(42);
+      expect(bundle.eventProperties.pp_patient_id).toBe(99);
       expect(bundle.eventProperties.pp_session_id).toBe('test-session-id');
       expect(bundle.eventProperties.logged_in).toBe('true');
       expect(bundle.eventProperties.platform).toBe('web');
@@ -546,7 +546,7 @@ describe('createEventPropertiesBuilder', () => {
       });
 
       const bundle = builder.build();
-      expect(bundle.eventProperties.pp_user_id).toBe('7');
+      expect(bundle.eventProperties.pp_user_id).toBe(7);
       expect(bundle.eventProperties.Country).toBe('US');
     });
 
@@ -582,7 +582,7 @@ describe('createEventPropertiesBuilder', () => {
       expect(flat.pp_distinct_id).toBe('42');
 
       // eventProperties present
-      expect(flat.pp_user_id).toBe('42');
+      expect(flat.pp_user_id).toBe(42);
       expect(flat.logged_in).toBe('true');
       // device_id is in MIXPANEL_DUPLICATE_KEYS — Mixpanel auto-collects
       // it as $device_id / "Device ID". The same value still rides as

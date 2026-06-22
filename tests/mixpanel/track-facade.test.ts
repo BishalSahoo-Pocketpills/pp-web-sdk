@@ -98,8 +98,8 @@ describe('ppLib.mixpanel.track facade', () => {
     expect(mergedProps.currency).toBe('CAD');
 
     // Enriched context fields are merged in.
-    expect(mergedProps.pp_user_id).toBe('42');
-    expect(mergedProps.pp_patient_id).toBe('99');
+    expect(mergedProps.pp_user_id).toBe(42);
+    expect(mergedProps.pp_patient_id).toBe(99);
     expect(mergedProps.logged_in).toBe('true');
     // device_id and current_url are stripped from the Mixpanel payload
     // (duplicates of Mixpanel's auto $device_id / $current_url). The
@@ -243,7 +243,7 @@ describe('ppLib.mixpanel.track facade', () => {
       expect(Object.keys(mergedProps).sort()).toEqual(['attribution', 'eventProperties', 'page', 'userProperties']);
       // Nested wrappers have the expected shape.
       expect(mergedProps.userProperties).toMatchObject({ userId: '42', patientId: '99' });
-      expect(mergedProps.eventProperties).toMatchObject({ pp_user_id: '42', logged_in: 'true' });
+      expect(mergedProps.eventProperties).toMatchObject({ pp_user_id: 42, logged_in: 'true' });
 
       // No leakage of flat fields at the top.
       for (let i = 0; i < FLAT_FIELDS.length; i++) {
@@ -272,9 +272,9 @@ describe('ppLib.mixpanel.track facade', () => {
         expect(mergedProps).toHaveProperty(NESTED_KEYS[j]);
       }
       // Nested wrapper contents intact.
-      expect(mergedProps.eventProperties).toMatchObject({ pp_user_id: '42' });
+      expect(mergedProps.eventProperties).toMatchObject({ pp_user_id: 42 });
       // Flat copy of the same field also intact.
-      expect(mergedProps.pp_user_id).toBe('42');
+      expect(mergedProps.pp_user_id).toBe(42);
     });
 
     it('caller props still win in nested mode (e.g. override eventProperties wrapper)', () => {
