@@ -13,7 +13,7 @@ import { createDebounceTracker } from '@src/common/debounce';
 import { pollUntil } from '@src/common/retry';
 import { bootstrapModule } from '@src/common/bootstrap';
 import { cloneConfig } from '@src/common/clone-config';
-import { ensureDataLayer } from '@src/common/datalayer-guard';
+import { pushToDataLayer } from '@src/common/datalayer-guard';
 
 (function(win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -268,14 +268,17 @@ import { ensureDataLayer } from '@src/common/datalayer-guard';
 
     // Push to dataLayer (GA4/GTM)
     if (CONFIG.trackToDataLayer) {
-      const dl = ensureDataLayer(win);
-      for (let i = 0; i < experiments.length; i++) {
-        dl.push({
-          event: 'experiment_impression',
-          experiment_id: experiments[i].campaignId,
-          variation_id: experiments[i].variationId,
-          variation_name: experiments[i].variationName
-        });
+      try {
+        for (let i = 0; i < experiments.length; i++) {
+          pushToDataLayer(win, {
+            event: 'experiment_impression',
+            experiment_id: experiments[i].campaignId,
+            variation_id: experiments[i].variationId,
+            variation_name: experiments[i].variationName
+          });
+        }
+      } catch (e) {
+        ppLib.log('error', '[ppVWO] dataLayer push error', ppLib.safeLogError(e));
       }
     }
 

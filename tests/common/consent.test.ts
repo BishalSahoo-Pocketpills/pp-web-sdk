@@ -129,6 +129,100 @@ describe('ppLib.consent', () => {
     });
   });
 
+  describe('subscribe / notify (post-boot consent changes)', () => {
+    it('notifies subscribers with the new status on grant and revoke', () => {
+      loadModule('common');
+      const seen: string[] = [];
+      window.ppLib.consent.subscribe((s) => seen.push(s));
+      window.ppLib.consent.revoke();
+      window.ppLib.consent.grant();
+      expect(seen).toEqual(['denied', 'granted']);
+    });
+
+    it('stops delivering after unsubscribe', () => {
+      loadModule('common');
+      const seen: string[] = [];
+      const off = window.ppLib.consent.subscribe((s) => seen.push(s));
+      window.ppLib.consent.revoke();
+      off();
+      window.ppLib.consent.grant();
+      expect(seen).toEqual(['denied']); // grant not delivered
+    });
+
+    it('unsubscribe is idempotent (calling it twice is a no-op)', () => {
+      loadModule('common');
+      const off = window.ppLib.consent.subscribe(() => {});
+      off();
+      expect(() => off()).not.toThrow();
+    });
+
+    it('isolates a throwing listener — others still run and persistence holds', () => {
+      loadModule('common');
+      const seen: string[] = [];
+      window.ppLib.consent.subscribe(() => { throw new Error('listener boom'); });
+      window.ppLib.consent.subscribe((s) => seen.push(s));
+      expect(() => window.ppLib.consent.revoke()).not.toThrow();
+      expect(seen).toEqual(['denied']); // second listener still notified
+      expect(window.localStorage.getItem('pp_consent')).toBe('denied'); // persisted
+    });
+
+    it('notifies the RESOLVED status, not the raw call (delegation overrides grant)', () => {
+      // ppAnalytics delegation is the source of truth and says DENIED.
+      (window as unknown as { ppAnalytics: unknown }).ppAnalytics = {
+        consent: { status: () => false }
+      };
+      loadModule('common');
+      const seen: string[] = [];
+      window.ppLib.consent.subscribe((s) => seen.push(s));
+      window.ppLib.consent.grant(); // explicit grant, but delegation wins → denied
+      expect(seen).toEqual(['denied']); // listener sees the effective status
+      expect(window.ppLib.consent.isGranted()).toBe(false);
+    });
+
+    it('honors an explicit choice in-memory when persist fails (blocked storage)', () => {
+      loadModule('common');
+      const spy = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+        throw new Error('blocked');
+      });
+      const seen: string[] = [];
+      window.ppLib.consent.subscribe((s) => seen.push(s));
+      window.ppLib.consent.revoke(); // persist throws, but choice must hold
+      expect(seen).toEqual(['denied']); // notified denied despite persist failure
+      expect(window.ppLib.consent.isGranted()).toBe(false); // in-memory override
+      spy.mockRestore();
+    });
+
+    it('dedupes redundant notifications when the status does not change', () => {
+      loadModule('common');
+      const seen: string[] = [];
+      window.ppLib.consent.subscribe((s) => seen.push(s));
+      window.ppLib.consent.revoke();
+      window.ppLib.consent.revoke(); // same status → no second notify
+      expect(seen).toEqual(['denied']);
+    });
+
+    it('does not skip a sibling when a listener unsubscribes another mid-dispatch', () => {
+      loadModule('common');
+      const order: string[] = [];
+      let off3: () => void = () => {};
+      window.ppLib.consent.subscribe(() => order.push('l1'));
+      window.ppLib.consent.subscribe(() => { order.push('l2'); off3(); });
+      off3 = window.ppLib.consent.subscribe(() => order.push('l3'));
+      window.ppLib.consent.revoke();
+      expect(order).toEqual(['l1', 'l2', 'l3']); // snapshot → l3 still fires this round
+    });
+
+    it('does not invoke a listener that subscribes during dispatch (this round)', () => {
+      loadModule('common');
+      const seen: string[] = [];
+      window.ppLib.consent.subscribe(() => {
+        window.ppLib.consent.subscribe(() => seen.push('added-mid-dispatch'));
+      });
+      window.ppLib.consent.revoke();
+      expect(seen).toEqual([]); // newly-added listener not called this round
+    });
+  });
+
   describe('graceful degradation', () => {
     it('does not throw when localStorage is unavailable', () => {
       const original = Object.getOwnPropertyDescriptor(window, 'localStorage');

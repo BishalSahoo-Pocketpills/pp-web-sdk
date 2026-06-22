@@ -193,12 +193,12 @@ describe('CONFIG defaults', () => {
 
   it('has correct default brand', () => {
     const config = window.ppLib.ecommerce.getConfig();
-    expect(config.defaults.brand).toBe('PocketPills');
+    expect(config.defaults.brand).toBe('Pocketpills');
   });
 
   it('has correct default category', () => {
     const config = window.ppLib.ecommerce.getConfig();
-    expect(config.defaults.category).toBe('Telehealth');
+    expect(config.defaults.category).toBe('treatments');
   });
 
   it('has correct default currency', () => {
@@ -222,6 +222,7 @@ describe('CONFIG defaults', () => {
       variant: 'data-ecommerce-variant',
       discount: 'data-ecommerce-discount',
       coupon: 'data-ecommerce-coupon',
+      quantity: 'data-ecommerce-quantity',
     });
   });
 
@@ -420,7 +421,7 @@ describe('parseItem() — tested via getItems()', () => {
     expect(items.length).toBe(1);
     expect(items[0].item_id).toBe('wl');
     expect(items[0].item_name).toBe('Weight Loss');
-    expect(items[0].price).toBe('60');
+    expect(items[0].price).toBe(60);
   });
 
   it('returns null for null element (no items from empty DOM)', () => {
@@ -480,7 +481,7 @@ describe('parseItem() — tested via getItems()', () => {
     });
 
     const items = window.ppLib.ecommerce.getItems();
-    expect(items[0].item_brand).toBe('PocketPills');
+    expect(items[0].item_brand).toBe('Pocketpills');
   });
 
   it('uses default category when not specified', () => {
@@ -489,7 +490,7 @@ describe('parseItem() — tested via getItems()', () => {
     });
 
     const items = window.ppLib.ecommerce.getItems();
-    expect(items[0].item_category).toBe('Telehealth');
+    expect(items[0].item_category).toBe('treatments');
   });
 
   it('uses custom brand when specified', () => {
@@ -525,7 +526,29 @@ describe('parseItem() — tested via getItems()', () => {
     });
 
     const items = window.ppLib.ecommerce.getItems();
-    expect(items[0].discount).toBe('5');
+    expect(items[0].discount).toBe(5);
+  });
+
+  // F12: data-ecommerce-quantity (default 1 when absent; explicit value kept).
+  it('reads data-ecommerce-quantity, defaulting to 1 when absent', () => {
+    const a = document.createElement('div');
+    a.setAttribute('data-ecommerce-item', 'rx1');
+    a.setAttribute('data-ecommerce-name', 'A');
+    a.setAttribute('data-ecommerce-price', '10');
+    document.body.appendChild(a);
+
+    const b = document.createElement('div');
+    b.setAttribute('data-ecommerce-item', 'rx2');
+    b.setAttribute('data-ecommerce-name', 'B');
+    b.setAttribute('data-ecommerce-price', '5');
+    b.setAttribute('data-ecommerce-quantity', '3');
+    document.body.appendChild(b);
+
+    const items = window.ppLib.ecommerce.getItems();
+    const itemA = items.find((i: any) => i.item_id === 'rx1');
+    const itemB = items.find((i: any) => i.item_id === 'rx2');
+    expect(itemA.quantity).toBe(1); // absent → default
+    expect(itemB.quantity).toBe(3); // explicit
   });
 
   it('includes coupon when present', () => {
@@ -800,19 +823,31 @@ describe('buildEcommerceData() — tested via trackItem and trackViewItem', () =
     expect(dataLayer.find(d => d.event === 'add_to_cart')).toBeUndefined();
   });
 
-  it('uses quantity fallback of 1 when item has no quantity', () => {
+  it('preserves an explicit quantity of 0 (F12 — not coerced to 1)', () => {
     const dataLayer = createMockDataLayer();
 
     window.ppLib.ecommerce.trackItem({
       item_id: 'test',
       item_name: 'Test',
       price: 10,
-      quantity: 0, // falsy, buildEcommerceData uses || 1
+      quantity: 0,
     });
 
     const event = dataLayer.find(d => d.event === 'add_to_cart');
-    // price * (0 || 1) = 10 * 1 = 10
-    expect(event.ecommerce.value).toBe(10);
+    expect(event.ecommerce.value).toBe(0); // price * 0 = 0 (explicit 0 kept)
+  });
+
+  it('uses quantity fallback of 1 when quantity is omitted', () => {
+    const dataLayer = createMockDataLayer();
+
+    window.ppLib.ecommerce.trackItem({
+      item_id: 'test',
+      item_name: 'Test',
+      price: 10,
+    });
+
+    const event = dataLayer.find(d => d.event === 'add_to_cart');
+    expect(event.ecommerce.value).toBe(10); // undefined ?? 1 → price * 1
   });
 });
 
@@ -1321,7 +1356,7 @@ describe('handleInteraction() — via click events', () => {
   });
 
   it('prunes stale debounce entries after 100 isDuplicate calls', () => {
-    createMockDataLayer();
+    const dataLayer = createMockDataLayer();
 
     // Button A — creates a stale entry
     const btnA = document.createElement('button');
@@ -1356,9 +1391,14 @@ describe('handleInteraction() — via click events', () => {
       vi.advanceTimersByTime(301);
     }
 
-    // Pruning ran: A's stale entry deleted, B's fresh entry kept
-    // Verify no errors occurred
-    expect(true).toBe(true);
+    // All 100 non-duplicate clicks (1 A + 99 B) must have fired an add_to_cart
+    // — the prune sweep crossing the threshold must not drop or error on any
+    // event. (The prune's map-shrink contract is asserted deterministically in
+    // tests/common/debounce.test.ts via the size() hook.)
+    const addToCart = (dataLayer as Array<Record<string, unknown>>).filter(
+      (e) => e.event === 'add_to_cart',
+    );
+    expect(addToCart.length).toBe(100);
   });
 });
 
@@ -1377,7 +1417,7 @@ describe('Public API', () => {
       });
 
       expect(result.defaults.currency).toBe('USD');
-      expect(result.defaults.brand).toBe('PocketPills');
+      expect(result.defaults.brand).toBe('Pocketpills');
     });
 
     it('deep merges nested objects', () => {
@@ -1432,7 +1472,7 @@ describe('Public API', () => {
       expect(event).toBeDefined();
       expect(event.ecommerce.items[0].item_id).toBe('prog-1');
       expect(event.ecommerce.items[0].item_name).toBe('Programmatic Item');
-      expect(event.ecommerce.items[0].price).toBe('55');
+      expect(event.ecommerce.items[0].price).toBe(55);
     });
 
     it('returns early when itemData is null', () => {
@@ -1519,8 +1559,8 @@ describe('Public API', () => {
       });
 
       const event = dataLayer.find(d => d.event === 'add_to_cart');
-      expect(event.ecommerce.items[0].item_brand).toBe('PocketPills');
-      expect(event.ecommerce.items[0].item_category).toBe('Telehealth');
+      expect(event.ecommerce.items[0].item_brand).toBe('Pocketpills');
+      expect(event.ecommerce.items[0].item_category).toBe('treatments');
     });
 
     it('uses custom brand and category when provided', () => {
@@ -1553,7 +1593,7 @@ describe('Public API', () => {
       expect(event.ecommerce.items[0].variant).toBe('large');
     });
 
-    it('includes optional discount field (converts to string)', () => {
+    it('includes optional discount field (converts to number)', () => {
       const dataLayer = createMockDataLayer();
 
       window.ppLib.ecommerce.trackItem({
@@ -1564,7 +1604,7 @@ describe('Public API', () => {
       });
 
       const event = dataLayer.find(d => d.event === 'add_to_cart');
-      expect(event.ecommerce.items[0].discount).toBe('5');
+      expect(event.ecommerce.items[0].discount).toBe(5);
     });
 
     it('includes optional coupon field', () => {
@@ -1649,7 +1689,7 @@ describe('Public API', () => {
       expect(item.coupon).not.toContain('<');
     });
 
-    it('converts numeric price to string via sanitize', () => {
+    it('converts price to a float number', () => {
       const dataLayer = createMockDataLayer();
 
       window.ppLib.ecommerce.trackItem({
@@ -1659,8 +1699,8 @@ describe('Public API', () => {
       });
 
       const event = dataLayer.find(d => d.event === 'add_to_cart');
-      expect(typeof event.ecommerce.items[0].price).toBe('string');
-      expect(event.ecommerce.items[0].price).toBe('29.99');
+      expect(typeof event.ecommerce.items[0].price).toBe('number');
+      expect(event.ecommerce.items[0].price).toBe(29.99);
     });
   });
 
@@ -1866,14 +1906,14 @@ describe('Edge cases and integration', () => {
     expect(items.length).toBe(3);
 
     expect(items[0].variant).toBe('small');
-    expect(items[0].discount).toBe('2');
+    expect(items[0].discount).toBe(2);
     expect(items[0].coupon).toBe('CODE');
 
     expect(items[1].item_brand).toBe('Pharma');
     expect(items[1].item_category).toBe('Health');
     expect(items[1].variant).toBeUndefined();
 
-    expect(items[2].item_brand).toBe('PocketPills');
+    expect(items[2].item_brand).toBe('Pocketpills');
     expect(items[2].variant).toBeUndefined();
     expect(items[2].discount).toBeUndefined();
     expect(items[2].coupon).toBeUndefined();
@@ -2048,10 +2088,10 @@ describe('dataLayer soft cap', () => {
     loadWithCommon('ecommerce');
   });
 
-  it('caps dataLayer at 500 entries before push via splice', () => {
-    // Create a dataLayer with 510 entries
+  it('caps dataLayer at the shared 1000-entry limit (front-trim)', () => {
+    // Over the cap so the front-trim engages.
     const dataLayer: any[] = [];
-    for (let i = 0; i < 510; i++) {
+    for (let i = 0; i < 1010; i++) {
       dataLayer.push({ event: 'filler_' + i });
     }
     window.dataLayer = dataLayer;
@@ -2062,8 +2102,9 @@ describe('dataLayer soft cap', () => {
       price: 10,
     });
 
-    // splice(0, max(0, 510-500)) removes first 10 entries: 500 + ecommerce:null + payload = 502
-    expect(window.dataLayer.length).toBe(502);
+    // pushToDataLayer front-trims to <=1000 before each push; the two pushes
+    // (ecommerce:null clear + add_to_cart payload) leave the array at the cap.
+    expect(window.dataLayer.length).toBe(1000);
     const lastEntry = window.dataLayer[window.dataLayer.length - 1];
     expect(lastEntry.event).toBe('add_to_cart');
   });
@@ -2091,7 +2132,7 @@ describe('Item deduplication', () => {
     const items = window.ppLib.ecommerce.getItems();
     expect(items.length).toBe(1);
     expect(items[0].item_id).toBe('hair-loss-treatment');
-    expect(items[0].price).toBe('60');
+    expect(items[0].price).toBe(60);
   });
 
   it('trackViewItem pushes exactly 1 item when 7 identical DOM elements exist', () => {

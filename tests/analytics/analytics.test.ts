@@ -225,7 +225,7 @@ describe('CONFIG defaults', () => {
     expect(platforms.gtm.enabled).toBe(true);
     expect(platforms.gtm.events.firstTouch).toBe('first_touch_attribution');
     expect(platforms.gtm.events.lastTouch).toBe('last_touch_attribution');
-    expect(platforms.gtm.events.pageView).toBe('attribution_page_view');
+    expect(platforms.gtm.events.pageView).toBe('page_view');
     expect(platforms.gtm.rateLimitMax).toBe(100);
     expect(platforms.gtm.rateLimitWindow).toBe(60000);
     expect(platforms.ga4.enabled).toBe(true);
@@ -1603,7 +1603,7 @@ describe('Tracker.init', () => {
     loadWithCommon('analytics', { coverable: false });
     await flushMixpanelReady();
 
-    expect(dataLayer.some(e => e.event === 'attribution_page_view')).toBe(true);
+    expect(dataLayer.some(e => e.event === 'page_view')).toBe(true);
   });
 
   it('sets initialized flag', async () => {
@@ -1654,7 +1654,7 @@ describe('Tracker.init', () => {
     const before = dataLayer.length;
     window.ppAnalyticsDebug.tracker.init();
     // No page view event should be added
-    const pageViews = dataLayer.slice(before).filter(e => e.event === 'attribution_page_view');
+    const pageViews = dataLayer.slice(before).filter(e => e.event === 'page_view');
     expect(pageViews.length).toBe(0);
   });
 });
@@ -1806,14 +1806,14 @@ describe('Tracker.trackPageView', () => {
     const dataLayer = createMockDataLayer();
 
     window.ppAnalyticsDebug.tracker.trackPageView();
-    const pvEvent = dataLayer.find(e => e.event === 'attribution_page_view');
+    const pvEvent = dataLayer.find(e => e.event === 'page_view');
     expect(pvEvent).toBeDefined();
     expect(pvEvent.page_url).toBeDefined();
     expect(pvEvent.page_title).toBeDefined();
     expect(pvEvent.page_path).toBeDefined();
   });
 
-  it('dispatches a Mixpanel "pageview" event with page_url / page_title / page_path props', () => {
+  it('dispatches a Mixpanel "page_view" event with page_url / page_title / page_path / page_location / page_referrer props', () => {
     // v3.6.0 removed the analytics-side Mixpanel queue. trackPageView now
     // routes through EventQueue → Platforms.Mixpanel.send → ppLib.mixpanel.track()
     // (or win.mixpanel.track fallback when ppLib.mixpanel isn't loaded —
@@ -1827,11 +1827,13 @@ describe('Tracker.trackPageView', () => {
 
     window.ppAnalyticsDebug.tracker.trackPageView();
     expect(mp.track).toHaveBeenCalledWith(
-      'pageview',
+      'page_view',
       expect.objectContaining({
         page_url: expect.any(String),
         page_title: expect.any(String),
         page_path: expect.any(String),
+        page_location: expect.any(String),
+        page_referrer: expect.any(String),
       })
     );
   });
@@ -1845,7 +1847,7 @@ describe('Tracker.trackPageView', () => {
 
     window.ppAnalyticsDebug.tracker.trackPageView();
     const newEvents = dataLayer.slice(before);
-    expect(newEvents.filter(e => e.event === 'attribution_page_view').length).toBe(0);
+    expect(newEvents.filter(e => e.event === 'page_view').length).toBe(0);
   });
 
   it('skips Mixpanel Page View when trackPageView is disabled', () => {
@@ -2437,7 +2439,7 @@ describe('Integration: full attribution flow', () => {
     // Verify GTM events
     expect(dataLayer.some(e => e.event === 'first_touch_attribution')).toBe(true);
     expect(dataLayer.some(e => e.event === 'last_touch_attribution')).toBe(true);
-    expect(dataLayer.some(e => e.event === 'attribution_page_view')).toBe(true);
+    expect(dataLayer.some(e => e.event === 'page_view')).toBe(true);
 
     // Track a custom event
     const before = dataLayer.length;
@@ -3035,8 +3037,8 @@ describe('Additional coverage paths', () => {
 // =========================================================================
 // CONSENT CACHING
 // =========================================================================
-describe('Consent Caching', () => {
-  it('returns cached consent result within TTL window', () => {
+describe('Consent Freshness (no cache — F19)', () => {
+  it('reflects an external storage change immediately (no stale cache)', () => {
     loadModule('common');
     loadModule('analytics', { coverable: false });
     localStorage.setItem('pp_consent', 'approved');
@@ -3051,46 +3053,12 @@ describe('Consent Caching', () => {
       }
     });
 
-    // First call — should compute and cache
-    const result1 = window.ppAnalytics.consent.status();
-    expect(result1).toBe(true);
-
-    // Change underlying storage to 'denied' without going through setConsent
-    localStorage.setItem('pp_consent', 'denied');
-
-    // Second call within TTL — should return cached true
-    const result2 = window.ppAnalytics.consent.status();
-    expect(result2).toBe(true);
-  });
-
-  it('re-evaluates consent after TTL expires', () => {
-    loadModule('common');
-    loadModule('analytics', { coverable: false });
-    localStorage.setItem('pp_consent', 'approved');
-    window.ppAnalytics.config({
-      consent: {
-        required: true,
-        frameworks: {
-          custom: { enabled: false },
-          oneTrust: { enabled: false },
-          cookieYes: { enabled: false }
-        }
-      }
-    });
-
-    // First call — caches result as true
     expect(window.ppAnalytics.consent.status()).toBe(true);
 
-    // Change underlying storage
+    // A CMP changes storage directly (NOT via setConsent) — the next read must
+    // reflect it immediately; there is no TTL window to wait out.
     localStorage.setItem('pp_consent', 'denied');
-
-    // Advance time past the 60s TTL
-    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 61000);
-
-    // Should re-evaluate and return false
     expect(window.ppAnalytics.consent.status()).toBe(false);
-
-    vi.restoreAllMocks();
   });
 
   it('invalidates consent cache on setConsent (grant)', () => {

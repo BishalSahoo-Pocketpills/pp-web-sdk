@@ -94,6 +94,10 @@ export interface PerformanceConfig {
   useRequestIdleCallback: boolean;
   queueEnabled: boolean;
   maxQueueSize: number;
+  // Max events drained per turn on the setTimeout fallback path (the
+  // requestIdleCallback path yields on the frame's idle deadline instead).
+  // Bounds main-thread time per drain so a large backlog can't cause a long task.
+  drainBatchSize: number;
 }
 
 export interface AnalyticsConfig {
@@ -134,10 +138,14 @@ export interface AttributionData {
 export interface AnalyticsAPI {
   version: string;
   config: (options?: DeepPartial<AnalyticsConfig>) => AnalyticsConfig;
+  /** Backward-compatible alias for config(). */
+  configure: (options?: DeepPartial<AnalyticsConfig>) => AnalyticsConfig;
   consent: {
     grant: () => void;
     revoke: () => void;
     status: () => boolean;
+    /** Whether this module's consent gate is armed (consent.required). */
+    isRequired: () => boolean;
   };
   track: (eventName: string, properties?: Record<string, unknown>) => void;
   getAttribution: () => AttributionData;

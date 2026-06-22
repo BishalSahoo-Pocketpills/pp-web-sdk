@@ -4,6 +4,91 @@ All notable changes to **pp-web-sdk** are documented here. The project follows
 [Semantic Versioning](https://semver.org/) — breaking changes require a major
 or, at minimum, a documented migration path in this file.
 
+## [3.11.1] — 2026-06-17
+
+### Changed
+
+- **Mixpanel cookie hygiene is now centralized and primary-anchored.** The
+  per-secondary "legacy cookie sweep" (`sweepLegacyCookie` boot-profile flag)
+  is replaced by `pruneNonPrimaryMixpanelCookies`, which runs once during
+  `init()` and deletes **every** `mp_<token>_mixpanel` cookie whose token is
+  not the **current primary** token (across the configured cross-subdomain
+  `cookieDomain` and the host-only path). Secondary still persists to
+  `localStorage`, so only the primary project ever writes a cookie. This
+  guarantees a single Mixpanel cookie survives a **project swap** (old primary
+  token → secondary, new token → primary) and a full secondary deprecation —
+  preventing the two-cookie doubling that can trip the server "request
+  header / cookie too large" (HTTP 400/431) error. _Migration:_ none — the
+  prune is keyed on whatever is configured as primary, so swaps and
+  staging/prod token differences need no code change.
+- **SDK no longer sets Mixpanel identity at boot.** The boot-time
+  `unifyDistinctIdWithPpDistinctId()` mapping (login cookies →
+  `mixpanel.identify()`) is disabled. Identity is now owned by the funnel
+  app's `mixpanel.identify($user_id)` under Simplified ID Merge; the
+  landing-page SDK stays anonymous and only provides the shared
+  cross-subdomain `$device_id`, so its boot identify can't interfere with the
+  funnel app's identification. _Note:_ a returning already-logged-in user who
+  lands on a Webflow page first won't be re-identified by the SDK — their
+  landing events stay anonymous unless the shared Mixpanel cookie already
+  carries `$user_id` from a prior funnel identify.
+
+### Added
+
+- **Boot-time cookie-size telemetry (`reportPrimaryCookieSize`).** After the
+  SDK loads, the orchestrator measures the primary `mp_<token>_mixpanel`
+  cookie and the total `document.cookie` payload (UTF-8 byte count) and logs
+  a `warn` when either crosses a threshold — visibility for the
+  "cookie too large" failure before it becomes a hard error. Pure
+  observability; never mutates Mixpanel's cookie.
+- **`shared.cookieSizeWarnBytes` config** (`{ primary, total }`, defaults
+  `3584` / `7168` bytes) to tune the telemetry thresholds to your CDN/server
+  header limit.
+- **GA4 `page_location` + `page_referrer` on the dataLayer `page_view`.** The
+  canonical dataLayer `page_view` now carries top-level `page_location`
+  (`window.location.href`) and `page_referrer` (`document.referrer`) as the
+  **full absolute URL**, so GTM → GA4 records the real page URL instead of an
+  auto/container fallback. GA4/dataLayer-only — Mixpanel is unchanged.
+  _Note:_ these are the **raw** values (not run through the SDK's
+  `sanitizeLandingPage` PII stripping that applies to the Mixpanel `url`
+  property), so any PII in the URL path/query reaches GA4 verbatim.
+
+## [3.11.0] — 2026-06-03
+
+### Changed
+
+- **Consent now gates `analytics.track()` and the dataLayer dispatch (C1).**
+  Previously only `analytics.init()` was consent-gated; `track()` and the
+  datalayer `pushEvent` / `pushEcommerceEvent` paths dispatched regardless.
+  They now check consent before sending. **Behavior change, but inert by
+  default:** with `consent.required = false` (the default), `isGranted()`
+  returns `true`, so events fire exactly as before. Only deployments that set
+  `consent.required = true` (or revoke consent) will see `track()` / datalayer
+  pushes suppressed. _Migration:_ none required unless you depend on consent
+  enforcement — in which case track-time and datalayer events are now correctly
+  blocked when consent is denied.
+
+### Added
+
+- **`ppLib.analytics` namespace + `configure()` alias (C5).** Analytics is now
+  exposed on the unified `ppLib.analytics` surface (alongside the existing
+  `window.ppAnalytics`), matching every other module's `ppLib.<name>` IA. A
+  backward-compatible `configure()` alias of `config()` is also available.
+
+### Fixed
+
+- **Consent vocabulary alignment (C2).** The analytics consent service now
+  accepts both `'approved'` and `'granted'` stored values, so it agrees with the
+  shared `ppLib.consent` service on the `pp_consent` key (previously the two
+  could disagree — the analytics side honored only `'approved'`).
+- **Observability (C4).** GTM events dropped by the rate limiter are now logged
+  with the dropped event name instead of being discarded silently.
+
+### Docs
+
+- Documentation (`pp-docs`) rewritten end-to-end to match shipped v3.x behavior
+  (audit remediation), with a new doc-from-types lint guarding against future
+  signature drift.
+
 ## [3.10.7] — 2026-05-29
 
 ### Fixed

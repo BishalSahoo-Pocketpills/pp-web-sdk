@@ -1196,6 +1196,63 @@ describe('loaded callback', () => {
     expect(mp.opt_in_tracking).not.toHaveBeenCalled();
   });
 
+  // F3: consent denial must propagate to Mixpanel's native opt-out, so raw
+  // window.mixpanel.track calls (which bypass the dispatch consent gate) are
+  // suppressed too — not just opted-in regardless of consent.
+  it('opts OUT of native tracking and does NOT opt in when consent is denied', () => {
+    const loadedCallback = initAndGetLoadedCallback();
+    window.ppLib.consent.configure({ mode: 'opt-in' }); // opt-in, not yet granted → denied
+    const mp = createMockMixpanel();
+    invokeLoadedCallback(loadedCallback, mp);
+
+    expect(mp.opt_out_tracking).toHaveBeenCalled();
+    expect(mp.opt_in_tracking).not.toHaveBeenCalled();
+  });
+
+  it('opts in (and never opts out) when consent is granted', () => {
+    const loadedCallback = initAndGetLoadedCallback();
+    window.ppLib.consent.configure({ mode: 'opt-out' }); // granted
+    const mp = createMockMixpanel();
+    invokeLoadedCallback(loadedCallback, mp);
+
+    expect(mp.opt_in_tracking).toHaveBeenCalled();
+    expect(mp.opt_out_tracking).not.toHaveBeenCalled();
+  });
+
+  // PR3b: a post-boot CMP revoke/grant must flip the live instance's native
+  // opt-in/out — the boot check above only runs once.
+  it('propagates a POST-boot consent revoke to native opt_out', () => {
+    const loadedCallback = initAndGetLoadedCallback();
+    window.ppLib.consent.configure({ mode: 'opt-out' }); // granted at boot
+    const mp = createMockMixpanel();
+    invokeLoadedCallback(loadedCallback, mp);
+    expect(mp.opt_in_tracking).toHaveBeenCalled(); // opted in at boot
+    mp.opt_out_tracking.mockClear();
+
+    window.ppLib.consent.revoke();
+    expect(mp.opt_out_tracking).toHaveBeenCalled(); // live opt-out on revoke
+  });
+
+  it('propagates a POST-boot consent grant to native opt_in', () => {
+    const loadedCallback = initAndGetLoadedCallback();
+    const mp = createMockMixpanel();
+    invokeLoadedCallback(loadedCallback, mp);
+    mp.opt_in_tracking.mockClear();
+
+    window.ppLib.consent.grant();
+    expect(mp.opt_in_tracking).toHaveBeenCalled(); // live opt-in on grant
+  });
+
+  it('does NOT opt in on a post-boot grant when optOutByDefault is true', () => {
+    const loadedCallback = initAndGetLoadedCallback({ optOutByDefault: true });
+    const mp = createMockMixpanel();
+    invokeLoadedCallback(loadedCallback, mp);
+    mp.opt_in_tracking.mockClear();
+
+    window.ppLib.consent.grant();
+    expect(mp.opt_in_tracking).not.toHaveBeenCalled(); // hard-off stays dark
+  });
+
   it('updates SessionManager timeout from config', () => {
     const loadedCallback = initAndGetLoadedCallback({ sessionTimeout: 5000 });
     const mp = createMockMixpanel();

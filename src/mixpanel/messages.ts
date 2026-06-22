@@ -72,6 +72,19 @@ export const M = {
 
   // ---- Session ----
   SESSION_BOUNDARY_HANDLER_ERROR: `${PREFIX} session-boundary handler error`,
+
+  // ---- Cookie hygiene (size hardening) ----
+  MP_COOKIE_PRUNED: (name: string): string =>
+    `${PREFIX} pruned non-primary Mixpanel cookie ${name} (only the primary project's cookie is retained to bound HTTP header size)`,
+  MP_COOKIE_PRUNE_FAILED: `${PREFIX} non-primary Mixpanel cookie prune failed`,
+  COOKIE_SIZE_WARN: (
+    primaryBytes: number,
+    totalBytes: number,
+    primaryLimit: number,
+    totalLimit: number,
+  ): string =>
+    `${PREFIX} cookie size over threshold — primary Mixpanel cookie ${primaryBytes}B (limit ${primaryLimit}B), total document.cookie ${totalBytes}B (limit ${totalLimit}B). Risk of HTTP 400/431 "request header/cookie too large"; trim persistent super-properties (register) — see shared-context.ts.`,
+  COOKIE_SIZE_REPORT_FAILED: `${PREFIX} cookie size telemetry failed`,
 } as const;
 
 // ---- Magic-string constants outside the log domain ----
@@ -94,4 +107,14 @@ export const DEFAULTS = {
   PRE_INIT_QUEUE_MAX: 200,
   VWO_BRIDGE_POLL_MAX_ATTEMPTS: 30,
   VWO_BRIDGE_POLL_INTERVAL_MS: 500,
+  /**
+   * Boot-time cookie-size warning thresholds (bytes). A single browser
+   * cookie caps at ~4 KB and servers reject total request-header/cookie
+   * payloads past ~8 KB (HTTP 400/431). We warn below those ceilings so the
+   * operator gets a signal before users hit the hard error.
+   *   - `COOKIE_WARN_PRIMARY_BYTES`: the `mp_<token>_mixpanel` cookie alone.
+   *   - `COOKIE_WARN_TOTAL_BYTES`: the full `document.cookie` payload.
+   */
+  COOKIE_WARN_PRIMARY_BYTES: 3584,
+  COOKIE_WARN_TOTAL_BYTES: 7168,
 } as const;

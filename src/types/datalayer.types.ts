@@ -67,8 +67,8 @@ export interface DataLayerConfig {
 // =====================================================
 
 export interface DataLayerUser {
-  pp_user_id: string;
-  pp_patient_id: string;
+  pp_user_id: string | null;
+  pp_patient_id: string | null;
   // Stringified boolean ("true" / "false") per the event-attribute
   // contract — Mixpanel + GTM consumers treat this as a categorical
   // string, not a boolean.
@@ -106,9 +106,9 @@ export interface DataLayerItem {
   item_name: string;
   item_brand: string;
   item_category?: string;
-  price: string;
+  price: number;
   quantity: number;
-  discount: string;
+  discount: number;
   coupon: string;
 }
 
@@ -139,6 +139,13 @@ export interface UserDataInput {
   country?: string;
 }
 
+/**
+ * Pre-hashed user data for `setUserDataHashed`. Each `sha256_*` field MUST be a
+ * 64-character hex SHA-256 digest; any value not matching that shape is dropped
+ * to '' (and a warning is logged) — this guards against cleartext PII being
+ * accidentally placed in a hashed field. Plain address fields (city/region/
+ * postal_code/country) are passed through as-is.
+ */
 export interface UserDataHashedInput {
   sha256_email_address?: string;
   sha256_phone_number?: string;

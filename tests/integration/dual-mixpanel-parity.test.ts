@@ -87,23 +87,54 @@ describe('Integration: dual Mixpanel parity', () => {
   });
 
   it('per-instance project name is the ONE divergent super-prop (intentional)', () => {
-    // Project labels DIFFER by design — they identify the source project
-    // in Mixpanel's Debug View. Every OTHER super-prop must be identical.
-    const { api, primary, secondary } = setupDual();
+    // Project labels DIFFER by design — they identify the source project in
+    // Mixpanel's Debug View. Drive the real boot so the orchestrator registers
+    // each instance's projectName via registerProjectName, then assert the
+    // divergence directly (the prior test never checked it) AND that every
+    // other registered super-prop is identical.
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({
+      primary: { enabled: true, token: 'primary-tok', projectName: 'OldProject' },
+      secondary: { enabled: true, token: 'secondary-tok', projectName: 'NewProject' },
+    });
 
-    api.register({ shared_prop: 'same-on-both' });
+    // init() injects the real SDK <script>; stub the DOM insert so it no-ops.
+    if (!document.getElementsByTagName('script').length) {
+      const s = document.createElement('script');
+      s.src = 'dummy.js';
+      document.head.appendChild(s);
+    }
+    const insertBeforeSpy = vi.spyOn(Node.prototype, 'insertBefore').mockImplementation((node: Node) => node);
 
-    const primaryRegistered = primary.register.mock.calls.map((c: any) => c[0]);
-    const secondaryRegistered = secondary.register.mock.calls.map((c: any) => c[0]);
+    type LoadedOpts = { loaded?: (mp: unknown) => void };
+    type InitEntry = [string, LoadedOpts, (string | undefined)?];
+    let queued: InitEntry[];
+    try {
+      window.ppLib.mixpanel.init();
+      queued = (window.mixpanel as unknown as { _i: InitEntry[] })._i.slice();
+    } finally {
+      insertBeforeSpy.mockRestore();
+    }
 
-    const primaryHasShared = primaryRegistered.some(
-      (p: any) => p && p.shared_prop === 'same-on-both',
-    );
-    const secondaryHasShared = secondaryRegistered.some(
-      (p: any) => p && p.shared_prop === 'same-on-both',
-    );
-    expect(primaryHasShared).toBe(true);
-    expect(secondaryHasShared).toBe(true);
+    const { root, primary, secondary } = createDualMockMixpanel();
+    window.mixpanel = root as unknown as typeof window.mixpanel;
+    queued.forEach(([, opts, name]) => {
+      if (opts && typeof opts.loaded === 'function') {
+        opts.loaded(name === 'secondary' ? secondary : primary);
+      }
+    });
+
+    const projectOf = (calls: unknown[][]): unknown =>
+      calls.map((c) => c[0]).find((p) => !!p && typeof p === 'object' && 'project' in (p as object));
+
+    // The divergence the test name claims — now actually asserted.
+    expect((projectOf(primary.register.mock.calls) as { project?: string }).project).toBe('OldProject');
+    expect((projectOf(secondary.register.mock.calls) as { project?: string }).project).toBe('NewProject');
+
+    // Every OTHER registered super-prop must be identical across both.
+    const stripProject = (calls: unknown[][]): unknown[][] =>
+      calls.filter((c) => !(c[0] && typeof c[0] === 'object' && 'project' in (c[0] as object)));
+    expect(stripProject(primary.register.mock.calls)).toEqual(stripProject(secondary.register.mock.calls));
   });
 
   it('alias fires on primary only (Simplified ID Merge isolation)', () => {

@@ -1,5 +1,6 @@
 import type { PPLib } from '@src/types/common.types';
 import type { DataLayerConfig, DataLayerItem, DataLayerItemInput } from '@src/types/datalayer.types';
+import { toFloat } from '@src/common/coerce';
 
 export function createItemBuilder(
   ppLib: PPLib,
@@ -10,9 +11,11 @@ export function createItemBuilder(
       item_id: input.item_id || '',
       item_name: input.item_name || '',
       item_brand: input.item_brand || CONFIG.defaults.itemBrand,
-      price: String(input.price != null ? input.price : ''),
-      quantity: input.quantity || 1,
-      discount: String(input.discount != null ? input.discount : ''),
+      // Monetary fields leave the SDK as floats (decimal); quantity as int.
+      // `?? 1` preserves an explicit 0; only undefined falls back to 1.
+      price: toFloat(input.price),
+      quantity: input.quantity ?? 1,
+      discount: toFloat(input.discount),
       coupon: input.coupon || ''
     };
 
@@ -23,14 +26,12 @@ export function createItemBuilder(
     return item;
   }
 
-  function calculateValue(items: DataLayerItem[]): string {
+  function calculateValue(items: DataLayerItem[]): number {
     let total = 0;
     for (let i = 0; i < items.length; i++) {
-      const price = parseFloat(items[i].price) || 0;
-      const discount = parseFloat(items[i].discount) || 0;
-      total += price * items[i].quantity - discount;
+      total += items[i].price * items[i].quantity - items[i].discount;
     }
-    return String(Math.round(total * 100) / 100);
+    return Math.round(total * 100) / 100;
   }
 
   return { normalizeItem: normalizeItem, calculateValue: calculateValue };

@@ -1,6 +1,7 @@
 import type { PPLib } from '@src/types/common.types';
 import type { AnalyticsConfig } from '@src/types/analytics.types';
 import type { AnalyticsUtils } from '@src/analytics/utils';
+import { pushToDataLayer } from '@src/common/datalayer-guard';
 
 // Internal Mixpanel-platform queue payload — discriminator decides whether
 // the upstream call goes to mixpanel.register or mixpanel.track.
@@ -44,17 +45,13 @@ export function createPlatforms(
         /*! v8 ignore stop */
 
         /*! v8 ignore start */
-        win.dataLayer = win.dataLayer || [];
-        /*! v8 ignore stop */
-
-        /*! v8 ignore start */
         if (!Security.validateData(data)) {
         /*! v8 ignore stop */
           utils.log('error', 'Invalid GTM data rejected');
           return;
         }
 
-        win.dataLayer.push(data);
+        pushToDataLayer(win, data);
         utils.log('verbose', 'Pushed to GTM', data);
       } catch (e) {
         utils.log('error', 'GTM push error', e);

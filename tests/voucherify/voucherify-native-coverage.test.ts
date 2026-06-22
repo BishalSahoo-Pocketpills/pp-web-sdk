@@ -362,6 +362,39 @@ describe('Voucherify native coverage', () => {
     vi.useRealTimers();
   });
 
+  it('edge mode: deadlines the edge fetch with an abort signal (settles instead of hanging)', async () => {
+    await freshLoad();
+    setupDOM();
+    vi.useFakeTimers();
+    const signals: AbortSignal[] = [];
+    window.fetch = vi.fn((_url: string, opts?: RequestInit) => {
+      if (opts && opts.signal) signals.push(opts.signal);
+      return new Promise((_resolve, reject) => {
+        if (opts && opts.signal) {
+          opts.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+        }
+      });
+    }) as unknown as typeof window.fetch;
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false },
+      consent: { required: false },
+      retry: { maxRetries: 0, baseDelay: 50, requestTimeoutMs: 200 }
+    });
+    window.ppLib.voucherify.init();
+
+    const promise = window.ppLib.voucherify.fetchPricing();
+    // A never-resolving edge Worker must abort at the deadline rather than hang
+    // forever; fetchPricing then settles via the baseline fallback.
+    await vi.advanceTimersByTimeAsync(800);
+    const results = await promise;
+
+    expect(signals.length).toBeGreaterThanOrEqual(1);
+    expect(signals[0].aborted).toBe(true);
+    expect(results.length).toBe(2); // baseline rendered, not a hang
+    vi.useRealTimers();
+  });
+
   it('skips AbortController when requestTimeoutMs is 0 (legacy behavior)', async () => {
     await freshLoad();
     setupDOM();
@@ -1337,6 +1370,33 @@ describe('Voucherify native coverage', () => {
     expect(fetchCallCount).toBe(1);
   });
 
+  it('fetchPricing does NOT coalesce concurrent calls for different productIds', async () => {
+    await freshLoad();
+    setupDOM();
+    window.fetch = vi.fn(() => Promise.resolve({
+      ok: true, status: 200,
+      json: () => Promise.resolve({ qualifications: [], total: 0, has_more: false })
+    })) as unknown as typeof window.fetch;
+    window.ppLib.voucherify.configure({
+      cache: { enabled: true, baseUrl: '/api/voucherify', ttl: 1 },
+      pricing: { autoFetch: false },
+      consent: { required: false }
+    });
+    window.ppLib.voucherify.init();
+    window.ppLib.voucherify.clearCache();
+    await new Promise(r => setTimeout(r, 5));
+
+    // Two concurrent SCOPED calls for DIFFERENT products must not share a
+    // promise — pre-fix the single in-flight slot returned the first caller's
+    // result to the second, so the second's products were never resolved.
+    const [r1, r2] = await Promise.all([
+      window.ppLib.voucherify.fetchPricing(['weight-loss']),
+      window.ppLib.voucherify.fetchPricing(['hair-loss'])
+    ]);
+    expect(r1.map(r => r.productId)).toEqual(['weight-loss']);
+    expect(r2.map(r => r.productId)).toEqual(['hair-loss']);
+  });
+
   // =====================================================
   // CREDENTIAL WARNING (H5)
   // =====================================================
@@ -1984,6 +2044,52 @@ describe('Voucherify native coverage', () => {
 
     expect(results).toEqual([]);
     expect(window.fetch).not.toHaveBeenCalled();
+  });
+
+  it('cms mode: anonymous — removes the cloak so cards are not left invisible', async () => {
+    await freshLoad();
+    setupDOM();
+    document.documentElement.setAttribute('data-pp-segment-pending', '');
+    window.fetch = vi.fn() as unknown as typeof window.fetch;
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'cms', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false },
+      consent: { required: false }
+    });
+    window.ppLib.voucherify.init();
+
+    await window.ppLib.voucherify.fetchPricing();
+
+    // Pre-fix the anonymous branch returned without uncloaking, leaving the
+    // product section permanently hidden for every anonymous visitor.
+    expect(document.documentElement.hasAttribute('data-pp-segment-pending')).toBe(false);
+    expect(window.fetch).not.toHaveBeenCalled();
+  });
+
+  it('cms mode: member with opt-in — removes the cloak after fetch', async () => {
+    await freshLoad();
+    setupDOM();
+    document.cookie = 'userId=user123;path=/';
+    document.documentElement.setAttribute('data-pp-segment-pending', '');
+    const wrapper = document.createElement('div');
+    wrapper.setAttribute('data-voucherify-member-pricing', '');
+    document.body.appendChild(wrapper);
+
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: () => Promise.resolve({ segment: 'member', products: {}, timestamp: 0 })
+    }) as unknown as typeof window.fetch;
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'cms', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false },
+      consent: { required: false }
+    });
+    window.ppLib.voucherify.init();
+
+    await window.ppLib.voucherify.fetchPricing();
+
+    // Pre-fix the member+opt-in branch never called removeCloakAttribute.
+    expect(document.documentElement.hasAttribute('data-pp-segment-pending')).toBe(false);
   });
 
   it('cms mode: member without page opt-in — no fetch, returns empty', async () => {
@@ -3327,6 +3433,40 @@ describe('Voucherify native coverage', () => {
     await window.ppLib.voucherify.fetchPricing();
 
     // URL should contain ad_source:google segment
+    expect(capturedUrl).toContain('ad_source%3Agoogle');
+  });
+
+  it('click ID: wbraid (iOS Google click, no gclid) resolves to ad_source:google', async () => {
+    await freshLoad();
+    setupDOM();
+
+    // wbraid/gbraid arrive on iOS / app Google campaigns WITHOUT gclid — these
+    // were missing from the registry and silently dropped into the default
+    // segment before the fix.
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, search: '?wbraid=Cj0xyz', href: 'https://try.pocketpills.com/ed?wbraid=Cj0xyz' },
+      writable: true,
+      configurable: true,
+    });
+
+    let capturedUrl = '';
+    window.fetch = vi.fn((url: string) => {
+      capturedUrl = url;
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve({ segment: 'ad_source:google', products: {}, timestamp: 0 }),
+      });
+    }) as unknown as typeof window.fetch;
+
+    window.ppLib.voucherify.configure({
+      edge: { mode: 'edge', edgeUrl: 'https://pp-pricing.workers.dev' },
+      pricing: { autoFetch: false },
+      consent: { required: false },
+    });
+    window.ppLib.voucherify.init();
+
+    await window.ppLib.voucherify.fetchPricing();
+
     expect(capturedUrl).toContain('ad_source%3Agoogle');
   });
 

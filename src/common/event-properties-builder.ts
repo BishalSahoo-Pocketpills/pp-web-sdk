@@ -111,8 +111,8 @@ export interface BuiltEventProperties {
   current_url: string;
   url: string;
   device_id: string;
-  pp_user_id: string;
-  pp_patient_id: string;
+  pp_user_id: string | null;
+  pp_patient_id: string | null;
   pp_session_id: string;
   pp_timestamp: number;
   platform: string;
@@ -146,6 +146,12 @@ export interface BuiltEventProperties {
   'referrer_domain [last touch]': string;
   'landing_page_url [first touch]': string;
   'landing_page_url [last touch]': string;
+  // SDK-owned backup of Mixpanel's native $initial_referrer /
+  // $initial_referring_domain. Same first-touch value as the bracket fields
+  // above, named to parallel the Mixpanel columns so consumers have a reliable,
+  // explicitly-owned referrer when the native value reads $direct (see below).
+  pp_initial_referrer: string;
+  pp_initial_referring_domain: string;
   [bracketKey: string]: unknown;
 }
 
@@ -206,13 +212,21 @@ export interface EventPropertiesBuilder {
 // segments; null/undefined breaks BigQuery exports. Stripping at the
 // builder boundary is cheaper than stripping at every dispatcher.
 // Pure: returns a fresh object; does NOT mutate the input.
+//
+// ALLOW_NULL: identity fields that intentionally emit `null` for anonymous /
+// logged-out visitors (replacing the legacy '-1' sentinel). They are exempt
+// from the null/undefined drop so the explicit null survives to Mixpanel
+// (which keeps custom-property nulls) and GA4, staying queryable for
+// anonymous segments. The empty-string drop still applies to every key.
+const ALLOW_NULL: ReadonlySet<string> = new Set(['pp_user_id', 'pp_patient_id']);
+
 export function stripEmptyProps(input: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   const keys = Object.keys(input);
   for (let i = 0; i < keys.length; i++) {
     const k = keys[i];
     const v = input[k];
-    if (v === null || v === undefined) continue;
+    if ((v === null || v === undefined) && !ALLOW_NULL.has(k)) continue;
     if (typeof v === 'string' && v === '') continue;
     out[k] = v;
   }
@@ -263,13 +277,13 @@ export const MIXPANEL_DUPLICATE_KEYS: ReadonlySet<string> = new Set([
 const UTM_FIRST_TOUCH_KEY = 'pp_utm_first_touch';
 const UTM_LAST_TOUCH_KEY = 'pp_utm_last_touch';
 
-// First touch UTM — 2 years. First-touch
-// attribution is by definition long-lived and we want it to survive
-// re-engagement campaigns.
-const UTM_FIRST_TOUCH_MAX_AGE_SECONDS = 63072000;
-// Last touch UTM — 30 days. Matches the standard Mixpanel/GA "last touch"
-// attribution window so analytics tools agree on which campaign gets credit.
-const UTM_LAST_TOUCH_MAX_AGE_SECONDS = 2592000;
+// NOTE: first/last-touch are persisted in localStorage (no TTL) — see
+// createLocalStorageValue below. There is intentionally NO max-age constant
+// for them: first-touch is locked on first capture and last-touch rotates on
+// signal (it does not expire on a clock). The former UTM_FIRST/LAST_TOUCH_
+// MAX_AGE_SECONDS cookie-TTL constants were removed when the stores moved to
+// localStorage; only the session window below remains time-bounded.
+//
 // Session window — 30 minutes. Gates rotation of the pp_utm_*_touch
 // normalized slice (see captureUtmTouches): last-touch only refreshes when
 // (a) new traffic params on the URL, or (b) the session has expired AND
@@ -285,6 +299,12 @@ const UTM_SESSION_MAX_AGE_SECONDS = 1800;
 // empty), then deletes the legacy cookies so they don't linger.
 const LEGACY_MKTG_FIRST_KEY = 'pp_mktg_first_touch';
 const LEGACY_MKTG_LAST_KEY = 'pp_mktg_last_touch';
+
+// Persistent self-disable marker (F22) for the one-time pp_mktg_* migration.
+// Once the fold + cleanup has run on a device, this localStorage flag lets
+// every future page load skip the whole shim — the legacy cookies are gone, so
+// re-running only burns cookie reads/writes on each navigation.
+const MKTG_MIGRATION_DONE_KEY = 'pp_mktg_migrated';
 
 /**
  * Parse a legacy `pp_mktg_*_touch` cookie. The pre-consolidation
@@ -436,19 +456,20 @@ export function createEventPropertiesBuilder(
     }
   }
 
-  // The SDK emits `country` as an ISO-2 code (e.g. "CA") for cross-tool
-  // joins (Mixpanel, Braze, GA, BigQuery exports). This is INTENTIONALLY
-  // distinct from the geo-derived properties Mixpanel auto-attaches to
-  // every event from server-side IP lookup — those appear in the raw
-  // payload as `mp_country_code` ("CA") and are shown in Mixpanel's UI
-  // with the full-name label "Country: Canada". The two coexist by design;
-  // analysts querying our SDK should use lowercase `country`.
+  // The SDK emits `Country` (capitalized — proper-noun dimension convention,
+  // same as `Device`) as an ISO-2 code (e.g. "CA") for cross-tool joins
+  // (Mixpanel, Braze, GA, BigQuery exports). This is INTENTIONALLY distinct
+  // from the geo-derived properties Mixpanel auto-attaches to every event
+  // from server-side IP lookup — those appear in the raw payload as
+  // `mp_country_code` ("CA") and are shown in Mixpanel's UI with the
+  // full-name label "Country: Canada". The two coexist by design; analysts
+  // querying our SDK should use the capitalized `Country` property.
   //
   // Source: cookie only. We deliberately do NOT fall back to
   // navigator.language — it reflects the browser's UI language (often
   // "en-US" by default on Chrome regardless of physical location) and
   // produces confidently-wrong values. When the cookie is empty we leave
-  // `country` empty rather than ship fake data; analysts can rely on
+  // `Country` empty rather than ship fake data; analysts can rely on
   // Mixpanel's IP-based `mp_country_code` for those events. The cookie
   // should be set server-side from real IP geolocation (e.g. via the
   // CF-IPCountry header at the edge).
@@ -707,6 +728,20 @@ export function createEventPropertiesBuilder(
     if (mktgMigrated) return;
     mktgMigrated = true;
 
+    // Persistent self-disable (F22): the in-memory guard above only covers a
+    // single page load. Once the fold + cleanup has completed on this device,
+    // a localStorage marker short-circuits the shim on every FUTURE load. It is
+    // purely an optimization — if localStorage is blocked the shim still runs
+    // each load and stays correct (the fold is idempotent; the deletes no-op
+    // once the cookies are gone). The marker is written below via the same
+    // localStorage the fold uses, so an *availability* failure fails both
+    // together (no marker without a fold). The marker never WORSENS data loss:
+    // the legacy cookies are deleted via the cookie API in the same run
+    // regardless, so a later marker-skip has nothing left to migrate anyway.
+    try {
+      if (win.localStorage.getItem(MKTG_MIGRATION_DONE_KEY)) return;
+    } catch (e) { /* localStorage blocked — fall through and run the shim */ }
+
     const foldInto = (storageKey: string, legacyCookieName: string): void => {
       const ext = readStoredExtended(storageKey);
       if (ext.platform) return; // already populated — skip
@@ -785,6 +820,12 @@ export function createEventPropertiesBuilder(
       } catch (e) { /* best-effort */ }
       try { ppLib.deleteCookie(name); } catch (e) { /* best-effort */ }
     }
+
+    // Self-disable (F22): the fold + cleanup above has completed, so mark this
+    // device done. Written via the same localStorage the fold uses, so the
+    // marker only persists when the fold did too. Best-effort — if it fails the
+    // shim simply runs again next load (idempotent fold, no-op deletes).
+    try { win.localStorage.setItem(MKTG_MIGRATION_DONE_KEY, '1'); } catch (e) { /* best-effort */ }
   }
 
   /**
@@ -1088,19 +1129,27 @@ export function createEventPropertiesBuilder(
 
     const eventProperties: BuiltEventProperties = {
       // Per the event-attribute contract:
-      //   url         = exact URL of the page being visited (full href)
+      //   url         = full href of the page, but PII-sanitized — the
+      //                 PII_QUERY_PARAM_DENYLIST params (access_token, email,
+      //                 otp, patient_id, rx_number, …) and the #fragment are
+      //                 stripped before this leaves for Mixpanel / GA4. On a
+      //                 pharmacy domain a magic-link / password-reset / patient
+      //                 deep-link landing must NOT exfiltrate those verbatim.
+      //                 Non-PII params (utm_*, etc.) are preserved. Mirrors the
+      //                 sanitization already applied to `landingPage`.
       //   current_url = generic URL after removing params (pathname)
       // The nested page.url (BuiltPage) stays as pathname — matches the
       // contract sample shape.
-      url: win.location.href,
+      url: sanitizeLandingPage((win.location && win.location.href) || '/'),
       current_url: win.location.pathname || '/',
       device_id: deviceId,
-      // Anonymous visitors get the '-1' sentinel (matches the convention
-      // used by `isLoggedIn` above and the main app's cookie format) so
-      // these fields survive 3E's empty-string strip and remain queryable
-      // / filterable in Mixpanel for anonymous segments.
-      pp_user_id: userId || '-1',
-      pp_patient_id: patientId || '-1',
+      // Anonymous visitors (no cookie, or the main app's '-1' logged-out
+      // sentinel) emit `null` rather than a string id. `null` is normally
+      // dropped by 3E's strip, but `pp_user_id` / `pp_patient_id` are on the
+      // ALLOW_NULL list in `stripEmptyProps`, so the explicit null is
+      // preserved and stays queryable / filterable in Mixpanel and GA4.
+      pp_user_id: userId && userId !== '-1' ? userId : null,
+      pp_patient_id: patientId && patientId !== '-1' ? patientId : null,
       pp_session_id: ppLib.session ? ppLib.session.getOrCreateSessionId() : '',
       pp_timestamp: Date.now(),
       platform: defaultPlatform,
@@ -1155,6 +1204,17 @@ export function createEventPropertiesBuilder(
       'referrer_domain [last touch]': lastExt.referrerDomain,
       'landing_page_url [first touch]': firstExt.landingPage,
       'landing_page_url [last touch]': lastExt.landingPage,
+
+      // pp_initial_* — SDK-owned backup mirroring Mixpanel's native
+      // $initial_referrer / $initial_referring_domain. Those freeze (register_once)
+      // on the device's first MP-cookie contact and read $direct when that visit
+      // was direct, even if the SDK later captured a real referrer on a different
+      // visit (cookie vs localStorage clear independently). These carry the SDK's
+      // authoritative first-touch referrer from pp_utm_first_touch (localStorage),
+      // unstripped for Mixpanel, so analysts always have a trustworthy column.
+      // Empty (a genuinely-direct first touch) is stripped like the bracket fields.
+      'pp_initial_referrer': firstExt.referrer,
+      'pp_initial_referring_domain': firstExt.referrerDomain,
     };
 
     const page: BuiltPage = {

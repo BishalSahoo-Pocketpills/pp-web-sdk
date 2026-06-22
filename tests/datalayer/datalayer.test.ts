@@ -58,20 +58,34 @@ describe('IIFE Bootstrap', () => {
     expect(window.ppLib.datalayer).toBeDefined();
   });
 
-  it('auto-fires pageview event on module load', async () => {
+  it('auto-fires page_view event on module load', async () => {
     createMockDataLayer();
     loadWithCommon('datalayer');
 
     // Wait for initDelay (1500ms) + async user data hashing
     await new Promise(r => setTimeout(r, 1700));
 
-    const events = window.dataLayer.filter((e: any) => e.event === 'pageview');
+    const events = window.dataLayer.filter((e: any) => e.event === 'page_view');
     expect(events.length).toBeGreaterThanOrEqual(1);
     const event = events[events.length - 1];
     expect(event.platform).toBe('web');
     expect(event.user).toBeDefined();
     expect(event.page).toBeDefined();
     expect(event.pp_timestamp).toBeDefined();
+  });
+
+  it('caps window.dataLayer at the shared 1000-entry limit (front-trim)', () => {
+    loadWithCommon('datalayer');
+    createMockDataLayer();
+    const dl: any[] = [];
+    for (let i = 0; i < 1010; i++) dl.push({ event: 'filler_' + i });
+    window.dataLayer = dl;
+
+    window.ppLib.datalayer.push('test_event');
+
+    // pushToDataLayer front-trims to the cap before pushing.
+    expect(window.dataLayer.length).toBe(1000);
+    expect(window.dataLayer[window.dataLayer.length - 1].event).toBe('test_event');
   });
 
   it('exposes ppLib.datalayer public API with all expected methods', () => {
@@ -201,10 +215,10 @@ describe('User Object', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    // Anonymous visitors get the '-1' sentinel (rather than '') so the
-    // field survives downstream empty-string stripping and remains
-    // queryable / filterable for anonymous segments.
-    expect(event.user.pp_user_id).toBe('-1');
+    // Anonymous visitors emit null (rather than '' or the legacy '-1'
+    // sentinel). dataLayer is not empty-stripped, so null is pushed as-is
+    // and stays queryable / filterable for anonymous segments.
+    expect(event.user.pp_user_id).toBe(null);
     expect(event.user.logged_in).toBe('false');
   });
 
@@ -214,7 +228,8 @@ describe('User Object', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user.pp_user_id).toBe('-1');
+    // The '-1' logged-out cookie sentinel maps to null, never '-1'.
+    expect(event.user.pp_user_id).toBe(null);
     expect(event.user.logged_in).toBe('false');
   });
 
@@ -426,17 +441,112 @@ describe('User Data / SHA-256', () => {
     expect(event.userData.sha256_phone_number).toBe('');
   });
 
-  it('returns empty hash when crypto.subtle is unavailable (HTTP context)', async () => {
-    const origCrypto = globalThis.crypto;
-    vi.stubGlobal('crypto', undefined);
+  // PR1 / F1: setUserDataHashed must not forward cleartext PII mistakenly dropped
+  // into a sha256_* field — only real 64-hex digests pass through.
+  it('setUserDataHashed drops non-hash (cleartext) values to empty', () => {
+    window.ppLib.datalayer.setUserDataHashed({
+      sha256_email_address: 'john@example.com',   // cleartext mistake
+      sha256_phone_number: '+15551234567',         // cleartext mistake
+      address: { sha256_first_name: 'John', city: 'Calgary' }
+    });
 
-    await window.ppLib.datalayer.setUserData({ email: 'test@test.com' });
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     expect(event.userData.sha256_email_address).toBe('');
+    expect(event.userData.sha256_phone_number).toBe('');
+    expect(event.userData.address.sha256_first_name).toBe('');
+    expect(event.userData.address.city).toBe('Calgary');   // plain field unaffected
+  });
+
+  it('setUserDataHashed keeps valid hashes while dropping non-hash siblings', () => {
+    const validHash = 'a'.repeat(64);
+    window.ppLib.datalayer.setUserDataHashed({
+      sha256_email_address: validHash,
+      sha256_phone_number: 'not-a-hash'
+    });
+
+    window.ppLib.datalayer.push('test_event');
+
+    const event = window.dataLayer[window.dataLayer.length - 1];
+    expect(event.userData.sha256_email_address).toBe(validHash);
+    expect(event.userData.sha256_phone_number).toBe('');
+  });
+
+  // PR1 / F2: phone is formatting-normalized (punctuation stripped) before hashing;
+  // a leading + is preserved but no country code is ever fabricated.
+  it('normalizes phone formatting (strips punctuation) before hashing', async () => {
+    await window.ppLib.datalayer.setUserData({ phone: '(555) 123-4567' });
+
+    window.ppLib.datalayer.push('test_event');
+
+    const event = window.dataLayer[window.dataLayer.length - 1];
+    expect(event.userData.sha256_phone_number).toBe(await sha256hex('5551234567'));
+  });
+
+  it('preserves a leading + and does not fabricate a country code', async () => {
+    await window.ppLib.datalayer.setUserData({ phone: '+1 (555) 123-4567' });
+    window.ppLib.datalayer.push('e1');
+    const e1 = window.dataLayer[window.dataLayer.length - 1];
+    expect(e1.userData.sha256_phone_number).toBe(await sha256hex('+15551234567'));
+
+    // National-format input is formatting-normalized but stays un-prefixed.
+    await window.ppLib.datalayer.setUserData({ phone: '604.555.1234' });
+    window.ppLib.datalayer.push('e2');
+    const e2 = window.dataLayer[window.dataLayer.length - 1];
+    expect(e2.userData.sha256_phone_number).toBe(await sha256hex('6045551234'));
+  });
+
+  it('passes an already-hashed phone through setUserData untouched', async () => {
+    const h = 'a'.repeat(64);
+    await window.ppLib.datalayer.setUserData({ phone: h });
+    window.ppLib.datalayer.push('e');
+    const ev = window.dataLayer[window.dataLayer.length - 1];
+    expect(ev.userData.sha256_phone_number).toBe(h); // not re-hashed, not stripped
+  });
+
+  it('returns empty for an all-punctuation phone (no digits, + not preserved)', async () => {
+    await window.ppLib.datalayer.setUserData({ phone: '+()-. ' });
+    window.ppLib.datalayer.push('e');
+    const ev = window.dataLayer[window.dataLayer.length - 1];
+    expect(ev.userData.sha256_phone_number).toBe('');
+  });
+
+  // F1 symmetry: dropping cleartext must be observable, not silent.
+  it('warns when setUserDataHashed drops a non-hash (cleartext) value', () => {
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    window.ppLib.datalayer.setUserDataHashed({ sha256_email_address: 'john@example.com' });
+    const warns = logSpy.mock.calls.filter(c => c[0] === 'warn' && String(c[1]).includes('not a SHA-256 digest'));
+    expect(warns.length).toBe(1);
+    logSpy.mockRestore();
+  });
+
+  // Documents the no-country-default tradeoff: a national-format number is
+  // formatting-normalized but will NOT match the ad platforms' E.164 hash.
+  it('national-format phone does not match the platform E.164 hash (known limitation)', async () => {
+    await window.ppLib.datalayer.setUserData({ phone: '604.555.1234' });
+    window.ppLib.datalayer.push('e');
+    const ev = window.dataLayer[window.dataLayer.length - 1];
+    expect(ev.userData.sha256_phone_number).toBe(await sha256hex('6045551234'));
+    expect(ev.userData.sha256_phone_number).not.toBe(await sha256hex('+16045551234'));
+  });
+
+  it('logs exactly one warn (deduped) and returns empty hashes when crypto.subtle is unavailable', async () => {
+    const origCrypto = globalThis.crypto;
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    vi.stubGlobal('crypto', undefined);
+
+    await window.ppLib.datalayer.setUserData({ email: 'test@test.com', phone: '5551234567', first_name: 'X' });
+    window.ppLib.datalayer.push('test_event');
+
+    const event = window.dataLayer[window.dataLayer.length - 1];
+    expect(event.userData.sha256_email_address).toBe('');
+    expect(event.userData.sha256_phone_number).toBe('');
+    const cryptoWarns = logSpy.mock.calls.filter(c => c[0] === 'warn' && String(c[1]).includes('SHA-256 unavailable'));
+    expect(cryptoWarns.length).toBe(1); // deduped across all fields, not one-per-field
 
     vi.stubGlobal('crypto', origCrypto);
+    logSpy.mockRestore();
   });
 });
 
@@ -653,7 +763,7 @@ describe('Item Builder', () => {
     createMockDataLayer();
   });
 
-  it('normalizes items with defaults and empty strings', () => {
+  it('normalizes items with defaults (missing numerics → 0)', () => {
     window.ppLib.datalayer.viewItem([{ item_name: 'Aspirin' }]);
 
     // dataLayer: [ecommerce null clear, enriched event]
@@ -663,28 +773,37 @@ describe('Item Builder', () => {
     expect(item.item_name).toBe('Aspirin');
     expect(item.item_brand).toBe('Pocketpills');
     expect(item.item_category).toBeUndefined();
-    expect(item.price).toBe('');
+    expect(item.price).toBe(0);
     expect(item.quantity).toBe(1);
-    expect(item.discount).toBe('');
+    expect(item.discount).toBe(0);
     expect(item.coupon).toBe('');
   });
 
-  it('keeps price and discount as strings', () => {
+  it('converts price and discount to floats', () => {
     window.ppLib.datalayer.viewItem([{ item_id: 'RX-1', price: '29.99', discount: '5.00' }]);
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     const item = event.ecommerce.items[0];
-    expect(item.price).toBe('29.99');
-    expect(item.discount).toBe('5.00');
+    expect(item.price).toBe(29.99);
+    expect(item.discount).toBe(5);
   });
 
-  it('handles NaN price/discount as strings', () => {
+  it('handles non-numeric price/discount as 0', () => {
     window.ppLib.datalayer.viewItem([{ price: 'abc', discount: 'xyz' }]);
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     const item = event.ecommerce.items[0];
-    expect(item.price).toBe('abc');
-    expect(item.discount).toBe('xyz');
+    expect(item.price).toBe(0);
+    expect(item.discount).toBe(0);
+  });
+
+  it('rounds price/discount to 2 decimal places', () => {
+    window.ppLib.datalayer.viewItem([{ item_id: 'RX-1', price: '29.999', discount: '5.128' }]);
+
+    const event = window.dataLayer[window.dataLayer.length - 1];
+    const item = event.ecommerce.items[0];
+    expect(item.price).toBe(30);
+    expect(item.discount).toBe(5.13);
   });
 
   it('uses custom item_brand from input', () => {
@@ -708,7 +827,7 @@ describe('Item Builder', () => {
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     // (100 * 2) - 10 = 190
-    expect(event.ecommerce.value).toBe('190');
+    expect(event.ecommerce.value).toBe(190);
   });
 
   it('calculates value correctly for multiple items', () => {
@@ -719,7 +838,7 @@ describe('Item Builder', () => {
 
     const event = window.dataLayer[window.dataLayer.length - 1];
     // (50*2 - 5) + (30*1 - 0) = 95 + 30 = 125
-    expect(event.ecommerce.value).toBe('125');
+    expect(event.ecommerce.value).toBe(125);
   });
 });
 
@@ -768,7 +887,7 @@ describe('Core Event Push', () => {
     window.ppLib.datalayer.pageview();
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.event).toBe('pageview');
+    expect(event.event).toBe('page_view');
     expect(event.platform).toBe('web');
   });
 
@@ -776,7 +895,7 @@ describe('Core Event Push', () => {
     window.ppLib.datalayer.pageview({ page_type: 'home' });
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.event).toBe('pageview');
+    expect(event.event).toBe('page_view');
     expect(event.platform).toBe('web');
     expect(event.page_type).toBe('home');
   });
@@ -878,7 +997,7 @@ describe('Ecommerce Push', () => {
     expect(event.event).toBe('view_item');
     expect(event.ecommerce.items).toHaveLength(1);
     expect(event.ecommerce.items[0].item_id).toBe('RX-1');
-    expect(event.ecommerce.value).toBe('10');
+    expect(event.ecommerce.value).toBe(10);
     expect(event.ecommerce.currency).toBe('CAD');
   });
 
@@ -888,7 +1007,7 @@ describe('Ecommerce Push', () => {
     const event = window.dataLayer[window.dataLayer.length - 1];
     expect(event.event).toBe('add_to_cart');
     expect(event.ecommerce.items[0].quantity).toBe(3);
-    expect(event.ecommerce.value).toBe('60');
+    expect(event.ecommerce.value).toBe(60);
   });
 
   it('beginCheckout pushes begin_checkout event', () => {
@@ -914,7 +1033,7 @@ describe('Ecommerce Push', () => {
     expect(event.event).toBe('purchase');
     expect(event.transaction_id).toBe('TXN-001');
     expect(event.ecommerce.items).toHaveLength(1);
-    expect(event.ecommerce.value).toBe('100');
+    expect(event.ecommerce.value).toBe(100);
   });
 
   it('pushEcommerce supports generic ecommerce events with extra data', () => {
@@ -951,16 +1070,80 @@ describe('DOM Binding — Core Events', () => {
 
   it('pushes pageview event with platform from data-dl-event click', () => {
     createDataLayerDOM([
-      { event: 'pageview', attrs: { 'data-dl-page-type': 'home' } }
+      { event: 'page_view', attrs: { 'data-dl-page-type': 'home' } }
     ]);
 
-    const btn = document.querySelector('[data-dl-event="pageview"]')!;
+    const btn = document.querySelector('[data-dl-event="page_view"]')!;
     btn.dispatchEvent(new Event('click', { bubbles: true }));
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.event).toBe('pageview');
+    expect(event.event).toBe('page_view');
     expect(event.platform).toBe('web');
     expect(event.page_type).toBe('home');
+  });
+
+  // F10: an element carrying BOTH data-dl-event and data-event-source for the
+  // same ecommerce event would otherwise double-fire (datalayer + ecommerce).
+  it('defers add_to_cart to the ecommerce module when the element is an ecommerce CTA WITH item data', () => {
+    const btn = document.createElement('button');
+    btn.setAttribute('data-dl-event', 'add_to_cart');
+    btn.setAttribute('data-event-source', 'add_to_cart'); // also an ecommerce CTA
+    btn.setAttribute('data-ecommerce-item', 'RX-1'); // ecommerce can resolve & own it
+    btn.setAttribute('data-dl-item-id', 'RX-1');
+    btn.setAttribute('data-dl-item-price', '10');
+    document.body.appendChild(btn);
+
+    btn.dispatchEvent(new Event('click', { bubbles: true }));
+
+    const events = window.dataLayer.filter((e: any) => e.event === 'add_to_cart');
+    expect(events.length).toBe(0); // deferred — ecommerce module owns it
+  });
+
+  // Drop-hole guard: a data-event-source CTA WITHOUT data-ecommerce-* data means
+  // the ecommerce module can't resolve an item and emits nothing. The datalayer
+  // must NOT defer in that case, or the add_to_cart would be silently lost.
+  it('still fires add_to_cart for a data-event-source CTA that has NO ecommerce item data', () => {
+    const btn = document.createElement('button');
+    btn.setAttribute('data-dl-event', 'add_to_cart');
+    btn.setAttribute('data-event-source', 'add_to_cart'); // event-source CTA, but...
+    btn.setAttribute('data-dl-item-id', 'RX-2'); // ...only data-dl-* data present
+    btn.setAttribute('data-dl-item-price', '20');
+    document.body.appendChild(btn);
+
+    btn.dispatchEvent(new Event('click', { bubbles: true }));
+
+    const events = window.dataLayer.filter((e: any) => e.event === 'add_to_cart');
+    expect(events.length).toBe(1); // not dropped — ecommerce can't own it
+  });
+
+  it('still fires add_to_cart when the element is NOT an ecommerce CTA', () => {
+    const btn = document.createElement('button');
+    btn.setAttribute('data-dl-event', 'add_to_cart');
+    btn.setAttribute('data-dl-item-id', 'RX-3');
+    btn.setAttribute('data-dl-item-price', '20');
+    document.body.appendChild(btn);
+
+    btn.dispatchEvent(new Event('click', { bubbles: true }));
+
+    const events = window.dataLayer.filter((e: any) => e.event === 'add_to_cart');
+    expect(events.length).toBe(1);
+  });
+
+  // F10 scoping: the ownership guard is add_to_cart-only. The ecommerce module
+  // never emits begin_checkout, so a begin_checkout element that ALSO carries
+  // data-event-source must NOT be deferred — else the event would be dropped.
+  it('still fires begin_checkout even when the element carries data-event-source', () => {
+    const btn = document.createElement('button');
+    btn.setAttribute('data-dl-event', 'begin_checkout');
+    btn.setAttribute('data-event-source', 'begin_checkout');
+    btn.setAttribute('data-dl-item-id', 'RX-3');
+    btn.setAttribute('data-dl-item-price', '30');
+    document.body.appendChild(btn);
+
+    btn.dispatchEvent(new Event('click', { bubbles: true }));
+
+    const events = window.dataLayer.filter((e: any) => e.event === 'begin_checkout');
+    expect(events.length).toBe(1);
   });
 
   it('pushes login_view event with method', () => {
@@ -1042,7 +1225,7 @@ describe('DOM Binding — Ecommerce Events', () => {
     expect(event.ecommerce.items).toHaveLength(1);
     expect(event.ecommerce.items[0].item_id).toBe('RX-1');
     expect(event.ecommerce.items[0].item_name).toBe('Aspirin');
-    expect(event.ecommerce.items[0].price).toBe('10.99');
+    expect(event.ecommerce.items[0].price).toBe(10.99);
   });
 
   it('pushes add_to_cart from data-dl-event with quantity and discount', () => {
@@ -1056,7 +1239,7 @@ describe('DOM Binding — Ecommerce Events', () => {
     const event = window.dataLayer[window.dataLayer.length - 1];
     expect(event.event).toBe('add_to_cart');
     expect(event.ecommerce.items[0].quantity).toBe(3);
-    expect(event.ecommerce.items[0].discount).toBe('5');
+    expect(event.ecommerce.items[0].discount).toBe(5);
   });
 
   it('pushes purchase with transaction_id from data-dl-transaction-id', () => {
@@ -1091,7 +1274,7 @@ describe('DOM Binding — Ecommerce Events', () => {
     expect(event.event).toBe('add_to_cart');
     expect(event.ecommerce.items[0].item_id).toBe('RX-CONTAINER');
     expect(event.ecommerce.items[0].item_name).toBe('Container Med');
-    expect(event.ecommerce.items[0].price).toBe('55');
+    expect(event.ecommerce.items[0].price).toBe(55);
   });
 });
 
@@ -1558,7 +1741,7 @@ describe('Integration', () => {
     expect(event.userData.sha256_email_address).toBe('f'.repeat(64));
     expect(event.ecommerce.items).toHaveLength(2);
     // (50*2 - 0) + (30*1 - 0) = 130
-    expect(event.ecommerce.value).toBe('130');
+    expect(event.ecommerce.value).toBe(130);
     expect(event.ecommerce.currency).toBe('CAD');
   });
 
@@ -1609,7 +1792,7 @@ describe('Auto view_item on page load', () => {
     expect(event.ecommerce.items).toHaveLength(1);
     expect(event.ecommerce.items[0].item_id).toBe('SKU-100');
     expect(event.ecommerce.items[0].item_name).toBe('Test Drug');
-    expect(event.ecommerce.items[0].price).toBe('25.99');
+    expect(event.ecommerce.items[0].price).toBe(25.99);
   });
 
   it('does not fire view_item when no data-dl-view-item elements exist', () => {

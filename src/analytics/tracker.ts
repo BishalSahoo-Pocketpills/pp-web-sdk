@@ -235,16 +235,25 @@ export function createTracker(
       const data = {
         page_url: SafeUtils.get(win, 'location.href', ''),
         page_title: SafeUtils.get(doc, 'title', ''),
-        page_path: SafeUtils.get(win, 'location.pathname', '')
+        page_path: SafeUtils.get(win, 'location.pathname', ''),
+        page_location: SafeUtils.get(win, 'location.href', ''),
+        page_referrer: SafeUtils.get(doc, 'referrer', '')
       };
 
+      // Avoid a duplicate GTM/GA4 page_view. When the datalayer module is
+      // loaded it emits the canonical page_view — richer (hashed user data for
+      // Google Ads enhanced conversions, page/user blocks) — to the dataLayer
+      // on its own ready cycle. Defer to it so GA4 isn't double-counted. The
+      // Mixpanel page_view below is a separate destination and still fires.
+      const datalayerEmitsPageView = !!ppLib.datalayer;
+
       /*! v8 ignore start */
-      if (SafeUtils.get(CONFIG, 'platforms.gtm.enabled', true)) {
+      if (!datalayerEmitsPageView && SafeUtils.get(CONFIG, 'platforms.gtm.enabled', true)) {
       /*! v8 ignore stop */
         eventQueue.add({
           type: 'gtm',
           data: ppLib.extend({
-            event: SafeUtils.get(CONFIG, 'platforms.gtm.events.pageView', 'attribution_page_view')
+            event: SafeUtils.get(CONFIG, 'platforms.gtm.events.pageView', 'page_view')
           }, data)
         });
       }
@@ -257,7 +266,7 @@ export function createTracker(
           type: 'mixpanel',
           data: {
             type: 'track',
-            eventName: 'pageview',
+            eventName: 'page_view',
             properties: data
           }
         });
@@ -279,6 +288,14 @@ export function createTracker(
       if (!SafeUtils.exists(eventName)) {
       /*! v8 ignore stop */
         utils.log('error', 'Event name required');
+        return;
+      }
+
+      // Consent gate (C1): suppress dispatch when consent is required and not
+      // granted. With consent.required=false (default) isGranted() is true, so
+      // default behavior is unchanged.
+      if (!consent.isGranted()) {
+        utils.log('verbose', 'Consent not granted — track() suppressed for ' + eventName);
         return;
       }
 

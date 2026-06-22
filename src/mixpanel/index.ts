@@ -46,6 +46,7 @@ import {
   dispatch,
   drainIfReady,
   drainToReady,
+  setDegraded,
 } from '@src/mixpanel/dispatch';
 import { size as queueSize } from '@src/mixpanel/pre-init-queue';
 import { configureLoader, loadMixpanelSDK } from '@src/mixpanel/loader';
@@ -108,6 +109,10 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
         // Analytics events spec. dataLayer / GTM still gets the nested
         // GA4 shape via its own enricher.
         emitMode: 'flat',
+        cookieSizeWarnBytes: {
+          primary: DEFAULTS.COOKIE_WARN_PRIMARY_BYTES,
+          total: DEFAULTS.COOKIE_WARN_TOTAL_BYTES,
+        },
       },
     };
 
@@ -149,6 +154,9 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       if ('enrichTrack' in legacy) shared.enrichTrack = legacy.enrichTrack as boolean;
       if ('emitMode' in legacy)
         shared.emitMode = legacy.emitMode as SharedMixpanelConfig['emitMode'];
+      if ('cookieSizeWarnBytes' in legacy)
+        shared.cookieSizeWarnBytes =
+          legacy.cookieSizeWarnBytes as SharedMixpanelConfig['cookieSizeWarnBytes'];
       if ('nonce' in legacy) shared.nonce = legacy.nonce as string;
       if ('cdnUrl' in legacy) shared.cdnUrl = legacy.cdnUrl as string;
       if ('integrity' in legacy) shared.integrity = legacy.integrity as string;
@@ -233,6 +241,10 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       deleteLegacyPpDeviceIdCookie();
       // Shared super-props (base, cookies, experiments, UTM, marketing, VWO).
       registerSharedContext(win, doc);
+      // Cookie-size observability — the primary Mixpanel cookie has now been
+      // written by the SDK; warn if it (or the total cookie payload) is large
+      // enough to risk the "cookie too large" server error.
+      reportPrimaryCookieSize(getState('primary').config.token);
       // Replay any pre-init buffered ops through the full enrichment path.
       drainIfReady();
       // Release the readiness gate — modules waiting on
@@ -241,32 +253,129 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       if (typeof ppLib._resolveMixpanelReady === 'function') {
         ppLib._resolveMixpanelReady();
       }
+
+      // Propagate POST-boot consent changes to each instance's native
+      // opt-in/out (a mid-session CMP revoke/grant). The boot check above only
+      // runs once; without this a user who revokes after load keeps a natively
+      // opted-in Mixpanel handle that raw window.mixpanel.track calls could use.
+      // Subscribed once (onAllLoaded is guarded by allLoadedFired); `consent` is
+      // installed by common (same bundle), guarded defensively for absence.
+      if (ppLib.consent) {
+        ppLib.consent.subscribe(function(next) {
+          const granted = next === 'granted';
+          // All enabled instances are loaded by now (onAllLoaded gate), so each
+          // has a live mpRef; filter defensively in case one was torn down.
+          const ready = getEnabledStates().filter(function(s) { return s.mpRef; });
+          for (let i = 0; i < ready.length; i++) {
+            applyNativeConsent(ready[i].name, ready[i].mpRef as MixpanelGlobal, granted);
+          }
+        });
+      }
+
       ppLib.log('info', M.INITIALIZED_SUCCESSFULLY);
     }
 
     /**
-     * Delete any pre-existing `mp_<token>_mixpanel` cookie left over from
-     * a prior cookie-based persistence deployment (used today only for
-     * secondary, which moved to `persistence: 'localStorage'`). Without
-     * explicit cleanup the cookie sits in HTTP headers for up to 365
-     * days. Idempotent — no-op when absent.
+     * Cookie-size hardening — clear ONLY STALE Mixpanel cookies, and NEVER the
+     * one the active primary project is using.
      *
-     * Belt-and-braces: clears on the configured cross-subdomain scope
-     * (matches how Mixpanel wrote the cookie) and on the host-only path
-     * in case any subdomain ever wrote it without a domain attribute.
+     * SAFETY CONTRACT (the active cookie is sacred):
+     *   - The "active" cookie is the current primary's `mp_<primaryToken>_mixpanel`
+     *     — the only instance using cookie persistence (secondary is pinned to
+     *     localStorage; see INSTANCE_BOOT_PROFILE). This function MUST NOT touch
+     *     it, ever.
+     *   - A cookie is "stale" only if its token differs from the active primary
+     *     token. Those are the leftovers a project swap or a prior cookie-based
+     *     secondary orphaned in the browser.
+     *   - If we cannot positively identify the active token (empty `primaryToken`),
+     *     we delete NOTHING — better to leave a stale cookie than risk nuking the
+     *     active one. (Belt-and-suspenders: `initAll` already refuses to reach
+     *     here without a configured token.)
+     *
+     * Why: an orphaned old-primary cookie alongside the new primary cookie —
+     * plus the rest of the `.pocketpills.com` cookie set — can push the request
+     * header past the server limit (HTTP 400/431 "request header / cookie too
+     * large"). Clearing the stale one keeps a single Mixpanel cookie.
+     *
+     * Scalable & swap-safe: keyed on whatever is configured as primary RIGHT NOW,
+     * so it stays correct across project swaps, staging/prod token differences,
+     * and full secondary deprecation with no code change. Strictly bounded to the
+     * Mixpanel cookie name shape (`[a-zA-Z0-9]` tokens — real Mixpanel tokens are
+     * 32-char hex); never matches any non-Mixpanel cookie. Idempotent.
      */
-    function deleteLegacyInstanceCookie(token: string): void {
-      if (!token) return;
+    function pruneNonPrimaryMixpanelCookies(primaryToken: string): void {
+      // GUARDRAIL: with no known active token we cannot tell stale from active,
+      // so we refuse to delete anything. Prevents a misconfig from wiping the
+      // live Mixpanel cookie.
+      if (!primaryToken) return;
+      // Strict — only the Mixpanel SDK's own cookie name shape, anchored so
+      // no other cookie can ever match.
+      const mpCookie = /^mp_([a-zA-Z0-9]+)_mixpanel$/;
       try {
-        const name = `mp_${token}_mixpanel`;
-        const expired = 'Thu, 01 Jan 1970 00:00:00 GMT';
-        const domain = ppLib.config?.cookieDomain;
-        if (typeof domain === 'string' && domain.length > 0) {
-          document.cookie = `${name}=; expires=${expired}; path=/; domain=${domain}`;
+        const pairs = document.cookie.split(/\s*;\s*/);
+        for (let i = 0; i < pairs.length; i++) {
+          const name = pairs[i].split('=')[0];
+          const m = mpCookie.exec(name);
+          if (!m) continue; // never touch non-Mixpanel cookies
+          // ACTIVE-COOKIE GUARD: the current primary's cookie is what Mixpanel
+          // is actively reading/writing — keep it untouched. Only tokens that
+          // differ are stale and eligible for deletion.
+          if (m[1] === primaryToken) continue;
+          expireMixpanelCookieAllScopes(name);
+          ppLib.log('info', M.MP_COOKIE_PRUNED(name));
         }
-        document.cookie = `${name}=; expires=${expired}; path=/`;
       } catch (e) {
-        ppLib.log('warn', 'deleteLegacyInstanceCookie failed', ppLib.safeLogError(e));
+        ppLib.log('warn', M.MP_COOKIE_PRUNE_FAILED, ppLib.safeLogError(e));
+      }
+    }
+
+    /**
+     * Expire a cookie on the scopes Mixpanel could have written it: the
+     * configured cross-subdomain `cookieDomain` (e.g. `.pocketpills.com`,
+     * how `cross_subdomain_cookie: true` writes it) and the host-only path
+     * (no Domain attribute). A delete on a scope the cookie was NOT written
+     * with is a harmless no-op. Same deletion shape as the proven legacy
+     * `pp_device_id` / per-instance sweeps below.
+     */
+    function expireMixpanelCookieAllScopes(name: string): void {
+      const expired = 'Thu, 01 Jan 1970 00:00:00 GMT';
+      const domain = ppLib.config.cookieDomain;
+      if (domain) {
+        document.cookie = `${name}=; expires=${expired}; path=/; domain=${domain}`;
+      }
+      document.cookie = `${name}=; expires=${expired}; path=/`;
+    }
+
+    /**
+     * Boot-time cookie-size telemetry. Measures the primary Mixpanel cookie
+     * and the total `document.cookie` payload and warns when either crosses
+     * the configured threshold — the visibility lever for the "cookie too
+     * large" failure we've seen in prod. Pure observability: never mutates
+     * cookies (Mixpanel owns its cookie's internals; truncating it would
+     * corrupt distinct_id / $device_id). The fix for genuine bloat is
+     * trimming what we persist via `register` — see shared-context.ts.
+     * Cookie limits are byte-counted (UTF-8), not UTF-16 code units.
+     */
+    function reportPrimaryCookieSize(primaryToken: string): void {
+      try {
+        const totalBytes = new TextEncoder().encode(document.cookie).length;
+        const cookieName = `mp_${primaryToken}_mixpanel`;
+        const value = ppLib.getCookie(cookieName);
+        const primaryBytes = value
+          ? new TextEncoder().encode(`${cookieName}=${value}`).length
+          : 0;
+        const limits = CONFIG.shared.cookieSizeWarnBytes || {
+          primary: DEFAULTS.COOKIE_WARN_PRIMARY_BYTES,
+          total: DEFAULTS.COOKIE_WARN_TOTAL_BYTES,
+        };
+        if (primaryBytes > limits.primary || totalBytes > limits.total) {
+          ppLib.log(
+            'warn',
+            M.COOKIE_SIZE_WARN(primaryBytes, totalBytes, limits.primary, limits.total),
+          );
+        }
+      } catch (e) {
+        ppLib.log('warn', M.COOKIE_SIZE_REPORT_FAILED, ppLib.safeLogError(e));
       }
     }
 
@@ -324,16 +433,19 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
      *   secondary uses `localStorage` so HTTP headers carry only primary's
      *   `mp_<token>_mixpanel`. Identity stays consistent via
      *   `syncIdentityFromPrimary` re-pinning secondary on every page load.
-     * - `sweepLegacyCookie`: delete the pre-localStorage `mp_<token>_mixpanel`
-     *   cookie left over from the dual-cookie era (idempotent — no-op when
-     *   absent). Primary owns its cookie so the sweep stays off.
+     *
+     * Orphaned `mp_<token>_mixpanel` cookies (from a prior cookie-based
+     * secondary, or an old primary token after a project swap) are cleaned
+     * up centrally by `pruneNonPrimaryMixpanelCookies` in `initAll`, which
+     * is keyed on the CURRENT primary token rather than per-instance — so
+     * the cleanup is correct across swaps and full secondary deprecation.
      */
     const INSTANCE_BOOT_PROFILE: Record<
       InstanceName,
-      { persistence: 'cookie' | 'localStorage'; sweepLegacyCookie: boolean }
+      { persistence: 'cookie' | 'localStorage' }
     > = {
-      primary: { persistence: 'cookie', sweepLegacyCookie: false },
-      secondary: { persistence: 'localStorage', sweepLegacyCookie: true },
+      primary: { persistence: 'cookie' },
+      secondary: { persistence: 'localStorage' },
     };
 
     function buildInitOptions(
@@ -383,14 +495,6 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
         onInstanceLoaded(name, mp);
       });
 
-      // One-shot sweep of the legacy `mp_<token>_mixpanel` cookie for any
-      // instance whose boot profile opts in. Pre-`persistence: 'localStorage'`
-      // deployments wrote a secondary cookie that now sits orphaned in HTTP
-      // headers for up to 365 days. Idempotent — no-op when absent.
-      if (INSTANCE_BOOT_PROFILE[name].sweepLegacyCookie) {
-        deleteLegacyInstanceCookie(state.config.token);
-      }
-
       // For primary, mp.init(token, opts) writes to window.mixpanel itself.
       // For secondary, mp.init(token, opts, 'secondary') queues onto the
       // shared stub's `_i[]` and the real SDK creates window.mixpanel.secondary
@@ -407,6 +511,28 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
     }
 
     /**
+     * Align an instance's native Mixpanel opt-in/out with the consent state.
+     * The dispatch facade already gates on consent, but raw / legacy
+     * `window.mixpanel.track` calls bypass it — so on a denial we flip the
+     * instance's own opt_out_tracking(), and only opt in when granted.
+     * `optOutByDefault: true` is an intentional hard-off that stays dark
+     * regardless of consent. Shared by boot (onInstanceLoaded) and the
+     * post-boot consent subscription (onAllLoaded).
+     */
+    function applyNativeConsent(name: InstanceName, mp: MixpanelGlobal, granted: boolean): void {
+      try {
+        if (granted && !CONFIG.shared.optOutByDefault) {
+          mp.opt_in_tracking();
+        } else if (!granted) {
+          mp.opt_out_tracking();
+          ppLib.log('info', '[ppMixpanel] consent denied — ' + name + ' opted out of native tracking');
+        }
+      } catch (_e) {
+        /* legacy mock may not implement opt_in/opt_out — non-fatal */
+      }
+    }
+
+    /**
      * Per-instance loaded callback. Runs once per instance after the real
      * Mixpanel SDK has replayed its `_i[]` entry and created the live
      * Mixpanel handle (window.mixpanel for primary, window.mixpanel.secondary
@@ -416,24 +542,34 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       const state = getState(name);
       state.mpRef = mp;
 
-      // Opt-in tracking unless explicitly opted-out at boot.
-      if (!CONFIG.shared.optOutByDefault) {
-        try {
-          mp.opt_in_tracking();
-        } catch (_e) {
-          /* legacy mock may not implement — non-fatal */
-        }
-      }
+      // Align Mixpanel's native opt-in/out state with the unified consent
+      // gate. The dispatch facade already gates on consent, but raw / legacy
+      // `window.mixpanel.track` calls bypass it — so on a denial we also flip
+      // Mixpanel's own opt_out_tracking(), and we only opt in when consent is
+      // granted. `optOutByDefault: true` is an intentional hard-off that keeps
+      // the instance dark regardless of consent. (`ppLib.consent` is installed
+      // by common; guarded defensively — an absent service is treated as
+      // granted, consistent with the dispatch gate. Default consent mode is
+      // 'opt-out' ⇒ granted, so this opt-out branch is dormant by default.)
+      const consentGranted = !ppLib.consent || ppLib.consent.isGranted();
+      applyNativeConsent(name, mp, consentGranted);
 
       // PRIMARY-ONLY: subdomain cookie migration + pp_distinct_id unification.
-      // Both are migration-era concerns that the secondary (fresh project)
-      // has no state to migrate from.
-      if (name === 'primary') {
-        applyMigrationIfNeeded(mp, primaryMigrationCtx);
-      } else {
-        // SECONDARY: pin $device_id from primary BEFORE any tracks fire.
-        // syncIdentityFromPrimary internally guards if primary isn't ready.
-        syncIdentityFromPrimary(mp);
+      // SECONDARY: pin $device_id from primary BEFORE any tracks fire.
+      // Both issue RAW mp.identify/register that Mixpanel's native opt-out does
+      // NOT suppress and that bypass the dispatch consent gate — so skip them
+      // entirely when consent is denied, otherwise a denied user's identity /
+      // migration would still reach Mixpanel. (A post-boot grant does NOT
+      // retroactively run migration here — it self-heals on the next page load,
+      // where boot-time consent is granted; only native opt-in/out is flipped
+      // live, via the consent subscription wired in onAllLoaded.)
+      if (consentGranted) {
+        if (name === 'primary') {
+          applyMigrationIfNeeded(mp, primaryMigrationCtx);
+        } else {
+          // syncIdentityFromPrimary internally guards if primary isn't ready.
+          syncIdentityFromPrimary(mp);
+        }
       }
 
       // Patch this instance's `mp.track` so SessionManager.check() runs
@@ -458,6 +594,14 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
         clearWatchdog();
         onAllLoaded();
       }
+
+      // Flush any pre-init backlog now that this instance is live. Safe to call
+      // unconditionally — drainIfReady() no-ops unless ALL enabled instances are
+      // ready, and onAllLoaded already drained on the normal path above. This is
+      // the recovery path for a stuck instance that loads AFTER the watchdog
+      // latched allLoadedFired: onAllLoaded() would early-return there, so
+      // without this the backlog buffered while degraded would strand forever.
+      drainIfReady();
     }
 
     function allEnabledLoaded(): boolean {
@@ -483,6 +627,15 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
         ppLib.log('info', M.MODULE_DISABLED);
         return;
       }
+
+      // Cookie-size hardening — clear STALE Mixpanel cookies (never the active
+      // primary's) BEFORE the SDK loads and writes the new primary cookie, and
+      // independently of whether the SDK ultimately loads (SRI fail-closed
+      // below). Runs even on the no-token misconfig path that follows: its own
+      // guardrail no-ops when the primary token is absent, so we never blind-
+      // delete when we can't identify the active cookie.
+      pruneNonPrimaryMixpanelCookies(primaryState.config.token);
+
       /*! v8 ignore start */
       if (!primaryState.config.token) {
       /*! v8 ignore stop */
@@ -561,6 +714,13 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
         const stuck = enabled.filter((s) => !s.initialized);
         const stuckNames = stuck.map((s) => s.name).join('+');
 
+        // Enter degraded mode: from now on dispatch allows partial fan-out to
+        // whichever instances ARE ready instead of buffering (then dropping at
+        // the queue cap) every event that targets the stuck instance. A healthy
+        // primary keeps sending live; the stuck instance self-heals if it loads
+        // later (its loaded callback adopts the ref and drains the backlog).
+        if (stuck.length > 0) setDegraded(true);
+
         // Bypass `drainIfReady`'s "all enabled ready" gate. drainToReady
         // replays through `dispatch`, which routes only to instances that
         // resolve via `resolveMpRef`. Entries that can't reach any ready
@@ -584,17 +744,16 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
           }
         }
 
-        // Mark all-loaded fired so a late `loaded` callback (after the
-        // watchdog) doesn't double-fire `onAllLoaded`. Identity sync /
-        // shared context still need to run for whichever instances DID
-        // load — but only when at least one is ready.
+        // Run the all-loaded handler (shared context, identity sync, the
+        // readiness gate) for whichever instances DID load — but only when at
+        // least one is ready, since onAllLoaded dispatches register()/identify().
+        // When NOTHING loaded, do NOT latch `allLoadedFired`: a late `loaded`
+        // callback (if a stuck instance recovers after the watchdog) must still
+        // be able to run onAllLoaded so shared context registers and the
+        // readiness gate resolves. onAllLoaded's own guard prevents a
+        // double-fire (F15).
         if (enabled.some((s) => s.initialized && !!s.mpRef)) {
           onAllLoaded();
-        } else {
-          // Nothing loaded — `onAllLoaded` would dispatch register()
-          // into the void. Skip; the late `loaded` callback path will
-          // run it if/when an instance recovers.
-          allLoadedFired = true;
         }
       }, WATCHDOG_MS);
     }

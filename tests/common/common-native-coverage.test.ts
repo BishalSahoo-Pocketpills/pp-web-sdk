@@ -1152,6 +1152,56 @@ describe('Common native coverage', () => {
       expect(window.ppLib.getCookie('strict')).toBe('ok');
     });
 
+    it('emits Domain, Path, Max-Age, SameSite=Lax and Secure for a cross-subdomain https write', async () => {
+      // jsdom hides Domain/Secure from document.cookie on read, so the
+      // production cross-subdomain attributes were never actually asserted.
+      // Inject a fake doc that captures the raw assigned string + a fake https
+      // pocketpills.com win, then assert the exact attributes.
+      const { createSetCookie } = await import('../../src/common/cookies');
+      let written = '';
+      const fakeDoc = {} as Document;
+      Object.defineProperty(fakeDoc, 'cookie', {
+        configurable: true,
+        get() { return written; },
+        set(v: string) { written = v; },
+      });
+      const fakeWin = {
+        location: { hostname: 'www.pocketpills.com', protocol: 'https:' },
+      } as unknown as Window & typeof globalThis;
+
+      const set = createSetCookie(fakeDoc, fakeWin, vi.fn());
+      set('pp_analytics_session_id', 'sess-123', { domain: '.pocketpills.com', maxAgeSeconds: 1800 });
+
+      expect(written).toContain('pp_analytics_session_id=sess-123');
+      expect(written).toContain('; Domain=.pocketpills.com');
+      expect(written).toContain('; Path=/');
+      expect(written).toContain('; Max-Age=1800');
+      expect(written).toContain('; SameSite=Lax');
+      expect(written).toContain('; Secure');
+    });
+
+    it('omits Secure on http and omits Domain when the hostname does not match the root', async () => {
+      const { createSetCookie } = await import('../../src/common/cookies');
+      let written = '';
+      const fakeDoc = {} as Document;
+      Object.defineProperty(fakeDoc, 'cookie', {
+        configurable: true,
+        get() { return written; },
+        set(v: string) { written = v; },
+      });
+      const fakeWin = {
+        location: { hostname: 'localhost', protocol: 'http:' },
+      } as unknown as Window & typeof globalThis;
+
+      const set = createSetCookie(fakeDoc, fakeWin, vi.fn());
+      set('x', 'y', { domain: '.pocketpills.com' });
+
+      expect(written).toContain('x=y');
+      expect(written).not.toContain('Domain='); // hostname mismatch → skipped
+      expect(written).not.toContain('Secure');  // http → no Secure flag
+      expect(written).toContain('; SameSite=Lax');
+    });
+
     it('logs and swallows errors when document.cookie throws', async () => {
       await freshLoad();
       const { createSetCookie } = await import('../../src/common/cookies');

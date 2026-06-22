@@ -9,7 +9,13 @@
  * Resolution order:
  *   1. If `win.ppAnalytics.consent.status` is wired up (the customer's
  *      ppAnalytics module owns consent UX), delegate to it. Single source
- *      of truth.
+ *      of truth — BUT only when the delegate's own gate is actually armed.
+ *      A delegate that exposes `isRequired()` and reports `false` (the
+ *      analytics module's shipped `consent.required:false` default) is
+ *      disarmed: its `status()` returns a permissive `true` that must not
+ *      override an explicit `ppLib.consent.revoke()`, so we skip it and let
+ *      the persisted/explicit state decide. Delegates without `isRequired`
+ *      (an external, non-analytics CMP) are always honoured for back-compat.
  *   2. localStorage `pp_consent` — `'denied'` blocks, anything else allows
  *      under the default. Honours an explicit user choice persisted by a
  *      cookie banner.
@@ -38,11 +44,21 @@ export interface ConsentService {
   grant(): void;
   revoke(): void;
   configure(opts: DeepPartial<ConsentConfig>): void;
+  /**
+   * Subscribe to post-boot consent CHANGES (an explicit grant()/revoke()).
+   * Modules (e.g. Mixpanel) use this to propagate a mid-session CMP revoke to
+   * native opt-out, since the boot-time consent check only runs once. The
+   * callback receives the new status. Returns an unsubscribe function.
+   * Note: configure() mode changes are a setup-time concern and are NOT
+   * emitted — only explicit grant()/revoke() consent actions are.
+   */
+  subscribe(listener: (status: ConsentStatus) => void): () => void;
 }
 
 interface PpAnalyticsLike {
   consent?: {
     status?: () => boolean;
+    isRequired?: () => boolean;
   };
 }
 
@@ -56,12 +72,50 @@ export function createConsentService(
   ppLib: PPLib
 ): ConsentService {
   const config: ConsentConfig = { ...DEFAULT_CONFIG };
+  const listeners: Array<(status: ConsentStatus) => void> = [];
+  // Last explicit choice (grant/revoke), used as an in-memory fallback in
+  // status() when persistence is blocked. Last status delivered to listeners,
+  // used to dedupe redundant notifications.
+  let lastExplicit: ConsentStatus | null = null;
+  let lastNotified: ConsentStatus | null = null;
+
+  function notify(next: ConsentStatus): void {
+    // Snapshot so an unsubscribe mid-dispatch can't skip a sibling, and isolate
+    // each listener — a throwing subscriber must not break consent persistence
+    // or starve the others.
+    const snapshot = listeners.slice();
+    for (let i = 0; i < snapshot.length; i++) {
+      try {
+        snapshot[i](next);
+      } catch (e) {
+        ppLib.log('error', '[ppConsent] consent listener threw', ppLib.safeLogError(e));
+      }
+    }
+  }
+
+  function subscribe(listener: (status: ConsentStatus) => void): () => void {
+    listeners.push(listener);
+    return function unsubscribe(): void {
+      const idx = listeners.indexOf(listener);
+      if (idx !== -1) listeners.splice(idx, 1);
+    };
+  }
 
   function readDelegated(): ConsentStatus {
     try {
       const ppAnalytics = (win as unknown as { ppAnalytics?: PpAnalyticsLike }).ppAnalytics;
-      if (ppAnalytics && ppAnalytics.consent && typeof ppAnalytics.consent.status === 'function') {
-        return ppAnalytics.consent.status() ? 'granted' : 'denied';
+      const delegate = ppAnalytics && ppAnalytics.consent;
+      if (delegate && typeof delegate.status === 'function') {
+        // A delegate that advertises a DISARMED gate (analytics
+        // consent.required:false — the shipped default) has no authoritative
+        // opinion: its status() short-circuits to a permissive `true` without
+        // reading the persisted choice, which would silently neuter an explicit
+        // ppLib.consent.revoke(). Skip it so the persisted/explicit state below
+        // wins. Delegates without isRequired (an external CMP) are honoured.
+        if (typeof delegate.isRequired === 'function' && !delegate.isRequired()) {
+          return 'unknown';
+        }
+        return delegate.status() ? 'granted' : 'denied';
       }
     } catch (e) {
       // ppAnalytics not present or threw — fall through
@@ -85,6 +139,11 @@ export function createConsentService(
     if (delegated !== 'unknown') return delegated;
     const stored = readStored();
     if (stored !== 'unknown') return stored;
+    // In-memory fallback: an explicit grant()/revoke() whose persist() failed
+    // (blocked localStorage) must still be authoritative for the rest of the
+    // page — otherwise a revoke that couldn't write would read back as the
+    // mode default and silently reopen the gate.
+    if (lastExplicit !== null) return lastExplicit;
     return config.mode === 'opt-in' ? 'denied' : 'granted';
   }
 
@@ -100,11 +159,36 @@ export function createConsentService(
     }
   }
 
+  // Emit the RESOLVED status (not the raw grant/revoke value) so a listener that
+  // aligns native opt-state with consent stays consistent with isGranted() even
+  // when ppAnalytics delegation or mode overrides the explicit call (e.g. a
+  // grant() while delegation says denied must NOT opt the user in). Deduped on
+  // unchanged status to avoid redundant native opt-in/out churn and log spam.
+  function emitChange(): void {
+    const next = status();
+    if (next === lastNotified) return;
+    lastNotified = next;
+    notify(next);
+  }
+
+  function grant(): void {
+    lastExplicit = 'granted';
+    persist('granted');
+    emitChange();
+  }
+
+  function revoke(): void {
+    lastExplicit = 'denied';
+    persist('denied');
+    emitChange();
+  }
+
   return {
     isGranted,
     status,
-    grant: () => persist('granted'),
-    revoke: () => persist('denied'),
+    grant,
+    revoke,
+    subscribe,
     configure: (opts: DeepPartial<ConsentConfig>) => {
       if (opts.mode === 'opt-in' || opts.mode === 'opt-out') config.mode = opts.mode;
       if (typeof opts.storageKey === 'string' && opts.storageKey) config.storageKey = opts.storageKey;

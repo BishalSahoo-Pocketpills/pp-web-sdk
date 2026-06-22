@@ -34,7 +34,15 @@ interface ClickIdMapping {
 // configurable. If a platform changes its param name, the list here is
 // the single place to update.
 const CLICK_ID_MAP: ReadonlyArray<ClickIdMapping> = [
+  // Google's full click-ID set, matching common's CLICK_ID_PLATFORM_MAP.
+  // wbraid/gbraid carry iOS / app-campaign Google clicks that often arrive
+  // WITHOUT gclid — omitting them silently dropped that traffic into the
+  // wrong (default) pricing segment. dclid covers Display & Video 360.
   { param: 'gclid', segment: 'ad_source:google', source: 'google' },
+  { param: 'gclsrc', segment: 'ad_source:google', source: 'google' },
+  { param: 'dclid', segment: 'ad_source:google', source: 'google' },
+  { param: 'wbraid', segment: 'ad_source:google', source: 'google' },
+  { param: 'gbraid', segment: 'ad_source:google', source: 'google' },
   { param: 'fbclid', segment: 'ad_source:facebook', source: 'facebook' },
   { param: 'ttclid', segment: 'ad_source:tiktok', source: 'tiktok' },
   { param: 'msclkid', segment: 'ad_source:bing', source: 'bing' },
@@ -93,14 +101,13 @@ export function createSegmentResolver(
   }
 
   function persistSegmentCookie(segment: string): void {
-    const maxAge = CONFIG.segments.cookieMaxAgeMinutes * 60;
-    doc.cookie =
-      CONFIG.segments.cookieName +
-      '=' +
-      encodeURIComponent(segment) +
-      ';path=/;max-age=' +
-      maxAge +
-      ';SameSite=Lax';
+    // Route through the hardened helper so the cookie inherits Secure
+    // auto-derivation (https), CR/LF/NUL guards, and consistent encoding rather
+    // than a raw document.cookie write. Host-scoped (no domain) as before.
+    ppLib.setCookie(CONFIG.segments.cookieName, segment, {
+      maxAgeSeconds: CONFIG.segments.cookieMaxAgeMinutes * 60,
+      sameSite: 'Lax'
+    });
   }
 
   function resolveSegmentFromRules(): string | null {

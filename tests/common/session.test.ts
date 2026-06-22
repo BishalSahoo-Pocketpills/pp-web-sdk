@@ -230,6 +230,36 @@ describe('createSessionService (cookie-backed, win + ppLib)', () => {
     expect(document.cookie).not.toContain('_pps=');
   });
 
+  it('throttles cookie writes: a second call within 30s touches no cookies', () => {
+    vi.useFakeTimers();
+    const pp = makeCookiePPLib();
+    const session = createSessionService(window, pp);
+    session.getOrCreateSessionId();
+
+    const setSpy = vi.spyOn(pp, 'setCookie');
+    // 5s later — inside the 30s activity-write throttle window.
+    vi.advanceTimersByTime(5000);
+    session.getOrCreateSessionId();
+    expect(setSpy).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('re-persists activity (only) after the throttle window elapses', () => {
+    vi.useFakeTimers();
+    const pp = makeCookiePPLib();
+    const session = createSessionService(window, pp);
+    session.getOrCreateSessionId();
+
+    const setSpy = vi.spyOn(pp, 'setCookie');
+    // 31s later — past the throttle but well inside the 30-min session window,
+    // so the id is unchanged: activity is re-written, the session id is not.
+    vi.advanceTimersByTime(31 * 1000);
+    session.getOrCreateSessionId();
+    expect(setSpy).toHaveBeenCalledWith('pp_analytics_last_activity', expect.any(String), expect.anything());
+    expect(setSpy).not.toHaveBeenCalledWith('pp_analytics_session_id', expect.anything(), expect.anything());
+    vi.useRealTimers();
+  });
+
   it('clearSession deletes primary cookies, fallback cookies, AND legacy localStorage residue', () => {
     // Plant residue across every storage layer (including pre-existing fallbacks).
     localStorage.setItem('pp_analytics_session_id', 'ls-residue');

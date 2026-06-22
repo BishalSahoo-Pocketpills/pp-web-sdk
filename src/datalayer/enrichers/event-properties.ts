@@ -76,6 +76,22 @@ export function createEventPropertiesEnricher(
             arg.page = stripEmptyProps(bundle.page as unknown as Record<string, unknown>);
             arg.attribution = stripEmptyProps(bundle.attribution as unknown as Record<string, unknown>);
           }
+
+          // GA4 reads `page_location` / `page_referrer` at the TOP LEVEL of the
+          // event (not nested under `page`). Emit the full absolute URL +
+          // referrer on page_view so GTM → GA4 records the real page URL rather
+          // than falling back to the container/auto value.
+          // Also mirrors into `page.url` / `page.referrer` so existing GTM
+          // DLV variables ({{DLV - page.url}}, {{DLV - page.referrer}}) keep
+          // working during the transition to the top-level fields.
+          if (arg.event === 'page_view') {
+            arg.page_location = win.location.href;
+            arg.page_referrer = win.document.referrer;
+            if (typeof arg.page === 'object' && arg.page !== null) {
+              (arg.page as Record<string, unknown>).url = win.location.href;
+              (arg.page as Record<string, unknown>).referrer = win.document.referrer;
+            }
+          }
         }
       }
       return pushFn.apply(null, args);
