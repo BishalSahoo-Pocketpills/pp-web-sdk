@@ -67,8 +67,8 @@ export interface DataLayerConfig {
 // =====================================================
 
 export interface DataLayerUser {
-  pp_user_id: string | null;
-  pp_patient_id: string | null;
+  pp_user_id: number | null;
+  pp_patient_id: number | null;
   // Stringified boolean ("true" / "false") per the event-attribute
   // contract — Mixpanel + GTM consumers treat this as a categorical
   // string, not a boolean.
@@ -171,10 +171,10 @@ export interface DataLayerAPI {
   // Core events
   pageview: (data?: Record<string, unknown>) => void;
   loginView: (data: { method: string }) => void;
-  loginSuccess: (data: { method: string; pp_user_id?: string; pp_patient_id?: string }) => void;
+  loginSuccess: (data: { method: string; pp_user_id?: number; pp_patient_id?: number }) => void;
   signupView: (data: { method: string; signup_flow?: string }) => void;
   signupStart: (data: { method: string }) => void;
-  signupComplete: (data: { method: string; pp_user_id?: string; pp_patient_id?: string }) => void;
+  signupComplete: (data: { method: string; pp_user_id?: number; pp_patient_id?: number }) => void;
   search: (data: { search_term: string; results_count?: number; search_type?: string }) => void;
 
   // Ecommerce events

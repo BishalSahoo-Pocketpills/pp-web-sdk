@@ -167,8 +167,8 @@ describe('createEventPropertiesEnricher', () => {
     expect(up.pp_distinct_id).toBe('42'); // logged in → userId
 
     // Core identity
-    expect(ep.pp_user_id).toBe('42');
-    expect(ep.pp_patient_id).toBe('99');
+    expect(ep.pp_user_id).toBe(42);
+    expect(ep.pp_patient_id).toBe(99);
     expect(ep.logged_in).toBe('true');
     expect(ep.device_id).toBeTruthy();
 
@@ -297,18 +297,18 @@ describe('createEventPropertiesEnricher', () => {
   });
 
   it('reads cookies fresh on each call', () => {
-    const cookies: Record<string, string> = { userId: 'initial' };
+    const cookies: Record<string, string> = { userId: '111' };
     const ppLib = makePPLib(cookies);
     const enricher = createEventPropertiesEnricher(window, ppLib, makeConfig());
     const mockPush = vi.fn(() => 1);
     const wrapped = enricher(mockPush);
 
     wrapped({ event: 'first' });
-    expect(mockPush.mock.calls[0][0].eventProperties.pp_user_id).toBe('initial');
+    expect(mockPush.mock.calls[0][0].eventProperties.pp_user_id).toBe(111);
 
-    cookies.userId = 'updated';
+    cookies.userId = '222';
     wrapped({ event: 'second' });
-    expect(mockPush.mock.calls[1][0].eventProperties.pp_user_id).toBe('updated');
+    expect(mockPush.mock.calls[1][0].eventProperties.pp_user_id).toBe(222);
   });
 
   it('detects browser from user agent', () => {

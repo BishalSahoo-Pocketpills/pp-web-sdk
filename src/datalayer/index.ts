@@ -76,10 +76,10 @@ import { cloneConfig } from '@src/common/clone-config';
   // HELPERS
   // =====================================================
 
-  function buildAuthOverride(data: { pp_user_id?: string; pp_patient_id?: string }): Partial<DataLayerUser> {
+  function buildAuthOverride(data: { pp_user_id?: number; pp_patient_id?: number }): Partial<DataLayerUser> {
     const override: Partial<DataLayerUser> = { logged_in: 'true' };
-    override.pp_user_id = data.pp_user_id || override.pp_user_id;
-    override.pp_patient_id = data.pp_patient_id || override.pp_patient_id;
+    override.pp_user_id = data.pp_user_id ?? override.pp_user_id;
+    override.pp_patient_id = data.pp_patient_id ?? override.pp_patient_id;
     return override;
   }
 
@@ -204,7 +204,7 @@ import { cloneConfig } from '@src/common/clone-config';
 
     loginView: coreEvent('login_view'),
 
-    loginSuccess: function(data: { method: string; pp_user_id?: string; pp_patient_id?: string }) {
+    loginSuccess: function(data: { method: string; pp_user_id?: number; pp_patient_id?: number }) {
       userBuilder.setUser(buildAuthOverride(data));
       eventPusher.pushEvent('login_success', { method: data.method });
     },
@@ -212,7 +212,7 @@ import { cloneConfig } from '@src/common/clone-config';
     signupView: coreEvent('signup_view'),
     signupStart: coreEvent('signup_start'),
 
-    signupComplete: function(data: { method: string; pp_user_id?: string; pp_patient_id?: string }) {
+    signupComplete: function(data: { method: string; pp_user_id?: number; pp_patient_id?: number }) {
       userBuilder.setUser(buildAuthOverride(data));
       eventPusher.pushEvent('signup_complete', { method: data.method });
     },
