@@ -1813,7 +1813,7 @@ describe('Tracker.trackPageView', () => {
     expect(pvEvent.page_path).toBeDefined();
   });
 
-  it('dispatches a Mixpanel "page_view" event with page_url / page_title / page_path props', () => {
+  it('dispatches a Mixpanel "page_view" event with page_url / page_title / page_path / page_location / page_referrer props', () => {
     // v3.6.0 removed the analytics-side Mixpanel queue. trackPageView now
     // routes through EventQueue → Platforms.Mixpanel.send → ppLib.mixpanel.track()
     // (or win.mixpanel.track fallback when ppLib.mixpanel isn't loaded —
@@ -1832,6 +1832,8 @@ describe('Tracker.trackPageView', () => {
         page_url: expect.any(String),
         page_title: expect.any(String),
         page_path: expect.any(String),
+        page_location: expect.any(String),
+        page_referrer: expect.any(String),
       })
     );
   });

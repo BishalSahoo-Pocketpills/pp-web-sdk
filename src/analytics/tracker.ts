@@ -235,7 +235,9 @@ export function createTracker(
       const data = {
         page_url: SafeUtils.get(win, 'location.href', ''),
         page_title: SafeUtils.get(doc, 'title', ''),
-        page_path: SafeUtils.get(win, 'location.pathname', '')
+        page_path: SafeUtils.get(win, 'location.pathname', ''),
+        page_location: SafeUtils.get(win, 'location.href', ''),
+        page_referrer: SafeUtils.get(doc, 'referrer', '')
       };
 
       // Avoid a duplicate GTM/GA4 page_view. When the datalayer module is
