@@ -25,8 +25,8 @@ export function createUserBuilder(
     const appAuth = ppLib.getCookie(CONFIG.cookieNames.appAuth) || '';
 
     return {
-      pp_user_id: overrides.pp_user_id !== undefined ? overrides.pp_user_id : (userId && userId !== '-1' ? userId : null),
-      pp_patient_id: overrides.pp_patient_id !== undefined ? overrides.pp_patient_id : (patientId && patientId !== '-1' ? patientId : null),
+      pp_user_id: overrides.pp_user_id !== undefined ? overrides.pp_user_id : (userId && userId !== '-1' ? parseInt(userId, 10) : null),
+      pp_patient_id: overrides.pp_patient_id !== undefined ? overrides.pp_patient_id : (patientId && patientId !== '-1' ? parseInt(patientId, 10) : null),
       // Stringified ("true"/"false") per the event-attribute contract.
       // overrides.logged_in already is a string (DataLayerUser typed below);
       // computed value is stringified before the ternary.
