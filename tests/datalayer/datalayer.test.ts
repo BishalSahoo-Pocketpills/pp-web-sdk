@@ -190,6 +190,58 @@ describe('Configuration', () => {
 });
 
 // =========================================================================
+// 2b. POLL AUTH USER — page_view delayed until userId cookie lands
+// =========================================================================
+describe('pollAuthUser', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('delays page_view until userId cookie arrives when app_is_authenticated is set', async () => {
+    setCookie('app_is_authenticated', 'true');
+    createMockDataLayer();
+    loadWithCommon('datalayer');
+
+    // Advance past initDelay (1500ms) + Promise resolution — onReady fires,
+    // detects appAuth=true + empty userId, starts pollAuthUser.
+    await vi.advanceTimersByTimeAsync(1600);
+
+    // page_view must NOT have fired yet (still polling).
+    const before = window.dataLayer.filter((e: any) => e.event === 'page_view');
+    expect(before.length).toBe(0);
+
+    // userId cookie arrives (simulating client-side auth completing).
+    setCookie('userId', '42');
+
+    // Advance one poll interval (500ms) — userId found, page_view fires.
+    await vi.advanceTimersByTimeAsync(600);
+
+    const events = window.dataLayer.filter((e: any) => e.event === 'page_view');
+    expect(events.length).toBe(1);
+    expect(events[0].user.pp_user_id).toBe(42);
+    expect(events[0].user.logged_in).toBe('true');
+  });
+
+  it('fires page_view after max poll attempts even if userId never arrives', async () => {
+    setCookie('app_is_authenticated', 'true');
+    createMockDataLayer();
+    loadWithCommon('datalayer');
+
+    // Advance past initDelay + all 4 poll intervals (4 × 500ms = 2000ms).
+    await vi.advanceTimersByTimeAsync(1600 + 2200);
+
+    const events = window.dataLayer.filter((e: any) => e.event === 'page_view');
+    expect(events.length).toBe(1);
+    expect(events[0].user.pp_user_id).toBe(null);
+    expect(events[0].user.logged_in).toBe('true');
+  });
+});
+
+// =========================================================================
 // 3. USER OBJECT
 // =========================================================================
 describe('User Object', () => {

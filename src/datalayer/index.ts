@@ -112,15 +112,47 @@ import { cloneConfig } from '@src/common/clone-config';
   // Read cookies + push pageview + scanViewItems after window.load
   function onReady(): void {
     readCookieUserData().then(function() {
-      const ud = userDataManager.getUserData();
-      eventPusher.pushEvent('page_view');
-      CONFIG.autoViewItem && domBinder.scanViewItems();
-
-      // If previousUser cookie wasn't available yet, poll for it
-      !ud.sha256_email_address && !ud.sha256_phone_number && pollPreviousUser(20);
+      const appAuth = ppLib.getCookie(CONFIG.cookieNames.appAuth) || '';
+      const userId = ppLib.getCookie(CONFIG.cookieNames.userId) || '';
+      // When app_is_authenticated is set but userId hasn't landed yet (auth
+      // cookies are populated by client-side JS after page load), wait up to
+      // 2s for the userId cookie before firing page_view.
+      if (appAuth === 'true' && !userId) {
+        pollAuthUser(4);
+      } else {
+        firePageView();
+      }
     }).catch(function(e: unknown) {
       ppLib.log('error', '[ppDataLayer] onReady error', ppLib.safeLogError(e));
     });
+  }
+
+  function firePageView(): void {
+    const ud = userDataManager.getUserData();
+    eventPusher.pushEvent('page_view');
+    CONFIG.autoViewItem && domBinder.scanViewItems();
+    !ud.sha256_email_address && !ud.sha256_phone_number && pollPreviousUser(20);
+  }
+
+  /**
+   * Poll for userId + patientId cookies that arrive after app_is_authenticated.
+   * Strategy: 4 attempts × 500ms = max 2s extra wait before page_view fires.
+   */
+  function pollAuthUser(remaining: number): void {
+    if (remaining > 0) {
+      win.setTimeout(function() {
+        const userId = ppLib.getCookie(CONFIG.cookieNames.userId) || '';
+        if (userId && userId !== '-1') {
+          ppLib.log('info', '[ppDataLayer] userId cookie found after polling');
+          firePageView();
+        } else {
+          pollAuthUser(remaining - 1);
+        }
+      }, 500);
+    } else {
+      // Timed out — fire page_view anyway (anonymous-style, IDs will be null)
+      firePageView();
+    }
   }
 
   /**
