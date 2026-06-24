@@ -272,6 +272,22 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
         });
       }
 
+      // Per-spec: sendBeacon is only appropriate at page unload (fire-and-
+      // forget, no callbacks). Normal events use XHR (Mixpanel default) for
+      // reliable delivery. Switch all instances to sendBeacon on beforeunload
+      // so any final events are guaranteed delivery despite page teardown.
+      win.addEventListener('beforeunload', function() {
+        const states = getEnabledStates();
+        for (let i = 0; i < states.length; i++) {
+          const s = states[i];
+          if (s.mpRef) {
+            try {
+              s.mpRef.set_config({ api_transport: 'sendBeacon' });
+            } catch (_e) { /* non-fatal — degraded or mock instance */ }
+          }
+        }
+      });
+
       ppLib.log('info', M.INITIALIZED_SUCCESSFULLY);
     }
 
@@ -457,7 +473,6 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       const opts: Record<string, unknown> = {
         cross_subdomain_cookie: CONFIG.shared.crossSubdomainCookie,
         opt_out_tracking_by_default: CONFIG.shared.optOutByDefault,
-        api_transport: 'sendBeacon',
         // Mixpanel's built-in autotrack pageview is suppressed — the
         // analytics module fires its own enriched pageview event. Two
         // pageviews per visit otherwise.

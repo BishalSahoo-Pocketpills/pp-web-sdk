@@ -1119,7 +1119,9 @@ describe('initMixpanel()', () => {
     expect(initArgs[0]).toBe('my-token');
     expect(initArgs[1].cross_subdomain_cookie).toBe(true);
     expect(initArgs[1].opt_out_tracking_by_default).toBe(true);
-    expect(initArgs[1].api_transport).toBe('sendBeacon');
+    // api_transport is NOT set at init time — Mixpanel defaults to XHR for
+    // reliable delivery. sendBeacon is applied only in the beforeunload handler.
+    expect(initArgs[1].api_transport).toBeUndefined();
     // Suppress Mixpanel's built-in autotrack — the analytics module fires
     // its own enriched 'pageview' event. Leaving autotrack on produces a
     // duplicate 'Page View' event without our enrichment / 3E stripping.
@@ -1136,6 +1138,16 @@ describe('initMixpanel()', () => {
     // happens on the SDK side via MIXPANEL_DUPLICATE_KEYS.
     expect(initArgs[1].property_blacklist).toBeUndefined();
     expect(typeof initArgs[1].loaded).toBe('function');
+  });
+
+  it('switches all loaded instances to sendBeacon on beforeunload', () => {
+    const loadedCallback = initAndGetLoadedCallback();
+    const mp = createMockMixpanel();
+    invokeLoadedCallback(loadedCallback, mp);
+
+    window.dispatchEvent(new Event('beforeunload'));
+
+    expect(mp.set_config).toHaveBeenCalledWith({ api_transport: 'sendBeacon' });
   });
 
   it('omits api_host from mp.init when apiHost is not configured', () => {
