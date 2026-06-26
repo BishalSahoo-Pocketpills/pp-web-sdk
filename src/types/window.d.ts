@@ -29,6 +29,7 @@ export interface MixpanelGlobal {
   identify: (id: string) => void;
   alias: (id: string, original?: string) => void;
   reset: () => void;
+  set_config: (config: Record<string, unknown>) => void;
   opt_in_tracking: () => void;
   opt_out_tracking: () => void;
   get_distinct_id?: () => string | null;

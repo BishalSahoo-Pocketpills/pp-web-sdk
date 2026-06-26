@@ -622,7 +622,9 @@ describe('Mixpanel native coverage', () => {
       expect(initArgs[0]).toBe('my-token');
       expect(initArgs[1].cross_subdomain_cookie).toBe(true);
       expect(initArgs[1].opt_out_tracking_by_default).toBe(true);
-      expect(initArgs[1].api_transport).toBe('sendBeacon');
+      // api_transport not set at init — Mixpanel defaults to XHR; sendBeacon
+      // is applied only in the beforeunload handler.
+      expect(initArgs[1].api_transport).toBeUndefined();
       expect(initArgs[1].track_pageview).toBe(false);
       // Mixpanel's built-in marketing attribution stays at its default —
       // auto-captures utm_* + click IDs from the URL.

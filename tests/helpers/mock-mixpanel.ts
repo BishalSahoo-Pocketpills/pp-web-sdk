@@ -40,6 +40,7 @@ export function createMockMixpanel(options: MockMpOptions = {}) {
       distinctId = '$device:' + Math.random().toString(36).slice(2, 10);
       for (const k in properties) delete properties[k];
     }),
+    set_config: vi.fn(),
     opt_in_tracking: vi.fn(),
     opt_out_tracking: vi.fn(),
     people: {
