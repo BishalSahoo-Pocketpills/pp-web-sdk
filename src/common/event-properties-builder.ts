@@ -259,14 +259,18 @@ export const MIXPANEL_DUPLICATE_KEYS: ReadonlySet<string> = new Set([
   // Referrer" / "Initial Referring Domain") cover the per-event referrer.
   'referrer',
   'initial_referrer',
+  // utm_source / utm_medium / utm_campaign / utm_content / utm_term —
+  // Mixpanel's built-in track_marketing auto-captures these from the URL.
+  // When UTMs are absent Mixpanel leaves them unset (no $direct default),
+  // which is the correct behavior. Stripping our copies lets Mixpanel own
+  // these columns natively; the bracketed [first touch] / [last touch]
+  // variants remain and carry $direct defaults for direct-traffic queries.
+  'utm_source',
+  'utm_medium',
+  'utm_campaign',
+  'utm_content',
+  'utm_term',
   // NOTE intentionally NOT stripped:
-  //   - Plain (non-bracket) `utm_source` / `utm_medium` / `utm_campaign`:
-  //     Mixpanel's built-in `track_marketing` already auto-captures these
-  //     from the URL as the "UTM Source" / "UTM Medium" / "UTM Campaign"
-  //     columns; our SDK ALSO sends them in `eventProperties` (with a
-  //     `$direct` fallback for direct visits) for cross-tool parity with
-  //     dataLayer / GA4. Same key, same value — Mixpanel merges without
-  //     duplication.
   //   - `Device`: Mixpanel's $device only fills on mobile (device model
   //     like "iPhone"/"Android"); on desktop it's empty. Our `Device`
   //     fills both ("MacBook" / "Android") so it covers the gap.
