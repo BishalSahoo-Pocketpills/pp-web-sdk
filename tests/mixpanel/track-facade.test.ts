@@ -198,7 +198,9 @@ describe('ppLib.mixpanel.track facade', () => {
     // test where the environment can't populate them.
     const FLAT_FIELDS = [
       'pp_session_id', 'pp_distinct_id', 'logged_in', 'platform',
-      'utm_source', 'utm_source [first touch]', 'utm_source [last touch]',
+      // plain utm_source stripped — Mixpanel's track_marketing owns it;
+      // bracketed variants remain with $direct defaults.
+      'utm_source [first touch]', 'utm_source [last touch]',
     ];
 
     it('defaults to "flat" mode per Analytics events spec', () => {

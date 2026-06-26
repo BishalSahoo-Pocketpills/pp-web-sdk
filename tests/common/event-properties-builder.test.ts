@@ -648,7 +648,7 @@ describe('createEventPropertiesBuilder', () => {
       });
     });
 
-    it('keeps the current (non-touch) UTM keys, sourced from URL', () => {
+    it('strips plain utm_* from the flat (Mixpanel) payload; build() still carries them', () => {
       const originalURL = document.URL;
       Object.defineProperty(document, 'URL', {
         value: 'http://localhost/test?utm_source=google&utm_medium=cpc&utm_campaign=spring',
@@ -658,16 +658,26 @@ describe('createEventPropertiesBuilder', () => {
       window.localStorage.clear();
 
       const ppLib = makePPLib();
-      const flat = createEventPropertiesBuilder(window, ppLib).buildFlat();
+      const builder = createEventPropertiesBuilder(window, ppLib);
+      const flat = builder.buildFlat();
+      const bundle = builder.build();
 
-      // Plain utm_* keys are NOT stripped — Mixpanel's built-in
-      // `track_marketing` auto-captures them too, but our SDK ALSO
-      // sends them so direct visits surface a `$direct` fallback
-      // (Mixpanel auto-capture is absent for keys not in the URL).
-      // Same key + same value when URL has UTMs → no duplication.
-      expect(flat.utm_source).toBe('google');
-      expect(flat.utm_medium).toBe('cpc');
-      expect(flat.utm_campaign).toBe('spring');
+      // Plain utm_* are stripped from the Mixpanel payload — Mixpanel's
+      // built-in track_marketing owns these columns. Our bracketed
+      // [first touch] / [last touch] variants remain and carry $direct
+      // defaults for direct-traffic queries.
+      expect(Object.prototype.hasOwnProperty.call(flat, 'utm_source')).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(flat, 'utm_medium')).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(flat, 'utm_campaign')).toBe(false);
+
+      // dataLayer / GA4 payload still carries them.
+      expect(bundle.eventProperties.utm_source).toBe('google');
+      expect(bundle.eventProperties.utm_medium).toBe('cpc');
+      expect(bundle.eventProperties.utm_campaign).toBe('spring');
+
+      // Bracketed variants still present in flat with correct values.
+      expect(flat['utm_source [last touch]']).toBe('google');
+      expect(flat['utm_medium [last touch]']).toBe('cpc');
 
       Object.defineProperty(document, 'URL', {
         value: originalURL,
@@ -710,15 +720,13 @@ describe('createEventPropertiesBuilder', () => {
       expect(MIXPANEL_DUPLICATE_KEYS.has('device')).toBe(false);
       expect(MIXPANEL_DUPLICATE_KEYS.has('device_type')).toBe(false);
       expect(MIXPANEL_DUPLICATE_KEYS.has('device_id')).toBe(true);
-      // Plain (non-bracket) utm_* are NOT stripped — Mixpanel's built-in
-      // `track_marketing` auto-captures the same keys ("UTM Source",
-      // "UTM Medium", "UTM Campaign", "UTM Content", "UTM Term", "UTM
-      // ID") with identical values when the URL has UTMs. Same key
-      // + same value → no duplicate column in Mixpanel; our SDK still
-      // provides the `$direct` fallback when the URL is direct.
-      expect(MIXPANEL_DUPLICATE_KEYS.has('utm_source')).toBe(false);
-      expect(MIXPANEL_DUPLICATE_KEYS.has('utm_medium')).toBe(false);
-      expect(MIXPANEL_DUPLICATE_KEYS.has('utm_campaign')).toBe(false);
+      // Plain utm_* ARE stripped — Mixpanel's track_marketing owns these
+      // columns natively. Our bracketed [first/last touch] variants remain.
+      expect(MIXPANEL_DUPLICATE_KEYS.has('utm_source')).toBe(true);
+      expect(MIXPANEL_DUPLICATE_KEYS.has('utm_medium')).toBe(true);
+      expect(MIXPANEL_DUPLICATE_KEYS.has('utm_campaign')).toBe(true);
+      expect(MIXPANEL_DUPLICATE_KEYS.has('utm_content')).toBe(true);
+      expect(MIXPANEL_DUPLICATE_KEYS.has('utm_term')).toBe(true);
 
       // pp_* prefixed and other non-duplicate snake_case keys remain.
       expect(flat).toHaveProperty('pp_session_id');
