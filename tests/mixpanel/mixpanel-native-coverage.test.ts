@@ -707,21 +707,29 @@ describe('Mixpanel native coverage', () => {
       expect(mp.identify).not.toHaveBeenCalledWith('user-x');
     });
 
-    it('does NOT identify even a logged-in user — boot-time identify is disabled (funnel app owns identity)', async () => {
-      // The SDK no longer maps login cookies → mixpanel.identify() at boot:
-      // unifyDistinctIdWithPpDistinctId() is intentionally disabled
-      // (shared-context.ts). Identity is owned by the funnel app's
-      // mixpanel.identify($user_id) under Simplified ID Merge; the landing
-      // SDK stays anonymous and only provides the shared cross-subdomain
-      // $device_id. So even a logged-in visitor must NOT be identified here.
+    it('identifies a logged-in user at boot and tracks identity_submitted', async () => {
+      // Re-enabled boot-time identity recognition: when a user is authenticated
+      // (app_is_authenticated=true + valid userId) and Mixpanel's current
+      // distinct_id differs from the userId, the SDK calls identify(userId) so
+      // landing-page events are attributed to the correct identified profile.
+      // identity_submitted fires after both instances are synced so distinct_id
+      // already equals the userId when Mixpanel builds the event.
       setCookie('userId', 'pp-user-42');
       setCookie('app_is_authenticated', 'true');
       const loadedCallback = await initAndGetLoadedCallback();
       const mp = createMockMixpanel();
+      // Capture before invokeLoadedCallback — session.ts's patchInstanceTrack
+      // replaces mpRef.track with a non-spy closure; the original vi.fn() is
+      // still called via wrapped._ppOriginal.apply(...).
+      const originalTrack = mp.track;
       mp.get_distinct_id = vi.fn(() => '$device:auto-mp-id');
       invokeLoadedCallback(loadedCallback, mp);
 
-      expect(mp.identify).not.toHaveBeenCalled();
+      expect(mp.identify).toHaveBeenCalledWith('pp-user-42');
+      // identity_submitted must fire after identify — identify() is
+      // synchronous for Mixpanel state so distinct_id == 'pp-user-42'
+      // on the event without any additional flush.
+      expect(originalTrack).toHaveBeenCalledWith('identity_submitted', expect.any(Object));
     });
 
     it('does NOT identify anonymous visitors (Simplified ID Merge contract)', async () => {
@@ -735,23 +743,26 @@ describe('Mixpanel native coverage', () => {
       const mp = createMockMixpanel({
         initialProperties: { $device_id: 'mp-sourced-device-uuid' },
       });
+      const originalTrack = mp.track;
       mp.get_distinct_id = vi.fn(() => '$device:auto-mp-id');
       invokeLoadedCallback(loadedCallback, mp);
 
-      // No identify call should fire — Mixpanel keeps `$device:auto-mp-id`
-      // as the anonymous distinct_id, and $user_id stays unset.
+      // No identify or identity_submitted should fire for anonymous visitors.
       expect(mp.identify).not.toHaveBeenCalled();
+      expect(originalTrack).not.toHaveBeenCalledWith('identity_submitted', expect.anything());
     });
 
-    it('skips unification when Mixpanel distinct_id already equals pp_distinct_id', async () => {
+    it('skips unification and identity_submitted when distinct_id already equals pp_distinct_id', async () => {
       setCookie('userId', 'pp-user-42');
       setCookie('app_is_authenticated', 'true');
       const loadedCallback = await initAndGetLoadedCallback();
       const mp = createMockMixpanel();
+      const originalTrack = mp.track;
       mp.get_distinct_id = vi.fn(() => 'pp-user-42'); // already matches
       invokeLoadedCallback(loadedCallback, mp);
 
       expect(mp.identify).not.toHaveBeenCalledWith('pp-user-42');
+      expect(originalTrack).not.toHaveBeenCalledWith('identity_submitted', expect.anything());
     });
 
     it('handles cookie read error gracefully', async () => {

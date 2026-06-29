@@ -37,12 +37,7 @@ export function registerSharedContext(win: Window & typeof globalThis, doc: Docu
   registerExperimentCookie();
   registerCampaignParams(doc);
   registerMarketingAttribution();
-  // DISABLED: the SDK no longer sets Mixpanel identity at boot. Identity is
-  // owned by the funnel app's `mixpanel.identify($user_id)` (Simplified ID
-  // Merge); the landing SDK stays anonymous and only provides the shared
-  // cross-subdomain $device_id. Re-enable by uncommenting to restore the
-  // boot-time login→identify mapping.
-  // unifyDistinctIdWithPpDistinctId();
+  unifyDistinctIdWithPpDistinctId();
   bridgeVwoProps(win);
 }
 
@@ -159,7 +154,7 @@ function unifyDistinctIdWithPpDistinctId(): void {
     if (bundle.eventProperties.logged_in !== 'true') return;
 
     const ppDistinctId = bundle.userProperties.pp_distinct_id;
-    if (typeof ppDistinctId !== 'string' || ppDistinctId.length === 0) return;
+    if (typeof ppDistinctId !== 'string' || ppDistinctId.length === 0 || ppDistinctId === '-1') return;
 
     const primary = getState('primary');
     const currentMpId =
@@ -177,6 +172,10 @@ function unifyDistinctIdWithPpDistinctId(): void {
     // when secondary is disabled or not yet ready.
     resyncAfterReset();
     pp.log('info', M.DISTINCT_ID_UNIFIED(currentMpId as string | null, ppDistinctId));
+    // Fire after both instances are synced so distinct_id == userId on
+    // the event. identify() is synchronous for state so no queue-drain
+    // is needed before this track call.
+    pp.mixpanel?.track('identity_submitted', {});
   } catch (e) {
     pp.log('warn', M.DISTINCT_ID_UNIFICATION_FAILED, e);
   }
