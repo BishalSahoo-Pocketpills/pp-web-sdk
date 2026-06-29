@@ -172,6 +172,10 @@ function unifyDistinctIdWithPpDistinctId(): void {
     // when secondary is disabled or not yet ready.
     resyncAfterReset();
     pp.log('info', M.DISTINCT_ID_UNIFIED(currentMpId as string | null, ppDistinctId));
+    // Fire after both instances are synced so distinct_id == userId on
+    // the event. identify() is synchronous for state so no queue-drain
+    // is needed before this track call.
+    pp.mixpanel?.track('identity_submitted', {});
   } catch (e) {
     pp.log('warn', M.DISTINCT_ID_UNIFICATION_FAILED, e);
   }
