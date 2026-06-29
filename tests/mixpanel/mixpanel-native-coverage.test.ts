@@ -707,13 +707,11 @@ describe('Mixpanel native coverage', () => {
       expect(mp.identify).not.toHaveBeenCalledWith('user-x');
     });
 
-    it('does NOT identify even a logged-in user — boot-time identify is disabled (funnel app owns identity)', async () => {
-      // The SDK no longer maps login cookies → mixpanel.identify() at boot:
-      // unifyDistinctIdWithPpDistinctId() is intentionally disabled
-      // (shared-context.ts). Identity is owned by the funnel app's
-      // mixpanel.identify($user_id) under Simplified ID Merge; the landing
-      // SDK stays anonymous and only provides the shared cross-subdomain
-      // $device_id. So even a logged-in visitor must NOT be identified here.
+    it('identifies a logged-in user at boot via unifyDistinctIdWithPpDistinctId', async () => {
+      // Re-enabled boot-time identity recognition: when a user is authenticated
+      // (app_is_authenticated=true + valid userId) and Mixpanel's current
+      // distinct_id differs from the userId, the SDK calls identify(userId) so
+      // landing-page events are attributed to the correct identified profile.
       setCookie('userId', 'pp-user-42');
       setCookie('app_is_authenticated', 'true');
       const loadedCallback = await initAndGetLoadedCallback();
@@ -721,7 +719,7 @@ describe('Mixpanel native coverage', () => {
       mp.get_distinct_id = vi.fn(() => '$device:auto-mp-id');
       invokeLoadedCallback(loadedCallback, mp);
 
-      expect(mp.identify).not.toHaveBeenCalled();
+      expect(mp.identify).toHaveBeenCalledWith('pp-user-42');
     });
 
     it('does NOT identify anonymous visitors (Simplified ID Merge contract)', async () => {
