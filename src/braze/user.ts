@@ -116,9 +116,9 @@ export function createUserManager(
   function autoIdentify(): void {
     if (!CONFIG.identity.autoIdentify) return;
 
-    const userId = ppLib.getCookie(CONFIG.identity.userIdCookie);
+    const userId = ppLib.getCookie(CONFIG.identity.userIdCookie) ?? '';
     /*! v8 ignore start */
-    if (isValidUserId(userId ?? '')) {
+    if (isValidUserId(userId)) {
     /*! v8 ignore stop */
       identify(userId);
     }

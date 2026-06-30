@@ -56,7 +56,7 @@ function registerBaseProps(win: Window & typeof globalThis): void {
 
 function registerCookieIdentity(): void {
   if (!pp || !cookieNames) return;
-  const userId = pp.getCookie(cookieNames.userId);
+  const userId = pp.getCookie(cookieNames.userId) ?? '';
   /*! v8 ignore start */
   if (isValidUserId(userId)) {
   /*! v8 ignore stop */
