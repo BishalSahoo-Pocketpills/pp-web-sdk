@@ -1,5 +1,6 @@
 import type { PPLib } from '@src/types/common.types';
 import type { BrazeConfig } from '@src/types/braze.types';
+import { isValidUserId } from '@src/common/auth';
 
 // Standard Braze attribute → dedicated setter method mapping
 // Note: dob/setDateOfBirth is intentionally excluded — it requires 3 separate
@@ -117,7 +118,7 @@ export function createUserManager(
 
     const userId = ppLib.getCookie(CONFIG.identity.userIdCookie);
     /*! v8 ignore start */
-    if (userId && userId !== '-1') {
+    if (isValidUserId(userId ?? '')) {
     /*! v8 ignore stop */
       identify(userId);
     }

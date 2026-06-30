@@ -1,5 +1,6 @@
 import type { PPLib } from '@src/types/common.types';
 import type { LoginConfig } from '@src/types/login.types';
+import { isValidUserId } from '@src/common/auth';
 
 export function createInitAuthState(
   doc: Document,
@@ -15,7 +16,7 @@ export function createInitAuthState(
       const firstNameCookie = ppLib.getCookie(CONFIG.cookieNames.firstName);
 
       // A. Check Logged In Status
-      const isUserIdValid = userId && userId !== '-1';
+      const isUserIdValid = isValidUserId(userId ?? '');
       const isAuthTokenValid = authToken && authToken !== '';
 
       if (isUserIdValid && isAuthTokenValid) {
