@@ -1,6 +1,7 @@
 import type { PPLib } from '@src/types/common.types';
 import type { DataLayerConfig, DataLayerUser } from '@src/types/datalayer.types';
 import type { DeepPartial } from '@src/types/utility.types';
+import { deriveIsLoggedIn, isValidUserId, toLoggedInString } from '@src/common/auth';
 
 export function createUserBuilder(
   ppLib: PPLib,
@@ -25,14 +26,14 @@ export function createUserBuilder(
     const appAuth = ppLib.getCookie(CONFIG.cookieNames.appAuth) || '';
 
     return {
-      pp_user_id: overrides.pp_user_id !== undefined ? overrides.pp_user_id : (userId && userId !== '-1' ? parseInt(userId, 10) : null),
-      pp_patient_id: overrides.pp_patient_id !== undefined ? overrides.pp_patient_id : (patientId && patientId !== '-1' ? parseInt(patientId, 10) : null),
+      pp_user_id: overrides.pp_user_id !== undefined ? overrides.pp_user_id : (isValidUserId(userId) ? parseInt(userId, 10) : null),
+      pp_patient_id: overrides.pp_patient_id !== undefined ? overrides.pp_patient_id : (isValidUserId(patientId) ? parseInt(patientId, 10) : null),
       // Stringified ("true"/"false") per the event-attribute contract.
       // overrides.logged_in already is a string (DataLayerUser typed below);
       // computed value is stringified before the ternary.
       logged_in: overrides.logged_in !== undefined
         ? overrides.logged_in
-        : ((appAuth === 'true' || (!!userId && userId !== '-1' && !!patientId)) ? 'true' : 'false')
+        : toLoggedInString(deriveIsLoggedIn(appAuth))
     };
   }
 

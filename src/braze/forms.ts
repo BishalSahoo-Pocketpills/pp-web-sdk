@@ -1,5 +1,6 @@
 import type { PPLib } from '@src/types/common.types';
 import type { BrazeConfig } from '@src/types/braze.types';
+import { isValidUserId } from '@src/common/auth';
 import { createDebounceTracker } from '@src/common/debounce';
 import { isConsentGranted } from '@src/common/consent-check';
 
@@ -109,7 +110,7 @@ export function createFormHandler(
         /*! v8 ignore stop */
           const existingUserId = ppLib.getCookie(CONFIG.identity.userIdCookie);
           /*! v8 ignore start */
-          if (!existingUserId || existingUserId === '-1') {
+          if (!isValidUserId(existingUserId ?? '')) {
           /*! v8 ignore stop */
             userManager.identify(emailVal);
           }

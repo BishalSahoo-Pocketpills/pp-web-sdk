@@ -26,6 +26,7 @@
  * without server-side profile deletion.
  */
 import type { PPLib } from '@src/types/common.types';
+import { isLoggedIn } from '@src/common/auth';
 
 /**
  * Returns true when the current visitor is authenticated per the SDK's
@@ -42,7 +43,7 @@ export function isAuthenticated(pp: PPLib): boolean {
   if (!pp.eventPropertiesBuilder) return false;
   try {
     const bundle = pp.eventPropertiesBuilder.build();
-    return bundle.eventProperties.logged_in === 'true';
+    return isLoggedIn(bundle.eventProperties.logged_in as string);
   } catch {
     return false;
   }

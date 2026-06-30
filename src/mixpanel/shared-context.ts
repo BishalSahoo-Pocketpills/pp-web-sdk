@@ -10,6 +10,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { MixpanelCookieNames } from '@src/types/mixpanel.types';
+import { isValidUserId, isLoggedIn } from '@src/common/auth';
 import { pollUntil } from '@src/common/retry';
 import { isAuthenticated } from '@src/mixpanel/auth-state';
 import { dispatch } from '@src/mixpanel/dispatch';
@@ -55,9 +56,9 @@ function registerBaseProps(win: Window & typeof globalThis): void {
 
 function registerCookieIdentity(): void {
   if (!pp || !cookieNames) return;
-  const userId = pp.getCookie(cookieNames.userId);
+  const userId = pp.getCookie(cookieNames.userId) ?? '';
   /*! v8 ignore start */
-  if (userId && userId !== '-1') {
+  if (isValidUserId(userId)) {
   /*! v8 ignore stop */
     dispatch('register', [{ pp_user_id: userId }]);
   }
@@ -151,10 +152,10 @@ function unifyDistinctIdWithPpDistinctId(): void {
     // visitors with their device_id (so pp_distinct_id == device_id ==
     // distinct_id == $user_id) created premature user profiles and is
     // explicitly discouraged by Mixpanel.
-    if (bundle.eventProperties.logged_in !== 'true') return;
+    if (!isLoggedIn(bundle.eventProperties.logged_in as string)) return;
 
     const ppDistinctId = bundle.userProperties.pp_distinct_id;
-    if (typeof ppDistinctId !== 'string' || ppDistinctId.length === 0 || ppDistinctId === '-1') return;
+    if (!isValidUserId(ppDistinctId)) return;
 
     const primary = getState('primary');
     const currentMpId =
