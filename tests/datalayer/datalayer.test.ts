@@ -343,7 +343,7 @@ describe('logged_in Derivation', () => {
     expect(event.user.logged_in).toBe('false');
   });
 
-  it('logged_in = true when userId and patientId exist regardless of appAuth', () => {
+  it('logged_in = false when appAuth is explicitly false regardless of userId/patientId', () => {
     setCookie('userId', '42');
     setCookie('patientId', '99');
     setCookie('app_is_authenticated', 'false');
@@ -351,7 +351,7 @@ describe('logged_in Derivation', () => {
     window.ppLib.datalayer.push('test_event');
 
     const event = window.dataLayer[window.dataLayer.length - 1];
-    expect(event.user.logged_in).toBe('true');
+    expect(event.user.logged_in).toBe('false');
   });
 });
 

@@ -1090,7 +1090,7 @@ export function createEventPropertiesBuilder(
     const userId = ppLib.getCookie(cookieNames.userId) || '';
     const patientId = ppLib.getCookie(cookieNames.patientId) || '';
     const appAuth = ppLib.getCookie(cookieNames.appAuth) || '';
-    const isLoggedIn = appAuth === 'true' || (userId !== '' && userId !== '-1' && patientId !== '');
+    const isLoggedIn = appAuth === 'true';
     return { userId: userId, patientId: patientId, isLoggedIn: isLoggedIn };
   }
 

@@ -32,7 +32,7 @@ export function createUserBuilder(
       // computed value is stringified before the ternary.
       logged_in: overrides.logged_in !== undefined
         ? overrides.logged_in
-        : ((appAuth === 'true' || (!!userId && userId !== '-1' && !!patientId)) ? 'true' : 'false')
+        : (appAuth === 'true' ? 'true' : 'false')
     };
   }
 
