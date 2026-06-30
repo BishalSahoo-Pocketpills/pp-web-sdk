@@ -17,6 +17,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { DeepPartial } from '@src/types/utility.types';
+import { deriveIsLoggedIn, isValidUserId, toLoggedInString } from '@src/common/auth';
 import {
   UTM_FIRST_TOUCH,
   UTM_LAST_TOUCH,
@@ -1090,7 +1091,7 @@ export function createEventPropertiesBuilder(
     const userId = ppLib.getCookie(cookieNames.userId) || '';
     const patientId = ppLib.getCookie(cookieNames.patientId) || '';
     const appAuth = ppLib.getCookie(cookieNames.appAuth) || '';
-    const isLoggedIn = appAuth === 'true';
+    const isLoggedIn = deriveIsLoggedIn(appAuth);
     return { userId: userId, patientId: patientId, isLoggedIn: isLoggedIn };
   }
 
@@ -1152,12 +1153,12 @@ export function createEventPropertiesBuilder(
       // dropped by 3E's strip, but `pp_user_id` / `pp_patient_id` are on the
       // ALLOW_NULL list in `stripEmptyProps`, so the explicit null is
       // preserved and stays queryable / filterable in Mixpanel and GA4.
-      pp_user_id: userId && userId !== '-1' ? parseInt(userId, 10) : null,
-      pp_patient_id: patientId && patientId !== '-1' ? parseInt(patientId, 10) : null,
+      pp_user_id: isValidUserId(userId) ? parseInt(userId, 10) : null,
+      pp_patient_id: isValidUserId(patientId) ? parseInt(patientId, 10) : null,
       pp_session_id: ppLib.session ? ppLib.session.getOrCreateSessionId() : '',
       pp_timestamp: Date.now(),
       platform: defaultPlatform,
-      logged_in: isLoggedIn ? 'true' : 'false',
+      logged_in: toLoggedInString(isLoggedIn),
 
       // Current UTM — literal URL params with Mixpanel-style $direct/none
       // fallbacks for consistency with [first touch] / [last touch] keys.

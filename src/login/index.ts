@@ -11,6 +11,7 @@ import type { DeepPartial } from '@src/types/utility.types';
 import { createLoginConfig } from '@src/login/config';
 import { createLogoutUser } from '@src/login/logout';
 import { createInitAuthState } from '@src/login/auth-state';
+import { isValidUserId } from '@src/common/auth';
 import { bootstrapModule } from '@src/common/bootstrap';
 import { cloneConfig } from '@src/common/clone-config';
 
@@ -119,7 +120,7 @@ import { cloneConfig } from '@src/common/clone-config';
     isLoggedIn: function(): boolean {
       const userId = ppLib.getCookie(CONFIG.cookieNames.userId);
       const authToken = ppLib.getCookie(CONFIG.cookieNames.auth);
-      return !!(userId && userId !== '-1' && authToken && authToken !== '');
+      return isValidUserId(userId ?? '') && !!authToken;
     },
 
     logout: function(hard?: boolean): void {

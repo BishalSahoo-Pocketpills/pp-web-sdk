@@ -8,6 +8,7 @@
 import type { PPLib } from '@src/types/common.types';
 import type { DataLayerConfig, DataLayerItemInput, DataLayerUser, UserDataInput, UserDataHashedInput } from '@src/types/datalayer.types';
 import type { DeepPartial } from '@src/types/utility.types';
+import { deriveIsLoggedIn, isValidUserId, toLoggedInString } from '@src/common/auth';
 import { createDataLayerConfig } from '@src/datalayer/config';
 import { createPageBuilder } from '@src/datalayer/page';
 import { createUserBuilder } from '@src/datalayer/user';
@@ -77,7 +78,7 @@ import { cloneConfig } from '@src/common/clone-config';
   // =====================================================
 
   function buildAuthOverride(data: { pp_user_id?: number; pp_patient_id?: number }): Partial<DataLayerUser> {
-    const override: Partial<DataLayerUser> = { logged_in: 'true' };
+    const override: Partial<DataLayerUser> = { logged_in: toLoggedInString(true) };
     override.pp_user_id = data.pp_user_id ?? override.pp_user_id;
     override.pp_patient_id = data.pp_patient_id ?? override.pp_patient_id;
     return override;
@@ -117,7 +118,7 @@ import { cloneConfig } from '@src/common/clone-config';
       // When app_is_authenticated is set but userId hasn't landed yet (auth
       // cookies are populated by client-side JS after page load), wait up to
       // 2s for the userId cookie before firing page_view.
-      if (appAuth === 'true' && !userId) {
+      if (deriveIsLoggedIn(appAuth) && !userId) {
         pollAuthUser(4);
       } else {
         firePageView();
@@ -142,12 +143,12 @@ import { cloneConfig } from '@src/common/clone-config';
     if (remaining > 0) {
       win.setTimeout(function() {
         const userId = ppLib.getCookie(CONFIG.cookieNames.userId) || '';
-        if (userId && userId !== '-1') {
+        if (isValidUserId(userId)) {
           ppLib.log('info', '[ppDataLayer] userId cookie found after polling');
           firePageView();
-        } else {
-          pollAuthUser(remaining - 1);
+          return;
         }
+        pollAuthUser(remaining - 1);
       }, 500);
     } else {
       // Timed out — fire page_view anyway (anonymous-style, IDs will be null)
