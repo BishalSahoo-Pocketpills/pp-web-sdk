@@ -121,6 +121,7 @@ export interface BuiltEventProperties {
   // consumers (Mixpanel, GTM, BigQuery) treat the value as a categorical
   // string, not a boolean. The internal closure variable stays boolean.
   logged_in: string;
+  app_is_authenticated: boolean;
   utm_source: string;
   utm_medium: string;
   utm_campaign: string;
@@ -1159,6 +1160,7 @@ export function createEventPropertiesBuilder(
       pp_timestamp: Date.now(),
       platform: defaultPlatform,
       logged_in: toLoggedInString(isLoggedIn),
+      app_is_authenticated: isLoggedIn,
 
       // Current UTM — literal URL params with Mixpanel-style $direct/none
       // fallbacks for consistency with [first touch] / [last touch] keys.
