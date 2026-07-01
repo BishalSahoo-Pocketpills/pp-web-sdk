@@ -11,7 +11,7 @@ export function createInitAuthState(
     try {
       const userId = ppLib.getCookie(CONFIG.cookieNames.userId);
       const authToken = ppLib.getCookie(CONFIG.cookieNames.auth);
-      const appAuth = ppLib.getCookie(CONFIG.cookieNames.appAuth);
+      const appAuth = ppLib.getCookie(CONFIG.cookieNames.appAuth) ?? '';
       const prevUserCookie = ppLib.getCookie(CONFIG.cookieNames.prevUser);
       const firstNameCookie = ppLib.getCookie(CONFIG.cookieNames.firstName);
 
