@@ -1088,12 +1088,16 @@ export function createEventPropertiesBuilder(
     return stableCache;
   }
 
-  function determineLoginState(): { userId: string; patientId: string; isLoggedIn: boolean } {
+  function determineLoginState(): { userId: string; patientId: string; isLoggedIn: boolean; appIsAuthenticated: boolean } {
     const userId = ppLib.getCookie(cookieNames.userId) || '';
     const patientId = ppLib.getCookie(cookieNames.patientId) || '';
     const appAuth = ppLib.getCookie(cookieNames.appAuth) || '';
-    const isLoggedIn = deriveIsLoggedIn(appAuth);
-    return { userId: userId, patientId: patientId, isLoggedIn: isLoggedIn };
+    return {
+      userId: userId,
+      patientId: patientId,
+      isLoggedIn: isValidUserId(userId),
+      appIsAuthenticated: deriveIsLoggedIn(appAuth),
+    };
   }
 
   function buildClickIdAttribution(params: URLSearchParams): BuiltAttribution {
@@ -1115,7 +1119,7 @@ export function createEventPropertiesBuilder(
     const deviceId = getOrCreateDeviceId();
     captureUtmTouches();
 
-    const { userId, patientId, isLoggedIn } = determineLoginState();
+    const { userId, patientId, isLoggedIn, appIsAuthenticated } = determineLoginState();
 
     // Literal utm_* params — intentionally NOT routed through the normalized
     // resolver, so e.g. `?source=febpt` does NOT populate utm_source. The
@@ -1160,7 +1164,7 @@ export function createEventPropertiesBuilder(
       pp_timestamp: Date.now(),
       platform: defaultPlatform,
       logged_in: toLoggedInString(isLoggedIn),
-      app_is_authenticated: isLoggedIn,
+      app_is_authenticated: appIsAuthenticated,
 
       // Current UTM — literal URL params with Mixpanel-style $direct/none
       // fallbacks for consistency with [first touch] / [last touch] keys.

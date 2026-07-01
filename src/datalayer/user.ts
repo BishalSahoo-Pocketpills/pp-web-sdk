@@ -33,7 +33,7 @@ export function createUserBuilder(
       // computed value is stringified before the ternary.
       logged_in: overrides.logged_in !== undefined
         ? overrides.logged_in
-        : toLoggedInString(deriveIsLoggedIn(appAuth)),
+        : toLoggedInString(isValidUserId(userId)),
       app_is_authenticated: overrides.app_is_authenticated !== undefined
         ? overrides.app_is_authenticated
         : deriveIsLoggedIn(appAuth)
