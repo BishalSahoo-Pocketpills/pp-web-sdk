@@ -73,6 +73,7 @@ export interface DataLayerUser {
   // contract — Mixpanel + GTM consumers treat this as a categorical
   // string, not a boolean.
   logged_in: string;
+  app_is_authenticated: boolean;
 }
 
 export interface DataLayerUserDataAddress {
