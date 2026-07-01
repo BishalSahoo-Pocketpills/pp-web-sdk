@@ -17,7 +17,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { DeepPartial } from '@src/types/utility.types';
-import { deriveIsLoggedIn, isValidUserId, toLoggedInString } from '@src/common/auth';
+import { deriveIsAuthenticated, deriveLoggedIn, isValidUserId, toLoggedInString } from '@src/common/auth';
 import {
   UTM_FIRST_TOUCH,
   UTM_LAST_TOUCH,
@@ -1095,8 +1095,8 @@ export function createEventPropertiesBuilder(
     return {
       userId: userId,
       patientId: patientId,
-      isLoggedIn: isValidUserId(userId),
-      appIsAuthenticated: deriveIsLoggedIn(appAuth),
+      isLoggedIn: deriveLoggedIn(userId),
+      appIsAuthenticated: deriveIsAuthenticated(appAuth),
     };
   }
 
