@@ -78,7 +78,7 @@ import { cloneConfig } from '@src/common/clone-config';
   // =====================================================
 
   function buildAuthOverride(data: { pp_user_id?: number; pp_patient_id?: number }): Partial<DataLayerUser> {
-    const override: Partial<DataLayerUser> = { logged_in: toLoggedInString(true) };
+    const override: Partial<DataLayerUser> = { logged_in: toLoggedInString(true), app_is_authenticated: true };
     override.pp_user_id = data.pp_user_id ?? override.pp_user_id;
     override.pp_patient_id = data.pp_patient_id ?? override.pp_patient_id;
     return override;
