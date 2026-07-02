@@ -4,6 +4,49 @@ All notable changes to **pp-web-sdk** are documented here. The project follows
 [Semantic Versioning](https://semver.org/) — breaking changes require a major
 or, at minimum, a documented migration path in this file.
 
+## [3.17.2] — 2026-07-01
+
+### Added
+
+- **`app_is_authenticated` event property on every event.** A new boolean
+  property (type `boolean`, not string) is now included in all analytics
+  events — Mixpanel, dataLayer/GA4, and Braze — reflecting whether the
+  visitor's auth token is currently valid (server-set `app_is_authenticated`
+  cookie). Distinct from `logged_in`: a returning user who is not actively
+  authenticated will have `logged_in: 'true'` but `app_is_authenticated: false`.
+
+- **`registerAuthState()` in Mixpanel boot context.** At module init,
+  `app_is_authenticated` is registered as a Mixpanel super-property
+  (`register`) so it attaches to all subsequent events automatically.
+  `people.set` for this property only fires when the visitor is actively
+  authenticated, preserving Simplified ID Merge profile hygiene.
+
+### Changed
+
+- **`logged_in` now derived from `userId` cookie presence.** `logged_in:
+  'true'` means a real `userId` cookie exists — the user is or was logged in
+  (persists across sessions, does not require an active token). Previously
+  it tracked the `app_is_authenticated` cookie, which conflated two distinct
+  states.
+
+- **Auth helper refactor (`src/common/auth.ts`).** The old `deriveIsLoggedIn`
+  function (a misleading name) is replaced by two explicitly-named helpers:
+  - `deriveLoggedIn(userId)` — derives the `logged_in` event property from
+    the `userId` cookie (user is/was logged in).
+  - `deriveIsAuthenticated(appAuth)` — derives `app_is_authenticated` from
+    the server-set cookie (active auth session).
+
+### Fixed
+
+- **`app_is_authenticated: true` forced on `loginSuccess` / `signupComplete`
+  events.** These events now always carry `app_is_authenticated: true`
+  regardless of cookie timing — the auth cookie may not yet be readable at
+  the moment the event fires.
+
+- **TypeScript strict-null fix in `login/auth-state.ts`.** `getCookie()`
+  returns `string | null`; the `appAuth` value is now normalized to `string`
+  at declaration before being passed to `deriveIsAuthenticated`.
+
 ## [3.11.1] — 2026-06-17
 
 ### Changed
