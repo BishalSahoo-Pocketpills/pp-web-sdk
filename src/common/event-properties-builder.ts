@@ -17,7 +17,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { DeepPartial } from '@src/types/utility.types';
-import { deriveIsLoggedIn, isValidUserId, toLoggedInString } from '@src/common/auth';
+import { deriveIsAuthenticated, deriveLoggedIn, isValidUserId, toLoggedInString } from '@src/common/auth';
 import {
   UTM_FIRST_TOUCH,
   UTM_LAST_TOUCH,
@@ -121,6 +121,7 @@ export interface BuiltEventProperties {
   // consumers (Mixpanel, GTM, BigQuery) treat the value as a categorical
   // string, not a boolean. The internal closure variable stays boolean.
   logged_in: string;
+  app_is_authenticated: boolean;
   utm_source: string;
   utm_medium: string;
   utm_campaign: string;
@@ -1087,12 +1088,16 @@ export function createEventPropertiesBuilder(
     return stableCache;
   }
 
-  function determineLoginState(): { userId: string; patientId: string; isLoggedIn: boolean } {
+  function determineLoginState(): { userId: string; patientId: string; isLoggedIn: boolean; appIsAuthenticated: boolean } {
     const userId = ppLib.getCookie(cookieNames.userId) || '';
     const patientId = ppLib.getCookie(cookieNames.patientId) || '';
     const appAuth = ppLib.getCookie(cookieNames.appAuth) || '';
-    const isLoggedIn = deriveIsLoggedIn(appAuth);
-    return { userId: userId, patientId: patientId, isLoggedIn: isLoggedIn };
+    return {
+      userId: userId,
+      patientId: patientId,
+      isLoggedIn: deriveLoggedIn(userId),
+      appIsAuthenticated: deriveIsAuthenticated(appAuth),
+    };
   }
 
   function buildClickIdAttribution(params: URLSearchParams): BuiltAttribution {
@@ -1114,7 +1119,7 @@ export function createEventPropertiesBuilder(
     const deviceId = getOrCreateDeviceId();
     captureUtmTouches();
 
-    const { userId, patientId, isLoggedIn } = determineLoginState();
+    const { userId, patientId, isLoggedIn, appIsAuthenticated } = determineLoginState();
 
     // Literal utm_* params — intentionally NOT routed through the normalized
     // resolver, so e.g. `?source=febpt` does NOT populate utm_source. The
@@ -1159,6 +1164,7 @@ export function createEventPropertiesBuilder(
       pp_timestamp: Date.now(),
       platform: defaultPlatform,
       logged_in: toLoggedInString(isLoggedIn),
+      app_is_authenticated: appIsAuthenticated,
 
       // Current UTM — literal URL params with Mixpanel-style $direct/none
       // fallbacks for consistency with [first touch] / [last touch] keys.

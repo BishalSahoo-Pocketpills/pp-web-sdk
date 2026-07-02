@@ -35,6 +35,7 @@ export function registerSharedContext(win: Window & typeof globalThis, doc: Docu
   if (!pp || !cookieNames) return;
   registerBaseProps(win);
   registerCookieIdentity();
+  registerAuthState();
   registerExperimentCookie();
   registerCampaignParams(doc);
   registerMarketingAttribution();
@@ -68,6 +69,20 @@ function registerCookieIdentity(): void {
   if (ipAddress) {
   /*! v8 ignore stop */
     dispatch('register', [{ pp_user_ip: ipAddress }]);
+  }
+}
+
+function registerAuthState(): void {
+  if (!pp || !pp.eventPropertiesBuilder) return;
+  try {
+    const bundle = pp.eventPropertiesBuilder.build();
+    const appIsAuthenticated = bundle.eventProperties.app_is_authenticated;
+    dispatch('register', [{ app_is_authenticated: appIsAuthenticated }]);
+    if (isAuthenticated(pp)) {
+      dispatch('people.set', [{ app_is_authenticated: appIsAuthenticated }]);
+    }
+  } catch {
+    // defensive: skip if builder fails
   }
 }
 

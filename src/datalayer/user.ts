@@ -1,7 +1,7 @@
 import type { PPLib } from '@src/types/common.types';
 import type { DataLayerConfig, DataLayerUser } from '@src/types/datalayer.types';
 import type { DeepPartial } from '@src/types/utility.types';
-import { deriveIsLoggedIn, isValidUserId, toLoggedInString } from '@src/common/auth';
+import { deriveIsAuthenticated, deriveLoggedIn, isValidUserId, toLoggedInString } from '@src/common/auth';
 
 export function createUserBuilder(
   ppLib: PPLib,
@@ -33,7 +33,10 @@ export function createUserBuilder(
       // computed value is stringified before the ternary.
       logged_in: overrides.logged_in !== undefined
         ? overrides.logged_in
-        : toLoggedInString(deriveIsLoggedIn(appAuth))
+        : toLoggedInString(deriveLoggedIn(userId)),
+      app_is_authenticated: overrides.app_is_authenticated !== undefined
+        ? overrides.app_is_authenticated
+        : deriveIsAuthenticated(appAuth)
     };
   }
 

@@ -1369,6 +1369,54 @@ describe('loaded callback', () => {
     expect(hasIp).toBe(false);
   });
 
+  describe('app_is_authenticated super-property', () => {
+    it('registers app_is_authenticated: true for authenticated user', () => {
+      setCookie('app_is_authenticated', 'true');
+
+      const loadedCallback = initAndGetLoadedCallback();
+      const mp = createMockMixpanel();
+      invokeLoadedCallback(loadedCallback, mp);
+
+      expect(mp.register).toHaveBeenCalledWith(
+        expect.objectContaining({ app_is_authenticated: true })
+      );
+    });
+
+    it('sets app_is_authenticated on people profile for authenticated user', () => {
+      setCookie('app_is_authenticated', 'true');
+
+      const loadedCallback = initAndGetLoadedCallback();
+      const mp = createMockMixpanel();
+      invokeLoadedCallback(loadedCallback, mp);
+
+      expect(mp.people.set).toHaveBeenCalledWith(
+        expect.objectContaining({ app_is_authenticated: true })
+      );
+    });
+
+    it('registers app_is_authenticated: false for anonymous visitor', () => {
+      const loadedCallback = initAndGetLoadedCallback();
+      const mp = createMockMixpanel();
+      invokeLoadedCallback(loadedCallback, mp);
+
+      expect(mp.register).toHaveBeenCalledWith(
+        expect.objectContaining({ app_is_authenticated: false })
+      );
+    });
+
+    it('does not set app_is_authenticated on people profile for anonymous visitor', () => {
+      const loadedCallback = initAndGetLoadedCallback();
+      const mp = createMockMixpanel();
+      invokeLoadedCallback(loadedCallback, mp);
+
+      const peopleCalls = mp.people.set.mock.calls.map((c: unknown[]) => c[0]);
+      const hasAuthProp = peopleCalls.some(
+        (props: unknown) => props && typeof props === 'object' && 'app_is_authenticated' in (props as object)
+      );
+      expect(hasAuthProp).toBe(false);
+    });
+  });
+
   describe('experiment cookie', () => {
     it('parses valid JSON experiment cookie and registers data', () => {
       // Auth boot-path: registerExperimentCookie's people.set_once is

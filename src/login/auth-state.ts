@@ -1,6 +1,6 @@
 import type { PPLib } from '@src/types/common.types';
 import type { LoginConfig } from '@src/types/login.types';
-import { isValidUserId } from '@src/common/auth';
+import { deriveIsAuthenticated, isValidUserId } from '@src/common/auth';
 
 export function createInitAuthState(
   doc: Document,
@@ -11,7 +11,7 @@ export function createInitAuthState(
     try {
       const userId = ppLib.getCookie(CONFIG.cookieNames.userId);
       const authToken = ppLib.getCookie(CONFIG.cookieNames.auth);
-      const appAuth = ppLib.getCookie(CONFIG.cookieNames.appAuth);
+      const appAuth = ppLib.getCookie(CONFIG.cookieNames.appAuth) ?? '';
       const prevUserCookie = ppLib.getCookie(CONFIG.cookieNames.prevUser);
       const firstNameCookie = ppLib.getCookie(CONFIG.cookieNames.firstName);
 
@@ -28,7 +28,7 @@ export function createInitAuthState(
       }
 
       // B. Check Signup Completion
-      if (appAuth === 'true') {
+      if (deriveIsAuthenticated(appAuth)) {
         doc.body.classList.add(CONFIG.bodyClasses.signupCompleted);
       }
 
@@ -70,7 +70,7 @@ export function createInitAuthState(
 
       ppLib.log('info', '[ppLogin] Auth state initialized', {
         loggedIn: isUserIdValid && isAuthTokenValid,
-        signupCompleted: appAuth === 'true',
+        signupCompleted: deriveIsAuthenticated(appAuth),
         hasPreviousUser: hasPreviousUser
       });
 

@@ -261,15 +261,14 @@ describe('createEventPropertiesBuilder', () => {
       }
     });
 
-    it('treats appAuth=true as logged-in regardless of userId/patientId', () => {
+    it('app_is_authenticated=true sets app_is_authenticated property but logged_in stays false when userId absent', () => {
       const ppLib = makePPLib({ cookies: { app_is_authenticated: 'true' } });
       const bundle = createEventPropertiesBuilder(window, ppLib).build();
 
-      expect(bundle.eventProperties.logged_in).toBe('true');
-      // Inherited behavior: pp_distinct_id mirrors userId when logged in,
-      // even if userId is empty. Documenting actual behavior — callers that
-      // need a non-empty distinct_id must ensure userId is set first.
-      expect(bundle.userProperties.pp_distinct_id).toBe('');
+      expect(bundle.eventProperties.app_is_authenticated).toBe(true);
+      expect(bundle.eventProperties.logged_in).toBe('false');
+      // pp_distinct_id falls back to deviceId when userId is absent (isLoggedIn=false).
+      expect(bundle.userProperties.pp_distinct_id).toBe(bundle.eventProperties.device_id);
     });
 
     it('treats userId="-1" as anonymous (matching cookie sentinel)', () => {
