@@ -20,7 +20,7 @@
  * /identifying-users.
  *
  * Defensive default: any read failure (no builder, build throws, missing
- * `logged_in` field) returns `false`. Skipping a profile write is always
+ * `app_is_authenticated` field) returns `false`. Skipping a profile write is always
  * recoverable — the next page load with a valid auth state will fire
  * normally. Firing prematurely on an anonymous visitor is not recoverable
  * without server-side profile deletion.
@@ -28,15 +28,17 @@
 import type { PPLib } from '@src/types/common.types';
 
 /**
- * Returns true when the current visitor is authenticated per the SDK's
- * `logged_in` event property (derived from `userId` + `patientId` +
- * `app_is_authenticated` cookies Angular owns).
+ * Returns true when the current visitor has an active authenticated session,
+ * as indicated by the `app_is_authenticated` event property (derived from the
+ * server-set `app_is_authenticated` cookie). This is distinct from `logged_in`,
+ * which reflects whether a userId exists (user is or was logged in).
  *
  * @param pp — the configured PPLib reference; the function reads
  *             `pp.eventPropertiesBuilder.build()` to resolve the bundle.
- * @returns `true` when `bundle.eventProperties.logged_in === 'true'`;
- *          `false` for anonymous visitors, missing builder, or any read
- *          failure. Defensive — never throws.
+ * @returns `true` when `bundle.eventProperties.app_is_authenticated === true`
+ *          (i.e. the server-set auth-token cookie is currently valid);
+ *          `false` for anonymous / unauthenticated visitors, missing builder,
+ *          or any read failure. Defensive — never throws.
  */
 export function isAuthenticated(pp: PPLib): boolean {
   if (!pp.eventPropertiesBuilder) return false;

@@ -10,7 +10,7 @@
  */
 import type { PPLib } from '@src/types/common.types';
 import type { MixpanelCookieNames } from '@src/types/mixpanel.types';
-import { isValidUserId, isLoggedIn } from '@src/common/auth';
+import { isValidUserId } from '@src/common/auth';
 import { pollUntil } from '@src/common/retry';
 import { isAuthenticated } from '@src/mixpanel/auth-state';
 import { dispatch } from '@src/mixpanel/dispatch';
@@ -61,7 +61,11 @@ function registerCookieIdentity(): void {
   /*! v8 ignore start */
   if (isValidUserId(userId)) {
   /*! v8 ignore stop */
-    dispatch('register', [{ pp_user_id: userId }]);
+    dispatch('register', [{ pp_user_id: userId, $user_id: userId, user_id_registered: true }]);
+  } else {
+    dispatch('unregister', ['$user_id']);
+    dispatch('unregister', ['user_id_registered']);
+    dispatch('unregister', ['pp_user_id']);
   }
 
   const ipAddress = pp.getCookie(cookieNames.ipAddress);
@@ -167,7 +171,7 @@ function unifyDistinctIdWithPpDistinctId(): void {
     // visitors with their device_id (so pp_distinct_id == device_id ==
     // distinct_id == $user_id) created premature user profiles and is
     // explicitly discouraged by Mixpanel.
-    if (!isLoggedIn(bundle.eventProperties.logged_in as string)) return;
+    if (!isAuthenticated(pp)) return;
 
     const ppDistinctId = bundle.userProperties.pp_distinct_id;
     if (!isValidUserId(ppDistinctId)) return;
@@ -191,7 +195,7 @@ function unifyDistinctIdWithPpDistinctId(): void {
     // Fire after both instances are synced so distinct_id == userId on
     // the event. identify() is synchronous for state so no queue-drain
     // is needed before this track call.
-    pp.mixpanel?.track('identity_submitted', {});
+    pp.mixpanel?.track('identity_submitted', { value: ppDistinctId });
   } catch (e) {
     pp.log('warn', M.DISTINCT_ID_UNIFICATION_FAILED, e);
   }
