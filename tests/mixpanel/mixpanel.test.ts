@@ -1336,6 +1336,29 @@ describe('loaded callback', () => {
     );
   });
 
+  it('registers $user_id super-property from userId cookie', () => {
+    setCookie('userId', 'user-42');
+
+    const loadedCallback = initAndGetLoadedCallback();
+    const mp = createMockMixpanel();
+    invokeLoadedCallback(loadedCallback, mp);
+
+    expect(mp.register).toHaveBeenCalledWith(
+      expect.objectContaining({ $user_id: 'user-42' })
+    );
+  });
+
+  it('registers user_id_registered: true when userId cookie is present', () => {
+    setCookie('userId', 'user-42');
+
+    const loadedCallback = initAndGetLoadedCallback();
+    const mp = createMockMixpanel();
+    invokeLoadedCallback(loadedCallback, mp);
+
+    expect(mp.register).toHaveBeenCalledWith(
+      expect.objectContaining({ user_id_registered: true })
+    );
+  });
 
   it('does not register pp_user_id when userId cookie is absent', () => {
     const loadedCallback = initAndGetLoadedCallback();
@@ -1345,6 +1368,16 @@ describe('loaded callback', () => {
     const registerCalls = mp.register.mock.calls.map((c) => c[0]);
     const hasUserId = registerCalls.some((props) => props && 'pp_user_id' in props);
     expect(hasUserId).toBe(false);
+  });
+
+  it('unregisters $user_id, user_id_registered, pp_user_id when userId cookie is absent', () => {
+    const loadedCallback = initAndGetLoadedCallback();
+    const mp = createMockMixpanel();
+    invokeLoadedCallback(loadedCallback, mp);
+
+    expect(mp.unregister).toHaveBeenCalledWith('$user_id');
+    expect(mp.unregister).toHaveBeenCalledWith('user_id_registered');
+    expect(mp.unregister).toHaveBeenCalledWith('pp_user_id');
   });
 
   it('registers pp_user_ip from ipAddress cookie', () => {

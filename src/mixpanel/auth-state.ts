@@ -34,9 +34,10 @@ import type { PPLib } from '@src/types/common.types';
  *
  * @param pp — the configured PPLib reference; the function reads
  *             `pp.eventPropertiesBuilder.build()` to resolve the bundle.
- * @returns `true` when `bundle.eventProperties.logged_in === 'true'`;
- *          `false` for anonymous visitors, missing builder, or any read
- *          failure. Defensive — never throws.
+ * @returns `true` when `bundle.eventProperties.app_is_authenticated === true`
+ *          (i.e. the server-set auth-token cookie is currently valid);
+ *          `false` for anonymous / unauthenticated visitors, missing builder,
+ *          or any read failure. Defensive — never throws.
  */
 export function isAuthenticated(pp: PPLib): boolean {
   if (!pp.eventPropertiesBuilder) return false;
