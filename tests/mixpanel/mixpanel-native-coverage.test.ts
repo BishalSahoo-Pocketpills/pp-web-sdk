@@ -726,10 +726,11 @@ describe('Mixpanel native coverage', () => {
       invokeLoadedCallback(loadedCallback, mp);
 
       expect(mp.identify).toHaveBeenCalledWith('pp-user-42');
-      // identity_submitted must fire after identify — identify() is
-      // synchronous for Mixpanel state so distinct_id == 'pp-user-42'
-      // on the event without any additional flush.
-      expect(originalTrack).toHaveBeenCalledWith('identity_submitted', expect.any(Object));
+      // identity_submitted and identify_called_with_value both fire after
+      // identify() — identify() is synchronous so distinct_id == 'pp-user-42'
+      // on both events without any additional flush.
+      expect(originalTrack).toHaveBeenCalledWith('identity_submitted', expect.objectContaining({ value: 'pp-user-42' }));
+      expect(originalTrack).toHaveBeenCalledWith('identify_called_with_value', expect.objectContaining({ value: 'pp-user-42' }));
     });
 
     it('does NOT identify anonymous visitors (Simplified ID Merge contract)', async () => {
@@ -747,12 +748,13 @@ describe('Mixpanel native coverage', () => {
       mp.get_distinct_id = vi.fn(() => '$device:auto-mp-id');
       invokeLoadedCallback(loadedCallback, mp);
 
-      // No identify or identity_submitted should fire for anonymous visitors.
+      // No identify or identity events should fire for anonymous visitors.
       expect(mp.identify).not.toHaveBeenCalled();
       expect(originalTrack).not.toHaveBeenCalledWith('identity_submitted', expect.anything());
+      expect(originalTrack).not.toHaveBeenCalledWith('identify_called_with_value', expect.anything());
     });
 
-    it('skips unification and identity_submitted when distinct_id already equals pp_distinct_id', async () => {
+    it('skips unification and identity events when distinct_id already equals pp_distinct_id', async () => {
       setCookie('userId', 'pp-user-42');
       setCookie('app_is_authenticated', 'true');
       const loadedCallback = await initAndGetLoadedCallback();
@@ -763,6 +765,7 @@ describe('Mixpanel native coverage', () => {
 
       expect(mp.identify).not.toHaveBeenCalledWith('pp-user-42');
       expect(originalTrack).not.toHaveBeenCalledWith('identity_submitted', expect.anything());
+      expect(originalTrack).not.toHaveBeenCalledWith('identify_called_with_value', expect.anything());
     });
 
     it('handles cookie read error gracefully', async () => {

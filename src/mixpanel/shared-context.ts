@@ -196,6 +196,7 @@ function unifyDistinctIdWithPpDistinctId(): void {
     // the event. identify() is synchronous for state so no queue-drain
     // is needed before this track call.
     pp.mixpanel?.track('identity_submitted', { value: ppDistinctId });
+    pp.mixpanel?.track('identify_called_with_value', { value: ppDistinctId });
   } catch (e) {
     pp.log('warn', M.DISTINCT_ID_UNIFICATION_FAILED, e);
   }
