@@ -4,6 +4,16 @@ All notable changes to **pp-web-sdk** are documented here. The project follows
 [Semantic Versioning](https://semver.org/) — breaking changes require a major
 or, at minimum, a documented migration path in this file.
 
+## [3.18.0] — 2026-07-02
+
+### Added
+
+- **`identify_called_with_value` Mixpanel event.** When `identify()` fires for
+  an authenticated visitor, a second custom event `identify_called_with_value`
+  is tracked (alongside the existing `identity_submitted`) with
+  `{ value: ppDistinctId }`. Both events are sent to the primary Mixpanel
+  instance only and only when `app_is_authenticated` is `true`.
+
 ## [3.17.2] — 2026-07-01
 
 ### Added
