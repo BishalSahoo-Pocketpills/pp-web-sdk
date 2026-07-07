@@ -41,6 +41,11 @@ export function configureLoader(ppLib: PPLib, sharedConfig: SharedMixpanelConfig
 export function loadMixpanelSDK(win: Window & typeof globalThis, doc: Document): boolean {
   if (!pp || !shared) return false;
 
+  // When loadLibrary is false the host page owns the Mixpanel script (e.g.
+  // via GTM). Skip injection entirely — the SDK will call mp.init() against
+  // the already-present window.mixpanel instance.
+  if (shared.loadLibrary === false) return true;
+
   /*! v8 ignore start */
   if ((win as unknown as { mixpanel?: { __SV?: number } }).mixpanel
       && (win as unknown as { mixpanel?: { __SV?: number } }).mixpanel!.__SV) {
