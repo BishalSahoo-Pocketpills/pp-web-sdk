@@ -1885,6 +1885,36 @@ describe('Tracker.trackPageView', () => {
     }).not.toThrow();
     window.ppLib.extend = origExtend;
   });
+
+  it('skips Mixpanel page_view when ppLib.mixpanel.autoPageView is false', () => {
+    window.requestIdleCallback = vi.fn((cb) => cb());
+    const mp = createMockMixpanel();
+    window.mixpanel = mp;
+    loadModule('common');
+    window.ppLib.config.debug = true;
+    loadModule('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'tok', autoPageView: false });
+    loadModule('analytics', { coverable: false });
+    mp.track.mockClear();
+
+    window.ppAnalyticsDebug.tracker.trackPageView();
+    expect(mp.track).not.toHaveBeenCalledWith('page_view', expect.anything());
+  });
+
+  it('fires Mixpanel page_view when ppLib.mixpanel.autoPageView is true (explicit)', () => {
+    window.requestIdleCallback = vi.fn((cb) => cb());
+    const mp = createMockMixpanel();
+    window.mixpanel = mp;
+    loadModule('common');
+    window.ppLib.config.debug = true;
+    loadModule('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'tok', autoPageView: true });
+    loadModule('analytics', { coverable: false });
+    mp.track.mockClear();
+
+    window.ppAnalyticsDebug.tracker.trackPageView();
+    expect(mp.track).toHaveBeenCalledWith('page_view', expect.objectContaining({ page_url: expect.any(String) }));
+  });
 });
 
 // =========================================================================
