@@ -634,15 +634,49 @@ describe('loadMixpanelSDK()', () => {
     );
   });
 
-  it('logs a warning when loadLibrary is false but window.mixpanel is absent', () => {
+  it('logs a warning after poll timeout when loadLibrary is false and window.mixpanel never appears', () => {
+    vi.useFakeTimers();
     loadWithCommon('mixpanel');
     const logSpy = vi.spyOn(window.ppLib, 'log');
     window.ppLib.mixpanel.configure({ token: 'tok', loadLibrary: false });
     setupScriptEnv();
     window.ppLib.mixpanel.init();
 
-    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('window.mixpanel is not present'));
-    expect(window.mixpanel).toBeUndefined(); // no stub installed
+    // No warning yet — polling is in progress
+    expect(logSpy).not.toHaveBeenCalledWith('warn', expect.stringContaining('did not appear'));
+
+    // Advance past 100 poll ticks × 50ms = 5000ms
+    vi.advanceTimersByTime(5100);
+
+    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('did not appear within 5000ms'));
+    expect(window.mixpanel).toBeUndefined();
+    vi.useRealTimers();
+  });
+
+  it('polls and calls mp.init() when window.mixpanel appears after a delay (GTM timing race)', () => {
+    vi.useFakeTimers();
+    const mp = createMockMixpanel();
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'delayed-tok', loadLibrary: false });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    // GTM hasn't fired yet — no mixpanel, no init call
+    expect(window.mixpanel).toBeUndefined();
+    expect(mp.init).not.toHaveBeenCalled();
+
+    // Advance 200ms — GTM fires its Mixpanel Config tag, sets up the stub
+    vi.advanceTimersByTime(200);
+    window.mixpanel = mp;
+
+    // Advance one more poll tick (50ms) — SDK finds window.mixpanel and calls init
+    vi.advanceTimersByTime(60);
+
+    expect(mp.init).toHaveBeenCalledWith(
+      'delayed-tok',
+      expect.objectContaining({ loaded: expect.any(Function) }),
+    );
+    vi.useRealTimers();
   });
 
   it('loadLibrary: false propagates to shared config via legacy shim', () => {

@@ -73,6 +73,7 @@ import {
 } from '@src/mixpanel/identity-sync';
 import { resetQueue } from '@src/mixpanel/pre-init-queue';
 import { DEFAULTS, M } from '@src/mixpanel/messages';
+import { pollUntil } from '@src/common/retry';
 
 (function (win: Window & typeof globalThis, doc: Document) {
   'use strict';
@@ -694,34 +695,57 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       // out before stub access so we don't dereference an undefined global.
       const loaded = loadMixpanelSDK(win, doc);
       if (!loaded) return;
+
+      // Extracted continuation: runs once window.mixpanel is confirmed present.
+      function doInit(): void {
+        // Pre-init: read legacy distinct_id BEFORE Mixpanel overwrites the
+        // cookie. Primary only — secondary is a fresh project.
+        primaryMigrationCtx = readPreInitDistinctId(
+          win,
+          primaryState.config.token,
+          CONFIG.shared.crossSubdomainCookie,
+        );
+
+        // Queue BOTH instance inits against the stub upfront — canonical
+        // Mixpanel multi-instance pattern. The real SDK replays `_i[]` in
+        // order, firing each `loaded` callback independently. Doing this
+        // upfront (vs chaining secondary from primary's loaded callback)
+        // avoids depending on the real SDK's late-init-of-named-instance
+        // semantics, which caused secondary.loaded to never fire — leaving
+        // the pre-init queue buffered indefinitely.
+        initInstance('primary');
+        if (getState('secondary').enabled) initInstance('secondary');
+
+        // Watchdog — if the SDK doesn't load (network failure, ad-blocker,
+        // SRI mismatch) the loaded callbacks never fire and the pre-init
+        // queue never drains. After WATCHDOG_MS we force-drain to whatever
+        // instances are ready so events aren't silently swallowed.
+        armWatchdog();
+      }
+
       if (!win.mixpanel) {
-        if (CONFIG.shared.loadLibrary === false) ppLib.log('warn', M.LOAD_LIBRARY_NO_WINDOW_MIXPANEL);
+        if (CONFIG.shared.loadLibrary === false) {
+          // GTM (or another external loader) owns the Mixpanel script. It sets
+          // up window.mixpanel synchronously as a stub queue when its tag fires,
+          // but that tag may not have run yet when the SDK's init() executes.
+          // Poll until the stub appears (max 5s) so GTM load-ordering doesn't
+          // silently drop the entire Mixpanel init.
+          pollUntil({
+            check: () => {
+              if (!(win as unknown as { mixpanel?: unknown }).mixpanel) return false;
+              doInit();
+              return true;
+            },
+            intervalMs: DEFAULTS.LOAD_LIBRARY_POLL_INTERVAL_MS,
+            maxAttempts: DEFAULTS.LOAD_LIBRARY_POLL_MAX_ATTEMPTS,
+            onMaxAttempts: () => ppLib.log('warn', M.LOAD_LIBRARY_POLL_TIMEOUT),
+            win,
+          });
+        }
         return;
       }
 
-      // Pre-init: read legacy distinct_id BEFORE Mixpanel overwrites the
-      // cookie. Primary only — secondary is a fresh project.
-      primaryMigrationCtx = readPreInitDistinctId(
-        win,
-        primaryState.config.token,
-        CONFIG.shared.crossSubdomainCookie,
-      );
-
-      // Queue BOTH instance inits against the stub upfront — canonical
-      // Mixpanel multi-instance pattern. The real SDK replays `_i[]` in
-      // order, firing each `loaded` callback independently. Doing this
-      // upfront (vs chaining secondary from primary's loaded callback)
-      // avoids depending on the real SDK's late-init-of-named-instance
-      // semantics, which caused secondary.loaded to never fire — leaving
-      // the pre-init queue buffered indefinitely.
-      initInstance('primary');
-      if (getState('secondary').enabled) initInstance('secondary');
-
-      // Watchdog — if the SDK doesn't load (network failure, ad-blocker,
-      // SRI mismatch) the loaded callbacks never fire and the pre-init
-      // queue never drains. After WATCHDOG_MS we force-drain to whatever
-      // instances are ready so events aren't silently swallowed.
-      armWatchdog();
+      doInit();
     }
 
     let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
