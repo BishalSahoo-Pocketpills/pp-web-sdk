@@ -113,6 +113,8 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
           primary: DEFAULTS.COOKIE_WARN_PRIMARY_BYTES,
           total: DEFAULTS.COOKIE_WARN_TOTAL_BYTES,
         },
+        loadLibrary: true,
+        autoPageView: true,
       },
     };
 
@@ -164,6 +166,8 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
         shared.requireIntegrity = legacy.requireIntegrity as boolean;
       if ('crossOrigin' in legacy)
         shared.crossOrigin = legacy.crossOrigin as SharedMixpanelConfig['crossOrigin'];
+      if ('loadLibrary' in legacy) shared.loadLibrary = legacy.loadLibrary as boolean;
+      if ('autoPageView' in legacy) shared.autoPageView = legacy.autoPageView as boolean;
 
       if (Object.keys(primary).length > 0) slice.primary = primary;
       if (Object.keys(shared).length > 0) slice.shared = shared;
@@ -689,7 +693,11 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       // Single SDK script injection. SRI fail-closed returns false; bail
       // out before stub access so we don't dereference an undefined global.
       const loaded = loadMixpanelSDK(win, doc);
-      if (!loaded || !win.mixpanel) return;
+      if (!loaded) return;
+      if (!win.mixpanel) {
+        if (CONFIG.shared.loadLibrary === false) ppLib.log('warn', M.LOAD_LIBRARY_NO_WINDOW_MIXPANEL);
+        return;
+      }
 
       // Pre-init: read legacy distinct_id BEFORE Mixpanel overwrites the
       // cookie. Primary only — secondary is a fresh project.

@@ -136,6 +136,26 @@ export interface SharedMixpanelConfig extends SdkSecurityOptions {
    * (3584 / 7168 bytes). Provide BOTH fields when overriding.
    */
   cookieSizeWarnBytes?: { primary: number; total: number };
+  /**
+   * When false, the SDK skips injecting the Mixpanel `<script>` tag entirely.
+   * Use when the Mixpanel library is already loaded externally (e.g. via GTM)
+   * to prevent double-loading. The SDK still calls `mp.init()` and manages
+   * identity, super-properties, and session tracking against the existing
+   * `window.mixpanel` instance. Defaults to true.
+   *
+   * **Timing requirement**: `window.mixpanel` must be present when
+   * `ppLib.mixpanel.init()` is called. If the external library has not yet
+   * executed, initialization is skipped and a warning is logged. Ensure GTM
+   * (or whatever loads Mixpanel) fires before the SDK's `init()`.
+   */
+  loadLibrary: boolean;
+  /**
+   * When false, the SDK does not fire an automatic `page_view` event to
+   * Mixpanel on init. Use when GTM or another system handles page view
+   * tracking independently and you want to avoid duplicate events.
+   * Defaults to true.
+   */
+  autoPageView: boolean;
 }
 
 export interface DualMixpanelConfig {
@@ -164,6 +184,8 @@ export interface MixpanelConfig extends SdkSecurityOptions {
   enrichTrack: boolean;
   emitMode: 'flat' | 'dual' | 'nested';
   cookieSizeWarnBytes?: { primary: number; total: number };
+  loadLibrary: boolean;
+  autoPageView: boolean;
 }
 
 export interface SessionManager {

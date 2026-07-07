@@ -598,6 +598,80 @@ describe('loadMixpanelSDK()', () => {
     expect(scriptArg.getAttribute('integrity')).toBeNull();
     expect(scriptArg.getAttribute('crossorigin')).toBeNull();
   });
+
+  it('skips script injection when loadLibrary is false', () => {
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'tok', loadLibrary: false });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    expect(insertBeforeSpy).not.toHaveBeenCalled();
+    expect(window.mixpanel).toBeUndefined();
+  });
+
+  it('loadLibrary defaults to true and injects the script', () => {
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'tok' });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    expect(insertBeforeSpy).toHaveBeenCalled();
+    expect(window.mixpanel).toBeDefined();
+  });
+
+  it('calls mp.init() on the pre-installed window.mixpanel when loadLibrary is false', () => {
+    const mp = createMockMixpanel();
+    window.mixpanel = mp;
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'external-tok', loadLibrary: false });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    expect(insertBeforeSpy).not.toHaveBeenCalled();
+    expect(mp.init).toHaveBeenCalledWith(
+      'external-tok',
+      expect.objectContaining({ loaded: expect.any(Function) }),
+    );
+  });
+
+  it('logs a warning when loadLibrary is false but window.mixpanel is absent', () => {
+    loadWithCommon('mixpanel');
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+    window.ppLib.mixpanel.configure({ token: 'tok', loadLibrary: false });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('window.mixpanel is not present'));
+    expect(window.mixpanel).toBeUndefined(); // no stub installed
+  });
+
+  it('loadLibrary: false propagates to shared config via legacy shim', () => {
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'tok', loadLibrary: false });
+
+    expect(window.ppLib.mixpanel.getConfig().shared.loadLibrary).toBe(false);
+  });
+
+  it('autoPageView: false propagates to shared config via legacy shim', () => {
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'tok', autoPageView: false });
+
+    expect(window.ppLib.mixpanel.getConfig().shared.autoPageView).toBe(false);
+  });
+
+  it('loadLibrary defaults to true in shared config', () => {
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'tok' });
+
+    expect(window.ppLib.mixpanel.getConfig().shared.loadLibrary).toBe(true);
+  });
+
+  it('autoPageView defaults to true in shared config', () => {
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'tok' });
+
+    expect(window.ppLib.mixpanel.getConfig().shared.autoPageView).toBe(true);
+  });
 });
 
 // =========================================================================
