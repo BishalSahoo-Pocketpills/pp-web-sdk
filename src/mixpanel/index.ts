@@ -113,6 +113,8 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
           primary: DEFAULTS.COOKIE_WARN_PRIMARY_BYTES,
           total: DEFAULTS.COOKIE_WARN_TOTAL_BYTES,
         },
+        loadLibrary: true,
+        autoPageView: true,
       },
     };
 
@@ -164,6 +166,8 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
         shared.requireIntegrity = legacy.requireIntegrity as boolean;
       if ('crossOrigin' in legacy)
         shared.crossOrigin = legacy.crossOrigin as SharedMixpanelConfig['crossOrigin'];
+      if ('loadLibrary' in legacy) shared.loadLibrary = legacy.loadLibrary as boolean;
+      if ('autoPageView' in legacy) shared.autoPageView = legacy.autoPageView as boolean;
 
       if (Object.keys(primary).length > 0) slice.primary = primary;
       if (Object.keys(shared).length > 0) slice.shared = shared;

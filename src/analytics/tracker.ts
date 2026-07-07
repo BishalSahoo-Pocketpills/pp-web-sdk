@@ -258,8 +258,11 @@ export function createTracker(
         });
       }
 
+      const mpAutoPageView = !ppLib.mixpanel ||
+        ppLib.mixpanel.getConfig().shared.autoPageView !== false;
       /*! v8 ignore start */
-      if (SafeUtils.get(CONFIG, 'platforms.mixpanel.enabled', true) &&
+      if (mpAutoPageView &&
+          SafeUtils.get(CONFIG, 'platforms.mixpanel.enabled', true) &&
           SafeUtils.get(CONFIG, 'platforms.mixpanel.trackPageView', true)) {
       /*! v8 ignore stop */
         eventQueue.add({
