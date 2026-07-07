@@ -32,6 +32,8 @@ export const M = {
     `${PREFIX} watchdog: ${stuck} did not report loaded within 15000ms; no instance is ready, buffered events remain queued. Check network / SRI / ad-blockers.`,
 
   // ---- Loader / SDK ----
+  LOAD_LIBRARY_POLL_TIMEOUT: `${PREFIX} loadLibrary=false: window.mixpanel did not appear within 5000ms — ensure the Mixpanel library (e.g. GTM's Mixpanel Config tag) fires before or shortly after the SDK. Initialization skipped.`,
+  /** @deprecated Kept for test back-compat — message emitted at poll timeout now, not immediately */
   LOAD_LIBRARY_NO_WINDOW_MIXPANEL: `${PREFIX} loadLibrary=false but window.mixpanel is not present — ensure the Mixpanel library is loaded before calling init(). Initialization skipped.`,
   SDK_LOAD_FAILED: (src: string): string =>
     `${PREFIX} Failed to load SDK from ${src} (SRI mismatch, network error, or blocker?)`,
@@ -118,4 +120,8 @@ export const DEFAULTS = {
    */
   COOKIE_WARN_PRIMARY_BYTES: 3584,
   COOKIE_WARN_TOTAL_BYTES: 7168,
+  /** When loadLibrary=false, poll this often (ms) for window.mixpanel to appear. */
+  LOAD_LIBRARY_POLL_INTERVAL_MS: 50,
+  /** Maximum poll ticks before giving up (50ms × 100 = 5s). */
+  LOAD_LIBRARY_POLL_MAX_ATTEMPTS: 100,
 } as const;
