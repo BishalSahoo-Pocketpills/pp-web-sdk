@@ -693,7 +693,11 @@ import { DEFAULTS, M } from '@src/mixpanel/messages';
       // Single SDK script injection. SRI fail-closed returns false; bail
       // out before stub access so we don't dereference an undefined global.
       const loaded = loadMixpanelSDK(win, doc);
-      if (!loaded || !win.mixpanel) return;
+      if (!loaded) return;
+      if (!win.mixpanel) {
+        if (CONFIG.shared.loadLibrary === false) ppLib.log('warn', M.LOAD_LIBRARY_NO_WINDOW_MIXPANEL);
+        return;
+      }
 
       // Pre-init: read legacy distinct_id BEFORE Mixpanel overwrites the
       // cookie. Primary only — secondary is a fresh project.
