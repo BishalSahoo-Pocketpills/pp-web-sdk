@@ -142,6 +142,11 @@ export interface SharedMixpanelConfig extends SdkSecurityOptions {
    * to prevent double-loading. The SDK still calls `mp.init()` and manages
    * identity, super-properties, and session tracking against the existing
    * `window.mixpanel` instance. Defaults to true.
+   *
+   * **Timing requirement**: `window.mixpanel` must be present when
+   * `ppLib.mixpanel.init()` is called. If the external library has not yet
+   * executed, initialization is skipped and a warning is logged. Ensure GTM
+   * (or whatever loads Mixpanel) fires before the SDK's `init()`.
    */
   loadLibrary: boolean;
   /**

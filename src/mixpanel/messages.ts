@@ -32,6 +32,7 @@ export const M = {
     `${PREFIX} watchdog: ${stuck} did not report loaded within 15000ms; no instance is ready, buffered events remain queued. Check network / SRI / ad-blockers.`,
 
   // ---- Loader / SDK ----
+  LOAD_LIBRARY_NO_WINDOW_MIXPANEL: `${PREFIX} loadLibrary=false but window.mixpanel is not present — ensure the Mixpanel library is loaded before calling init(). Initialization skipped.`,
   SDK_LOAD_FAILED: (src: string): string =>
     `${PREFIX} Failed to load SDK from ${src} (SRI mismatch, network error, or blocker?)`,
   SRI_INVALID_FORMAT: `${PREFIX} integrity hash format invalid — expected sha256|sha384|sha512-<base64>; refusing to load`,
