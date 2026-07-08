@@ -156,6 +156,15 @@ export interface SharedMixpanelConfig extends SdkSecurityOptions {
    * Defaults to true.
    */
   autoPageView: boolean;
+  /**
+   * When false, the SDK skips its boot-time sweep that deletes stale
+   * `mp_<token>_mixpanel` cookies for tokens other than the current
+   * primary. Useful when testing with a GTM container whose Mixpanel
+   * token differs from the SDK's (e.g. production GTM preview against a
+   * staging SDK), where the sweep would otherwise remove GTM's cookie.
+   * Defaults to true (sweep is active).
+   */
+  pruneCookies: boolean;
 }
 
 export interface DualMixpanelConfig {
@@ -186,6 +195,7 @@ export interface MixpanelConfig extends SdkSecurityOptions {
   cookieSizeWarnBytes?: { primary: number; total: number };
   loadLibrary: boolean;
   autoPageView: boolean;
+  pruneCookies: boolean;
 }
 
 export interface SessionManager {

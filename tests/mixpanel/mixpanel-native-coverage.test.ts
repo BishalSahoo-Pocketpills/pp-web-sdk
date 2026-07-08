@@ -1656,6 +1656,21 @@ describe('Mixpanel native coverage', () => {
         expect(document.cookie).not.toContain('mp_orphan123_mixpanel');
       });
 
+      it('skips prune entirely when pruneCookies is false', async () => {
+        await freshLoad({ token: 'primarytok99' });
+        window.ppLib.mixpanel.configure({ shared: { pruneCookies: false } });
+        setCookie('mp_orphan123_mixpanel', 'staleblob');
+        const logSpy = vi.spyOn(window.ppLib, 'log');
+        setupScriptEnv();
+        window.ppLib.mixpanel.init();
+
+        expect(document.cookie).toContain('mp_orphan123_mixpanel');
+        expect(logSpy).not.toHaveBeenCalledWith(
+          'info',
+          expect.stringContaining('pruned non-primary Mixpanel cookie'),
+        );
+      });
+
       it('logs a warn when cookie access throws during prune', async () => {
         await freshLoad({ token: 'primarytok99' });
         const logSpy = vi.spyOn(window.ppLib, 'log');
