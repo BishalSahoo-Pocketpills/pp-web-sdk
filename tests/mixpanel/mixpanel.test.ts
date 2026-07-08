@@ -706,6 +706,20 @@ describe('loadMixpanelSDK()', () => {
 
     expect(window.ppLib.mixpanel.getConfig().shared.autoPageView).toBe(true);
   });
+
+  it('pruneCookies defaults to true in shared config', () => {
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'tok' });
+
+    expect(window.ppLib.mixpanel.getConfig().shared.pruneCookies).toBe(true);
+  });
+
+  it('pruneCookies: false propagates to shared config via legacy shim', () => {
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'tok', pruneCookies: false });
+
+    expect(window.ppLib.mixpanel.getConfig().shared.pruneCookies).toBe(false);
+  });
 });
 
 // =========================================================================

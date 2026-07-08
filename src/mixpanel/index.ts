@@ -116,6 +116,7 @@ import { pollUntil } from '@src/common/retry';
         },
         loadLibrary: true,
         autoPageView: true,
+        pruneCookies: true,
       },
     };
 
@@ -169,6 +170,7 @@ import { pollUntil } from '@src/common/retry';
         shared.crossOrigin = legacy.crossOrigin as SharedMixpanelConfig['crossOrigin'];
       if ('loadLibrary' in legacy) shared.loadLibrary = legacy.loadLibrary as boolean;
       if ('autoPageView' in legacy) shared.autoPageView = legacy.autoPageView as boolean;
+      if ('pruneCookies' in legacy) shared.pruneCookies = legacy.pruneCookies as boolean;
 
       if (Object.keys(primary).length > 0) slice.primary = primary;
       if (Object.keys(shared).length > 0) slice.shared = shared;
@@ -654,7 +656,11 @@ import { pollUntil } from '@src/common/retry';
       // below). Runs even on the no-token misconfig path that follows: its own
       // guardrail no-ops when the primary token is absent, so we never blind-
       // delete when we can't identify the active cookie.
-      pruneNonPrimaryMixpanelCookies(primaryState.config.token);
+      // Set pruneCookies: false to disable (e.g. when testing against a GTM
+      // container whose Mixpanel token differs from the SDK's).
+      if (CONFIG.shared.pruneCookies !== false) {
+        pruneNonPrimaryMixpanelCookies(primaryState.config.token);
+      }
 
       /*! v8 ignore start */
       if (!primaryState.config.token) {
