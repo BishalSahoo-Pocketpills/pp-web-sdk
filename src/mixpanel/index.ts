@@ -115,6 +115,7 @@ import { pollUntil } from '@src/common/retry';
           total: DEFAULTS.COOKIE_WARN_TOTAL_BYTES,
         },
         loadLibrary: true,
+        initLibrary: true,
         autoPageView: true,
         pruneCookies: true,
       },
@@ -169,6 +170,7 @@ import { pollUntil } from '@src/common/retry';
       if ('crossOrigin' in legacy)
         shared.crossOrigin = legacy.crossOrigin as SharedMixpanelConfig['crossOrigin'];
       if ('loadLibrary' in legacy) shared.loadLibrary = legacy.loadLibrary as boolean;
+      if ('initLibrary' in legacy) shared.initLibrary = legacy.initLibrary as boolean;
       if ('autoPageView' in legacy) shared.autoPageView = legacy.autoPageView as boolean;
       if ('pruneCookies' in legacy) shared.pruneCookies = legacy.pruneCookies as boolean;
 
@@ -709,6 +711,40 @@ import { pollUntil } from '@src/common/retry';
       const loaded = loadMixpanelSDK(win, doc);
       if (!loaded) return;
 
+      /**
+       * Adopt an already-initialized external instance (e.g. GTM's). Skips
+       * calling `mp.init()` — the instance is live and already has a token,
+       * distinct_id, and persistence configured by the external owner.
+       * Triggers the same post-init work as `onInstanceLoaded` (migration,
+       * session patching, identity sync, super-props registration).
+       *
+       * For secondary: `window.mixpanel[name]` typically doesn't exist since
+       * external systems don't know about it. If absent, the caller should
+       * fall through to `initInstance` for secondary.
+       */
+      function adoptExternalInstance(name: InstanceName): boolean {
+        const state = getState(name);
+        if (!state.enabled || state.initCalled) return false;
+        state.initCalled = true;
+
+        let mp: MixpanelGlobal | undefined;
+        if (name === 'primary') {
+          mp = win.mixpanel as MixpanelGlobal;
+        } else {
+          const children = win.mixpanel as unknown as Record<string, MixpanelGlobal | undefined>;
+          mp = children[name];
+        }
+
+        if (!mp || typeof mp.track !== 'function') {
+          ppLib.log('warn', M.INIT_LIBRARY_ADOPT_MISSING(name));
+          return false;
+        }
+
+        ppLib.log('info', `[ppMixpanel][dbg] adoptExternalInstance(${name}): adopting existing window.mixpanel${name !== 'primary' ? '.' + name : ''}`);
+        onInstanceLoaded(name, mp);
+        return true;
+      }
+
       // Extracted continuation: runs once window.mixpanel is confirmed present.
       function doInit(): void {
         const secondaryState = getState('secondary');
@@ -716,6 +752,7 @@ import { pollUntil } from '@src/common/retry';
           primary: { enabled: primaryState.enabled, token: primaryState.config.token.slice(0, 8) + '…' },
           secondary: { enabled: secondaryState.enabled, token: secondaryState.config.token?.slice(0, 8) + '…' },
           loadLibrary: CONFIG.shared.loadLibrary,
+          initLibrary: CONFIG.shared.initLibrary,
           crossSubdomainCookie: CONFIG.shared.crossSubdomainCookie,
           pruneCookies: CONFIG.shared.pruneCookies,
           winMixpanelType: typeof (win as unknown as { mixpanel?: unknown }).mixpanel,
@@ -730,15 +767,26 @@ import { pollUntil } from '@src/common/retry';
           CONFIG.shared.crossSubdomainCookie,
         );
 
-        // Queue BOTH instance inits against the stub upfront — canonical
-        // Mixpanel multi-instance pattern. The real SDK replays `_i[]` in
-        // order, firing each `loaded` callback independently. Doing this
-        // upfront (vs chaining secondary from primary's loaded callback)
-        // avoids depending on the real SDK's late-init-of-named-instance
-        // semantics, which caused secondary.loaded to never fire — leaving
-        // the pre-init queue buffered indefinitely.
-        initInstance('primary');
-        if (getState('secondary').enabled) initInstance('secondary');
+        if (CONFIG.shared.initLibrary !== false) {
+          // Normal path — SDK owns init for all instances.
+          // Queue BOTH instance inits against the stub upfront — canonical
+          // Mixpanel multi-instance pattern. The real SDK replays `_i[]` in
+          // order, firing each `loaded` callback independently. Doing this
+          // upfront (vs chaining secondary from primary's loaded callback)
+          // avoids depending on the real SDK's late-init-of-named-instance
+          // semantics, which caused secondary.loaded to never fire — leaving
+          // the pre-init queue buffered indefinitely.
+          initInstance('primary');
+          if (getState('secondary').enabled) initInstance('secondary');
+        } else {
+          // External-init path — GTM (or another system) already called init()
+          // on the default Mixpanel instance. Adopt it directly instead of
+          // reinitializing (which would overwrite GTM's token + persistence).
+          // Secondary is SDK-specific; external systems don't create it, so we
+          // always init secondary ourselves.
+          adoptExternalInstance('primary');
+          if (getState('secondary').enabled) initInstance('secondary');
+        }
 
         // Watchdog — if the SDK doesn't load (network failure, ad-blocker,
         // SRI mismatch) the loaded callbacks never fire and the pre-init
@@ -747,28 +795,66 @@ import { pollUntil } from '@src/common/retry';
         armWatchdog();
       }
 
+      // When the external owner (GTM) manages loading or initialization, poll
+      // until window.mixpanel is ready instead of bailing out immediately.
+      const needsPoll = CONFIG.shared.loadLibrary === false || CONFIG.shared.initLibrary === false;
+
       if (!win.mixpanel) {
-        if (CONFIG.shared.loadLibrary === false) {
-          // GTM (or another external loader) owns the Mixpanel script. It sets
-          // up window.mixpanel synchronously as a stub queue when its tag fires,
-          // but that tag may not have run yet when the SDK's init() executes.
-          // Poll until the stub appears (max 5s) so GTM load-ordering doesn't
-          // silently drop the entire Mixpanel init.
-          ppLib.log('info', '[ppMixpanel][dbg] window.mixpanel not present at init() — starting poll (loadLibrary=false, max 5s)');
+        if (needsPoll) {
+          ppLib.log('info', `[ppMixpanel][dbg] window.mixpanel not present at init() — starting poll (loadLibrary=${CONFIG.shared.loadLibrary} initLibrary=${CONFIG.shared.initLibrary}, max 5s)`);
           pollUntil({
             check: () => {
-              if (!(win as unknown as { mixpanel?: unknown }).mixpanel) return false;
+              const mp = (win as unknown as { mixpanel?: unknown }).mixpanel;
+              if (!mp) return false;
+              // initLibrary=false: we need the REAL initialized SDK, not just a
+              // stub. GTM's stub has `_i[]` queued calls; the real SDK returns a
+              // config object from get_config() with a token. Until GTM's loaded
+              // callback fires, get_config() on the stub returns undefined.
+              if (CONFIG.shared.initLibrary === false) {
+                const mpRef = mp as { get_config?: () => ({ token?: string } | null | undefined) };
+                if (typeof mpRef.get_config !== 'function') return false;
+                if (!mpRef.get_config()?.token) return false;
+              }
               ppLib.log('info', '[ppMixpanel][dbg] poll found window.mixpanel — calling doInit()');
               doInit();
               return true;
             },
             intervalMs: DEFAULTS.LOAD_LIBRARY_POLL_INTERVAL_MS,
             maxAttempts: DEFAULTS.LOAD_LIBRARY_POLL_MAX_ATTEMPTS,
-            onMaxAttempts: () => ppLib.log('warn', M.LOAD_LIBRARY_POLL_TIMEOUT),
+            onMaxAttempts: () => ppLib.log('warn',
+              CONFIG.shared.initLibrary === false
+                ? M.INIT_LIBRARY_POLL_TIMEOUT
+                : M.LOAD_LIBRARY_POLL_TIMEOUT,
+            ),
             win,
           });
         }
         return;
+      }
+
+      // initLibrary=false: window.mixpanel exists but may be a stub (GTM's tag
+      // has fired but the real script hasn't finished loading yet). Poll until
+      // get_config() returns a token — same "real SDK" check as above.
+      if (CONFIG.shared.initLibrary === false) {
+        const mp = win.mixpanel as { get_config?: () => ({ token?: string } | null | undefined) };
+        if (typeof mp.get_config !== 'function' || !mp.get_config()?.token) {
+          ppLib.log('info', '[ppMixpanel][dbg] window.mixpanel is stub — polling for real initialized SDK (initLibrary=false)');
+          pollUntil({
+            check: () => {
+              const mpRef = (win as unknown as { mixpanel?: { get_config?: () => ({ token?: string } | null | undefined) } }).mixpanel;
+              if (!mpRef || typeof mpRef.get_config !== 'function') return false;
+              if (!mpRef.get_config()?.token) return false;
+              ppLib.log('info', '[ppMixpanel][dbg] poll: real initialized SDK found — calling doInit()');
+              doInit();
+              return true;
+            },
+            intervalMs: DEFAULTS.LOAD_LIBRARY_POLL_INTERVAL_MS,
+            maxAttempts: DEFAULTS.LOAD_LIBRARY_POLL_MAX_ATTEMPTS,
+            onMaxAttempts: () => ppLib.log('warn', M.INIT_LIBRARY_POLL_TIMEOUT),
+            win,
+          });
+          return;
+        }
       }
 
       ppLib.log('info', '[ppMixpanel][dbg] window.mixpanel present at init() — calling doInit() directly');
