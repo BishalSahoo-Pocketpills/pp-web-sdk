@@ -145,6 +145,7 @@ export interface PPLib {
   voucherify?: import('./voucherify.types').VoucherifyAPI;
   datalayer?: import('./datalayer.types').DataLayerAPI;
   vwo?: import('./vwo.types').VWOAPI;
+  urlDecorator?: import('./url-decorator.types').UrlDecoratorAPI;
   // Session management
   session?: import('../common/session').SessionService;
   // DataLayer enricher system. The push args are intentionally unknown[] —
@@ -157,6 +158,7 @@ export interface PPLib {
   // Internal bound flags (prevent double-binding across script reloads)
   _ecomBound?: boolean;
   _esBound?: boolean;
+  _udBound?: boolean;
   _mpTrackPatched?: boolean;
   _firedEvents?: Record<string, boolean>;
   _vwoExperimentProps?: Record<string, string>;
