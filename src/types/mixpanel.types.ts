@@ -141,6 +141,13 @@ export interface SharedMixpanelConfig extends SdkSecurityOptions {
    * Use when the Mixpanel library is already loaded externally (e.g. via GTM)
    * to prevent double-loading. The SDK still calls `mp.init()` by default
    * unless `initLibrary` is also false. Defaults to true.
+   *
+   * **Named-instance behavior**: when false, the SDK initializes primary as a
+   * named `'primary'` sub-instance (`window.mixpanel.primary`) instead of the
+   * unnamed default (`window.mixpanel`). This prevents a double-init collision
+   * when an external system (e.g. a GTM Mixpanel Config tag) also calls
+   * `mp.init()` on the unnamed default — both inits target separate slots and
+   * succeed independently.
    */
   loadLibrary: boolean;
   /**

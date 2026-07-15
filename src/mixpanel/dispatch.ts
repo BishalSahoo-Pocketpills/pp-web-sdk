@@ -260,6 +260,19 @@ function getOrAdoptMpRef(name: InstanceName): MixpanelGlobal | undefined {
   // drains when the real SDK finally loads. See loader.ts `_ppStub`.
   if ((g.mixpanel as { _ppStub?: boolean })._ppStub) return undefined;
   if (name === 'primary') {
+    // When loadLibrary=false primary was initialized as a named 'primary'
+    // sub-instance to avoid re-initializing GTM's unnamed default. Look up
+    // window.mixpanel.primary instead of window.mixpanel itself.
+    if (shared?.loadLibrary === false) {
+      const namedMp = (g.mixpanel as unknown as Record<string, MixpanelGlobal | undefined>)['primary'];
+      if (namedMp && typeof namedMp.track === 'function') {
+        state.mpRef = namedMp;
+        state.initialized = true;
+        if (pp) pp.log('info', '[ppMixpanel][dbg] getOrAdoptMpRef: adopted window.mixpanel.primary (loadLibrary=false fallback)');
+        return namedMp;
+      }
+      return undefined;
+    }
     if (typeof g.mixpanel.track === 'function') {
       state.mpRef = g.mixpanel;
       state.initialized = true;
