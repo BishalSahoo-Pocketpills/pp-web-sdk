@@ -520,17 +520,23 @@ import { pollUntil } from '@src/common/retry';
         onInstanceLoaded(name, mp);
       });
 
-      ppLib.log('info', `[ppMixpanel][dbg] initInstance(${name}): calling mp.init() token=${state.config.token.slice(0, 8)}… persistence=${INSTANCE_BOOT_PROFILE[name].persistence} crossSubdomain=${CONFIG.shared.crossSubdomainCookie}`);
+      // When loadLibrary=true (default) the SDK injects its own stub and
+      // primary IS the unnamed default instance (window.mixpanel).
+      // When loadLibrary=false an external loader (GTM) owns the unnamed
+      // default and may have already called mp.init() on it. Calling
+      // mp.init() again with no name would re-initialize the same instance
+      // slot and throw ("forEach" on internal arrays the real SDK closes
+      // after first init). Using a named 'primary' instance creates a
+      // separate slot with no shared internal state — both inits succeed.
+      const useNamedInstance = name !== 'primary' || CONFIG.shared.loadLibrary === false;
 
-      // For primary, mp.init(token, opts) writes to window.mixpanel itself.
-      // For secondary, mp.init(token, opts, 'secondary') queues onto the
-      // shared stub's `_i[]` and the real SDK creates window.mixpanel.secondary
-      // on replay.
+      ppLib.log('info', `[ppMixpanel][dbg] initInstance(${name}): calling mp.init() token=${state.config.token.slice(0, 8)}… instanceName=${useNamedInstance ? name : '(default)'} persistence=${INSTANCE_BOOT_PROFILE[name].persistence} crossSubdomain=${CONFIG.shared.crossSubdomainCookie}`);
+
       try {
-        if (name === 'primary') {
-          (win.mixpanel as MixpanelGlobal).init(state.config.token, opts);
-        } else {
+        if (useNamedInstance) {
           (win.mixpanel as MixpanelGlobal).init(state.config.token, opts, name);
+        } else {
+          (win.mixpanel as MixpanelGlobal).init(state.config.token, opts);
         }
         ppLib.log('info', `[ppMixpanel][dbg] initInstance(${name}): mp.init() returned (no throw)`);
       } catch (e) {

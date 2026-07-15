@@ -628,9 +628,12 @@ describe('loadMixpanelSDK()', () => {
     window.ppLib.mixpanel.init();
 
     expect(insertBeforeSpy).not.toHaveBeenCalled();
+    // loadLibrary=false: SDK uses a named 'primary' instance to avoid
+    // colliding with GTM's unnamed default instance.
     expect(mp.init).toHaveBeenCalledWith(
       'external-tok',
       expect.objectContaining({ loaded: expect.any(Function) }),
+      'primary',
     );
   });
 
@@ -675,6 +678,7 @@ describe('loadMixpanelSDK()', () => {
     expect(mp.init).toHaveBeenCalledWith(
       'delayed-tok',
       expect.objectContaining({ loaded: expect.any(Function) }),
+      'primary',
     );
     vi.useRealTimers();
   });
