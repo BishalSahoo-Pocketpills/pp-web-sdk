@@ -237,6 +237,7 @@ import { pollUntil } from '@src/common/retry';
     function onAllLoaded(): void {
       if (allLoadedFired) return;
       allLoadedFired = true;
+      ppLib.log('info', '[ppMixpanel][dbg] onAllLoaded fired — registering shared context, draining pre-init queue');
       // Update session timeout from config (may have been overridden post-init).
       SessionManager.timeout = CONFIG.shared.sessionTimeout;
       // Mint initial session — fans to all enabled-and-ready instances.
@@ -517,6 +518,8 @@ import { pollUntil } from '@src/common/retry';
         onInstanceLoaded(name, mp);
       });
 
+      ppLib.log('info', `[ppMixpanel][dbg] initInstance(${name}): calling mp.init() token=${state.config.token.slice(0, 8)}… persistence=${INSTANCE_BOOT_PROFILE[name].persistence} crossSubdomain=${CONFIG.shared.crossSubdomainCookie}`);
+
       // For primary, mp.init(token, opts) writes to window.mixpanel itself.
       // For secondary, mp.init(token, opts, 'secondary') queues onto the
       // shared stub's `_i[]` and the real SDK creates window.mixpanel.secondary
@@ -527,6 +530,7 @@ import { pollUntil } from '@src/common/retry';
         } else {
           (win.mixpanel as MixpanelGlobal).init(state.config.token, opts, name);
         }
+        ppLib.log('info', `[ppMixpanel][dbg] initInstance(${name}): mp.init() returned (no throw)`);
       } catch (e) {
         ppLib.log('error', M.INIT_FAILED(name), ppLib.safeLogError(e));
       }
@@ -561,6 +565,7 @@ import { pollUntil } from '@src/common/retry';
      * for secondary).
      */
     function onInstanceLoaded(name: InstanceName, mp: MixpanelGlobal): void {
+      ppLib.log('info', `[ppMixpanel][dbg] onInstanceLoaded fired: name=${name} distinct_id=${mp.get_distinct_id ? mp.get_distinct_id() : 'n/a'}`);
       const state = getState(name);
       state.mpRef = mp;
 
@@ -612,7 +617,9 @@ import { pollUntil } from '@src/common/retry';
       // real Mixpanel SDK replays them in order — this loaded callback
       // fires for each instance independently. When the last enabled
       // instance reports ready, fire the shared all-loaded handler.
-      if (allEnabledLoaded()) {
+      const allLoaded = allEnabledLoaded();
+      ppLib.log('info', `[ppMixpanel][dbg] onInstanceLoaded(${name}): allEnabledLoaded=${allLoaded}`);
+      if (allLoaded) {
         clearWatchdog();
         onAllLoaded();
       }
@@ -704,6 +711,17 @@ import { pollUntil } from '@src/common/retry';
 
       // Extracted continuation: runs once window.mixpanel is confirmed present.
       function doInit(): void {
+        const secondaryState = getState('secondary');
+        ppLib.log('info', '[ppMixpanel][dbg] doInit entered', {
+          primary: { enabled: primaryState.enabled, token: primaryState.config.token.slice(0, 8) + '…' },
+          secondary: { enabled: secondaryState.enabled, token: secondaryState.config.token?.slice(0, 8) + '…' },
+          loadLibrary: CONFIG.shared.loadLibrary,
+          crossSubdomainCookie: CONFIG.shared.crossSubdomainCookie,
+          pruneCookies: CONFIG.shared.pruneCookies,
+          winMixpanelType: typeof (win as unknown as { mixpanel?: unknown }).mixpanel,
+          winMixpanelIsStub: !!(win.mixpanel as { _ppStub?: boolean })?._ppStub,
+        });
+
         // Pre-init: read legacy distinct_id BEFORE Mixpanel overwrites the
         // cookie. Primary only — secondary is a fresh project.
         primaryMigrationCtx = readPreInitDistinctId(
@@ -736,9 +754,11 @@ import { pollUntil } from '@src/common/retry';
           // but that tag may not have run yet when the SDK's init() executes.
           // Poll until the stub appears (max 5s) so GTM load-ordering doesn't
           // silently drop the entire Mixpanel init.
+          ppLib.log('info', '[ppMixpanel][dbg] window.mixpanel not present at init() — starting poll (loadLibrary=false, max 5s)');
           pollUntil({
             check: () => {
               if (!(win as unknown as { mixpanel?: unknown }).mixpanel) return false;
+              ppLib.log('info', '[ppMixpanel][dbg] poll found window.mixpanel — calling doInit()');
               doInit();
               return true;
             },
@@ -751,6 +771,7 @@ import { pollUntil } from '@src/common/retry';
         return;
       }
 
+      ppLib.log('info', '[ppMixpanel][dbg] window.mixpanel present at init() — calling doInit() directly');
       doInit();
     }
 
