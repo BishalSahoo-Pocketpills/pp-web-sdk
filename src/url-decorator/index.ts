@@ -101,7 +101,7 @@ import { bootstrapModule } from '@src/common/bootstrap';
     // =====================================================
 
     function isSkippableScheme(href: string): boolean {
-      const lower = href.toLowerCase().trimStart();
+      const lower = href.toLowerCase().replace(/^\s+/, '');
       return lower.startsWith('#') ||
         lower.startsWith('javascript:') ||
         lower.startsWith('mailto:') ||
