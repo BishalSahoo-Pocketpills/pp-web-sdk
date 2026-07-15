@@ -263,6 +263,7 @@ function getOrAdoptMpRef(name: InstanceName): MixpanelGlobal | undefined {
     if (typeof g.mixpanel.track === 'function') {
       state.mpRef = g.mixpanel;
       state.initialized = true;
+      if (pp) pp.log('info', '[ppMixpanel][dbg] getOrAdoptMpRef: adopted window.mixpanel for primary (fallback path — loaded cb not yet fired?)');
       return g.mixpanel;
     }
     return undefined;
@@ -273,6 +274,7 @@ function getOrAdoptMpRef(name: InstanceName): MixpanelGlobal | undefined {
   if (sub && typeof sub.track === 'function') {
     state.mpRef = sub;
     state.initialized = true;
+    if (pp) pp.log('info', `[ppMixpanel][dbg] getOrAdoptMpRef: adopted window.mixpanel.${name} (fallback path)`);
     return sub;
   }
   return undefined;
@@ -317,6 +319,7 @@ export function dispatch(op: MixpanelOp, args: unknown[], options?: DispatchOpti
   // Consent gate — drop silently. No log noise (would fire on every event
   // during a denied session) and no queue growth.
   if (handler.consentGated && pp.consent && !pp.consent.isGranted()) {
+    pp.log('info', `[ppMixpanel][dbg] dispatch(${op}): CONSENT-BLOCKED — pp.consent.isGranted()=false`);
     return false;
   }
 
@@ -336,6 +339,7 @@ export function dispatch(op: MixpanelOp, args: unknown[], options?: DispatchOpti
     // `primary.enabled: false`, alias becomes a silent no-op. Warn so
     // legacy code paths surface instead of failing invisibly.
     if (op === 'alias') pp.log('warn', M.ALIAS_NO_TARGET);
+    pp.log('info', `[ppMixpanel][dbg] dispatch(${op}): targets=[] — no enabled instances`);
     return false;
   }
 
@@ -350,12 +354,18 @@ export function dispatch(op: MixpanelOp, args: unknown[], options?: DispatchOpti
   //     dual-target event until the queue overflows and drops them silently.
   const readyTargets = targets.filter((n) => isReady(n));
   if (readyTargets.length === 0) {
+    const label = op === 'track' ? `${op}(${String(args[0])})` : op;
+    pp.log('info', `[ppMixpanel][dbg] dispatch(${label}): BUFFERED — 0/${targets.length} targets ready [${targets.join(',')}]`);
     return enqueue({ op, args, options: options ? { ...options } : undefined });
   }
   const allowPartial = degraded || (options && options.force);
   if (!allowPartial && readyTargets.length < targets.length) {
+    const label = op === 'track' ? `${op}(${String(args[0])})` : op;
+    pp.log('info', `[ppMixpanel][dbg] dispatch(${label}): BUFFERED — only ${readyTargets.length}/${targets.length} ready, waiting for full parity [${targets.join(',')}]`);
     return enqueue({ op, args, options: options ? { ...options } : undefined });
   }
+  const label = op === 'track' ? `${op}(${String(args[0])})` : op;
+  pp.log('info', `[ppMixpanel][dbg] dispatch(${label}): LIVE → [${readyTargets.join(',')}]`);
 
   // Enrich once, fan out with per-instance try/catch.
   let resolvedArgs = args;
@@ -393,7 +403,9 @@ export function dispatch(op: MixpanelOp, args: unknown[], options?: DispatchOpti
 
 export function drainIfReady(): void {
   if (!pp) return;
-  if (!allEnabledInstancesReady()) return;
+  const ready = allEnabledInstancesReady();
+  pp.log('info', `[ppMixpanel][dbg] drainIfReady: allReady=${ready}`);
+  if (!ready) return;
   const entries = drain();
   if (entries.length === 0) return;
   for (let i = 0; i < entries.length; i++) {
