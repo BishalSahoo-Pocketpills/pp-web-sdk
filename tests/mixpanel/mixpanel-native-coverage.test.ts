@@ -58,10 +58,9 @@ async function freshLoad(configOverrides?: Record<string, any>) {
   // Native import of mixpanel for V8 coverage attribution
   await import('../../src/mixpanel/index.ts');
 
-  // Configure if overrides provided
-  if (configOverrides) {
-    window.ppLib.mixpanel.configure(configOverrides);
-  }
+  // Always enable debug so log utility calls are captured in tests;
+  // merge caller overrides on top so individual tests can still override.
+  window.ppLib.mixpanel.configure({ debug: true, ...configOverrides });
 }
 
 // =========================================================================
