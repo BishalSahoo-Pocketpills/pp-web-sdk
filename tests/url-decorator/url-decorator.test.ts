@@ -12,6 +12,10 @@ function setupMixpanelCookie(data: Record<string, unknown>) {
 
 describe('url-decorator module', () => {
 
+  beforeEach(() => {
+    delete (window as Record<string, unknown>).ppLibConfig;
+  });
+
   // -------------------------------------------------------------------------
   // 1. IIFE bootstrap
   // -------------------------------------------------------------------------
@@ -111,6 +115,20 @@ describe('url-decorator module', () => {
       window.ppLib.urlDecorator!.configure({ params: [{ name: 'x', source: fn }] });
       const c = window.ppLib.urlDecorator!.getConfig();
       expect(c.params[0].source).toBe(fn); // same reference, not JSON-dropped
+    });
+
+    it('window.ppLibConfig.urlDecorator is applied before the on-load scan runs', async () => {
+      document.body.innerHTML = `<a href="https://pocketpills.com/rx">Link</a>`;
+      (window as Record<string, unknown>).ppLibConfig = {
+        urlDecorator: { params: [{ name: 'tracking_id', source: 'mixpanel_device_id' }] },
+      };
+      loadWithCommon('url-decorator');
+      setupMixpanelCookie({ '$device_id': 'dev-abc' });
+      await flushMixpanelReady();
+
+      const href = document.querySelector('a')!.getAttribute('href')!;
+      expect(href).toContain('tracking_id=dev-abc');
+      expect(href).not.toContain('mp_device_id');
     });
 
   });
