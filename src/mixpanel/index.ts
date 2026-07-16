@@ -72,7 +72,7 @@ import {
   syncIdentityFromPrimary,
 } from '@src/mixpanel/identity-sync';
 import { resetQueue } from '@src/mixpanel/pre-init-queue';
-import { DEFAULTS, M } from '@src/mixpanel/messages';
+import { DEFAULTS, M, MIXPANEL_DEFAULT_PERSISTENCE_NAME } from '@src/mixpanel/messages';
 import { pollUntil } from '@src/common/retry';
 
 (function (win: Window & typeof globalThis, doc: Document) {
@@ -502,6 +502,15 @@ import { pollUntil } from '@src/common/retry';
         persistence: profile.persistence,
         loaded,
       };
+      // When loadLibrary=false, primary is forced to a named instance to avoid
+      // double-init collision with GTM's unnamed default. Share its persistence
+      // key (mp_<token>_mixpanel) so the named instance inherits GTM's existing
+      // distinct_id and $device_id rather than starting a fresh session.
+      // User-provided initOptions.persistence_name overrides this default.
+      if (name === 'primary' && CONFIG.shared.loadLibrary === false) {
+        opts.persistence_name = MIXPANEL_DEFAULT_PERSISTENCE_NAME;
+      }
+
       // Per-instance passthrough — empty by default since Simplified ID
       // Merge is a server-side project setting (no client flag needed).
       // Reserved keys (especially `loaded`) are skipped with a loud warn:
