@@ -127,10 +127,22 @@ import { pollUntil } from '@src/common/retry';
     // LOGGER — all calls are silent unless the relevant flag is true
     // =====================================================
 
-    function log(msg: string): void { if (CONFIG.shared.debug) ppLib.log('info', msg); }
-    function warn(msg: string): void { if (CONFIG.shared.debug) ppLib.log('warn', msg); }
-    function error(msg: string): void { if (CONFIG.shared.debug) ppLib.log('error', msg); }
-    function debug(msg: string): void { if (CONFIG.shared.debug) ppLib.log('verbose', msg); }
+    function log(msg: string, data?: unknown): void {
+      if (!CONFIG.shared.debug) return;
+      if (data !== undefined) ppLib.log('info', msg, data); else ppLib.log('info', msg);
+    }
+    function warn(msg: string, data?: unknown): void {
+      if (!CONFIG.shared.debug) return;
+      if (data !== undefined) ppLib.log('warn', msg, data); else ppLib.log('warn', msg);
+    }
+    function error(msg: string, data?: unknown): void {
+      if (!CONFIG.shared.debug) return;
+      if (data !== undefined) ppLib.log('error', msg, data); else ppLib.log('error', msg);
+    }
+    function debug(msg: string, data?: unknown): void {
+      if (!CONFIG.shared.debug) return;
+      if (data !== undefined) ppLib.log('verbose', msg, data); else ppLib.log('verbose', msg);
+    }
     function warnTimeout(msg: string): void { if (CONFIG.shared.warnOnPollTimeout) ppLib.log('warn', msg); }
 
     // =====================================================
@@ -185,6 +197,9 @@ import { pollUntil } from '@src/common/retry';
       if ('initLibrary' in legacy) shared.initLibrary = legacy.initLibrary as boolean;
       if ('autoPageView' in legacy) shared.autoPageView = legacy.autoPageView as boolean;
       if ('pruneCookies' in legacy) shared.pruneCookies = legacy.pruneCookies as boolean;
+      if ('debug' in legacy) shared.debug = legacy.debug as boolean;
+      if ('warnOnPollTimeout' in legacy)
+        shared.warnOnPollTimeout = legacy.warnOnPollTimeout as boolean;
 
       if (Object.keys(primary).length > 0) slice.primary = primary;
       if (Object.keys(shared).length > 0) slice.shared = shared;
@@ -251,7 +266,7 @@ import { pollUntil } from '@src/common/retry';
     function onAllLoaded(): void {
       if (allLoadedFired) return;
       allLoadedFired = true;
-      ppLib.log('info', '[ppMixpanel][dbg] onAllLoaded fired — registering shared context, draining pre-init queue');
+      log('[ppMixpanel] onAllLoaded fired — registering shared context, draining pre-init queue');
       // Update session timeout from config (may have been overridden post-init).
       SessionManager.timeout = CONFIG.shared.sessionTimeout;
       // Mint initial session — fans to all enabled-and-ready instances.
@@ -310,7 +325,7 @@ import { pollUntil } from '@src/common/retry';
         }
       });
 
-      ppLib.log('info', M.INITIALIZED_SUCCESSFULLY);
+      log(M.INITIALIZED_SUCCESSFULLY);
     }
 
     /**
@@ -360,10 +375,10 @@ import { pollUntil } from '@src/common/retry';
           // differ are stale and eligible for deletion.
           if (m[1] === primaryToken) continue;
           expireMixpanelCookieAllScopes(name);
-          ppLib.log('info', M.MP_COOKIE_PRUNED(name));
+          log(M.MP_COOKIE_PRUNED(name));
         }
       } catch (e) {
-        ppLib.log('warn', M.MP_COOKIE_PRUNE_FAILED, ppLib.safeLogError(e));
+        warn(M.MP_COOKIE_PRUNE_FAILED, ppLib.safeLogError(e));
       }
     }
 
@@ -407,13 +422,10 @@ import { pollUntil } from '@src/common/retry';
           total: DEFAULTS.COOKIE_WARN_TOTAL_BYTES,
         };
         if (primaryBytes > limits.primary || totalBytes > limits.total) {
-          ppLib.log(
-            'warn',
-            M.COOKIE_SIZE_WARN(primaryBytes, totalBytes, limits.primary, limits.total),
-          );
+          warn(M.COOKIE_SIZE_WARN(primaryBytes, totalBytes, limits.primary, limits.total));
         }
       } catch (e) {
-        ppLib.log('warn', M.COOKIE_SIZE_REPORT_FAILED, ppLib.safeLogError(e));
+        warn(M.COOKIE_SIZE_REPORT_FAILED, ppLib.safeLogError(e));
       }
     }
 
@@ -438,7 +450,7 @@ import { pollUntil } from '@src/common/retry';
         }
         document.cookie = `${name}=; expires=${expired}; path=/`;
       } catch (e) {
-        ppLib.log('warn', 'deleteLegacyPpDeviceIdCookie failed', ppLib.safeLogError(e));
+        warn('deleteLegacyPpDeviceIdCookie failed', ppLib.safeLogError(e));
       }
     }
 
@@ -521,7 +533,7 @@ import { pollUntil } from '@src/common/retry';
         for (let i = 0; i < keys.length; i++) {
           const k = keys[i];
           if (RESERVED_INIT_OPTS.indexOf(k) >= 0) {
-            ppLib.log('warn', M.INIT_OPT_RESERVED(k));
+            warn(M.INIT_OPT_RESERVED(k));
             continue;
           }
           opts[k] = instanceCfg.initOptions[k];
@@ -551,7 +563,7 @@ import { pollUntil } from '@src/common/retry';
       // separate slot with no shared internal state — both inits succeed.
       const useNamedInstance = name !== 'primary' || CONFIG.shared.loadLibrary === false;
 
-      ppLib.log('info', `[ppMixpanel][dbg] initInstance(${name}): calling mp.init() token=${state.config.token.slice(0, 8)}… instanceName=${useNamedInstance ? name : '(default)'} persistence=${INSTANCE_BOOT_PROFILE[name].persistence} crossSubdomain=${CONFIG.shared.crossSubdomainCookie}`);
+      log(`[ppMixpanel] initInstance(${name}): calling mp.init() token=${state.config.token.slice(0, 8)}… instanceName=${useNamedInstance ? name : '(default)'} persistence=${INSTANCE_BOOT_PROFILE[name].persistence} crossSubdomain=${CONFIG.shared.crossSubdomainCookie}`);
 
       try {
         if (useNamedInstance) {
@@ -559,9 +571,9 @@ import { pollUntil } from '@src/common/retry';
         } else {
           (win.mixpanel as MixpanelGlobal).init(state.config.token, opts);
         }
-        ppLib.log('info', `[ppMixpanel][dbg] initInstance(${name}): mp.init() returned (no throw)`);
+        log(`[ppMixpanel] initInstance(${name}): mp.init() returned (no throw)`);
       } catch (e) {
-        ppLib.log('error', M.INIT_FAILED(name), ppLib.safeLogError(e));
+        error(M.INIT_FAILED(name), ppLib.safeLogError(e));
       }
     }
 
@@ -580,7 +592,7 @@ import { pollUntil } from '@src/common/retry';
           mp.opt_in_tracking();
         } else if (!granted) {
           mp.opt_out_tracking();
-          ppLib.log('info', '[ppMixpanel] consent denied — ' + name + ' opted out of native tracking');
+          log('[ppMixpanel] consent denied — ' + name + ' opted out of native tracking');
         }
       } catch (_e) {
         /* legacy mock may not implement opt_in/opt_out — non-fatal */
@@ -594,7 +606,7 @@ import { pollUntil } from '@src/common/retry';
      * for secondary).
      */
     function onInstanceLoaded(name: InstanceName, mp: MixpanelGlobal): void {
-      ppLib.log('info', `[ppMixpanel][dbg] onInstanceLoaded fired: name=${name} distinct_id=${mp.get_distinct_id ? mp.get_distinct_id() : 'n/a'}`);
+      log(`[ppMixpanel] onInstanceLoaded fired: name=${name} distinct_id=${mp.get_distinct_id ? mp.get_distinct_id() : 'n/a'}`);
       const state = getState(name);
       state.mpRef = mp;
 
@@ -640,14 +652,14 @@ import { pollUntil } from '@src/common/retry';
       }
 
       state.initialized = true;
-      ppLib.log('info', M.INSTANCE_LOADED(name));
+      log(M.INSTANCE_LOADED(name));
 
       // Both inits were queued against the stub upfront (initAll), so the
       // real Mixpanel SDK replays them in order — this loaded callback
       // fires for each instance independently. When the last enabled
       // instance reports ready, fire the shared all-loaded handler.
       const allLoaded = allEnabledLoaded();
-      ppLib.log('info', `[ppMixpanel][dbg] onInstanceLoaded(${name}): allEnabledLoaded=${allLoaded}`);
+      log(`[ppMixpanel] onInstanceLoaded(${name}): allEnabledLoaded=${allLoaded}`);
       if (allLoaded) {
         clearWatchdog();
         onAllLoaded();
@@ -682,7 +694,7 @@ import { pollUntil } from '@src/common/retry';
       /*! v8 ignore start */
       if (!primaryState.enabled) {
       /*! v8 ignore stop */
-        ppLib.log('info', M.MODULE_DISABLED);
+        log(M.MODULE_DISABLED);
         return;
       }
 
@@ -701,7 +713,7 @@ import { pollUntil } from '@src/common/retry';
       /*! v8 ignore start */
       if (!primaryState.config.token) {
       /*! v8 ignore stop */
-        ppLib.log('warn', M.NO_TOKEN);
+        warn(M.NO_TOKEN);
         return;
       }
 
@@ -718,7 +730,7 @@ import { pollUntil } from '@src/common/retry';
         secondaryState.config.token &&
         secondaryState.config.token === primaryState.config.token
       ) {
-        ppLib.log('error', M.TOKEN_EQUAL_REJECT);
+        error(M.TOKEN_EQUAL_REJECT);
         secondaryState.enabled = false;
         CONFIG.secondary.enabled = false;
       }
@@ -763,11 +775,11 @@ import { pollUntil } from '@src/common/retry';
         }
 
         if (!mp || typeof mp.track !== 'function') {
-          ppLib.log('warn', M.INIT_LIBRARY_ADOPT_MISSING(name));
+          warn(M.INIT_LIBRARY_ADOPT_MISSING(name));
           return false;
         }
 
-        ppLib.log('info', `[ppMixpanel][dbg] adoptExternalInstance(${name}): adopting existing window.mixpanel${name !== 'primary' ? '.' + name : ''}`);
+        log(`[ppMixpanel] adoptExternalInstance(${name}): adopting existing window.mixpanel${name !== 'primary' ? '.' + name : ''}`);
         onInstanceLoaded(name, mp);
         return true;
       }
@@ -775,7 +787,7 @@ import { pollUntil } from '@src/common/retry';
       // Extracted continuation: runs once window.mixpanel is confirmed present.
       function doInit(): void {
         const secondaryState = getState('secondary');
-        ppLib.log('info', '[ppMixpanel][dbg] doInit entered', {
+        log('[ppMixpanel] doInit entered', {
           primary: { enabled: primaryState.enabled, token: primaryState.config.token.slice(0, 8) + '…' },
           secondary: { enabled: secondaryState.enabled, token: secondaryState.config.token?.slice(0, 8) + '…' },
           loadLibrary: CONFIG.shared.loadLibrary,
@@ -918,16 +930,16 @@ import { pollUntil } from '@src/common/retry';
 
         if (stuck.length > 0) {
           if (dispatched > 0) {
-            ppLib.log('warn', M.WATCHDOG_FORCE_DRAIN(stuckNames, dispatched));
+            warn(M.WATCHDOG_FORCE_DRAIN(stuckNames, dispatched));
           } else if (remaining > 0) {
             // Nothing was ready; entries got re-buffered. Be explicit so
             // the operator doesn't read "watchdog fired" and assume drain
             // happened.
-            ppLib.log('warn', M.WATCHDOG_NO_READY(stuckNames));
+            warn(M.WATCHDOG_NO_READY(stuckNames));
           } else {
             // No buffered entries at all — stuck but idle. Still surface
             // the load failure so observability picks it up.
-            ppLib.log('warn', M.WATCHDOG_FORCE_DRAIN(stuckNames, 0));
+            warn(M.WATCHDOG_FORCE_DRAIN(stuckNames, 0));
           }
         }
 
@@ -1070,7 +1082,7 @@ import { pollUntil } from '@src/common/retry';
           }
         });
       } catch (e) {
-        ppLib.log('error', 'getMixpanelCookieData error', ppLib.safeLogError(e));
+        error('getMixpanelCookieData error', ppLib.safeLogError(e));
       }
       return mixpanelData;
     }
