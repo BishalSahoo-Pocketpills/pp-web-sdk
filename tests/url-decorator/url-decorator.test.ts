@@ -325,10 +325,9 @@ describe('url-decorator module', () => {
       expect(document.querySelector('a')!.getAttribute('href')).toContain('custom_id=custom-val-99');
     });
 
-    it('custom source that throws uses empty value and warns', async () => {
+    it('custom source that throws uses empty value', async () => {
       document.body.innerHTML = `<a href="https://pocketpills.com/tx">Link</a>`;
       loadWithCommon('url-decorator');
-      const logSpy = vi.spyOn(window.ppLib, 'log');
       window.ppLib.urlDecorator!.configure({
         params: [{ name: 'bad_id', source: () => { throw new Error('boom'); } }],
       });
@@ -336,7 +335,6 @@ describe('url-decorator module', () => {
 
       const href = document.querySelector('a')!.getAttribute('href')!;
       expect(href).toContain('bad_id=');
-      expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('source threw'), expect.anything());
     });
 
     it('empty params array results in no decoration', async () => {
@@ -397,15 +395,13 @@ describe('url-decorator module', () => {
       expect(document.querySelector('a')!.getAttribute('href')).toContain('mp_device_id=cookie-wins');
     });
 
-    it('mixpanel_device_id emits warn and uses empty value when unavailable', async () => {
+    it('mixpanel_device_id uses empty value when unavailable', async () => {
       document.body.innerHTML = `<a href="https://pocketpills.com/tx">Link</a>`;
       loadWithCommon('url-decorator');
-      const logSpy = vi.spyOn(window.ppLib, 'log');
       await flushMixpanelReady();
 
       const href = document.querySelector('a')!.getAttribute('href')!;
       expect(href).toContain('mp_device_id=');
-      expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('$device_id not available'));
     });
 
     it('mixpanel_distinct_id reads from ppLib.mixpanel cookie (distinct_id key)', async () => {

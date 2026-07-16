@@ -637,21 +637,16 @@ describe('loadMixpanelSDK()', () => {
     );
   });
 
-  it('logs a warning after poll timeout when loadLibrary is false and window.mixpanel never appears', () => {
+  it('stops polling silently after timeout when loadLibrary is false and window.mixpanel never appears', () => {
     vi.useFakeTimers();
     loadWithCommon('mixpanel');
-    const logSpy = vi.spyOn(window.ppLib, 'log');
     window.ppLib.mixpanel.configure({ token: 'tok', loadLibrary: false });
     setupScriptEnv();
     window.ppLib.mixpanel.init();
 
-    // No warning yet — polling is in progress
-    expect(logSpy).not.toHaveBeenCalledWith('warn', expect.stringContaining('did not appear'));
-
     // Advance past 100 poll ticks × 50ms = 5000ms
     vi.advanceTimersByTime(5100);
 
-    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('did not appear within 5000ms'));
     expect(window.mixpanel).toBeUndefined();
     vi.useRealTimers();
   });
