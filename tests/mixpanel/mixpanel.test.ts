@@ -158,9 +158,9 @@ describe('enabled flag', () => {
 
   it('skips initialization when enabled is false', () => {
     loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ enabled: false, token: 'test-token', debug: true });
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
-    window.ppLib.mixpanel.configure({ enabled: false, token: 'test-token' });
     setupScriptEnv();
     window.ppLib.mixpanel.init();
 
@@ -1191,7 +1191,7 @@ describe('getMixpanelCookieData()', () => {
 
   it('logs error and returns empty object on exception', () => {
     loadWithCommon('mixpanel');
-    window.ppLib.config.debug = true;
+    window.ppLib.mixpanel.configure({ debug: true });
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
     const originalCookieDescriptor =
@@ -1199,22 +1199,22 @@ describe('getMixpanelCookieData()', () => {
       Object.getOwnPropertyDescriptor(document, 'cookie');
 
     Object.defineProperty(document, 'cookie', {
-      get() {
-        throw new Error('cookie access denied');
-      },
+      get() { throw new Error('cookie access denied'); },
       configurable: true,
     });
 
-    const result = window.ppLib.mixpanel.getMixpanelCookieData();
-    expect(result).toEqual({});
-    expect(logSpy).toHaveBeenCalledWith(
-      'error',
-      'getMixpanelCookieData error',
-      expect.objectContaining({ errorClass: expect.any(String) })
-    );
-
-    if (originalCookieDescriptor) {
-      Object.defineProperty(document, 'cookie', originalCookieDescriptor);
+    try {
+      const result = window.ppLib.mixpanel.getMixpanelCookieData();
+      expect(result).toEqual({});
+      expect(logSpy).toHaveBeenCalledWith(
+        'error',
+        'getMixpanelCookieData error',
+        expect.objectContaining({ errorClass: expect.any(String) })
+      );
+    } finally {
+      if (originalCookieDescriptor) {
+        Object.defineProperty(document, 'cookie', originalCookieDescriptor);
+      }
     }
   });
 });
@@ -1229,7 +1229,7 @@ describe('initMixpanel()', () => {
 
   it('warns and returns early if no token is configured', () => {
     loadWithCommon('mixpanel');
-    window.ppLib.config.debug = true;
+    window.ppLib.mixpanel.configure({ debug: true });
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
     window.ppLib.mixpanel.init();
@@ -1675,8 +1675,7 @@ describe('loaded callback', () => {
 
   it('logs success message', () => {
     loadWithCommon('mixpanel');
-    window.ppLib.config.debug = true;
-    window.ppLib.mixpanel.configure({ token: 'tok' });
+    window.ppLib.mixpanel.configure({ token: 'tok', debug: true });
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
     setupScriptEnv();
@@ -1996,14 +1995,26 @@ describe('Integration / Edge Cases', () => {
     expect(secondCallCount).toBe(firstCallCount);
   });
 
-  it('module logs info message on load', () => {
+  it('module installs ppLib.mixpanel API on load', () => {
     loadModule('common');
-    window.ppLib.config.debug = true;
-    const logSpy = vi.spyOn(window.ppLib, 'log');
-
     loadModule('mixpanel');
 
-    expect(logSpy).toHaveBeenCalledWith('info', '[ppMixpanel] Module loaded');
+    expect(typeof window.ppLib.mixpanel.configure).toBe('function');
+    expect(typeof window.ppLib.mixpanel.init).toBe('function');
+  });
+
+  it('logs INITIALIZED_SUCCESSFULLY when debug is enabled', () => {
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'tok', debug: true });
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    const loadedCb = (window.mixpanel as { _i: [string, { loaded: (mp: unknown) => void }, string][] })._i[0][1].loaded;
+    invokeLoadedCallback(loadedCb, createMockMixpanel());
+
+    expect(logSpy).toHaveBeenCalledWith('info', '[ppMixpanel] Initialized successfully');
   });
 
   // =========================================================================

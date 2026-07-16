@@ -93,6 +93,7 @@ describe('M4 — token-equality guard', () => {
     const logSpy = vi.spyOn((window as any).ppLib, 'log');
 
     api.configure({
+      shared: { debug: true },
       primary: { enabled: true, token: 'same-tok' },
       secondary: { enabled: true, token: 'same-tok' },
     });

@@ -103,6 +103,7 @@ describe('H3 — initOptions reserved-key denylist', () => {
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
     window.ppLib.mixpanel.configure({
+      shared: { debug: true },
       primary: {
         enabled: true,
         token: 'primary-tok',
@@ -137,6 +138,7 @@ describe('H3 — initOptions reserved-key denylist', () => {
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
     window.ppLib.mixpanel.configure({
+      shared: { debug: true },
       primary: {
         enabled: true,
         token: 'primary-tok',
@@ -184,6 +186,7 @@ describe('H3 — initOptions reserved-key denylist', () => {
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
     window.ppLib.mixpanel.configure({
+      shared: { debug: true },
       primary: { enabled: true, token: 'p', initOptions: { loaded: vi.fn() } },
       secondary: { enabled: true, token: 's', initOptions: { loaded: vi.fn() } },
     });
@@ -334,7 +337,7 @@ describe('Cookie-size telemetry', () => {
     loadWithCommon('mixpanel');
     window.ppLib.mixpanel.configure({
       primary: { enabled: true, token: primaryToken },
-      ...(shared ? { shared } : {}),
+      shared: { debug: true, ...shared },
     });
     setupScriptEnv();
     window.ppLib.mixpanel.init();
@@ -376,6 +379,7 @@ describe('H4 — watchdog force-drain to ready instances', () => {
     loadWithCommon('mixpanel');
 
     window.ppLib.mixpanel.configure({
+      shared: { debug: true },
       primary: { enabled: true, token: 'p' },
       secondary: { enabled: true, token: 's' },
     });
@@ -444,6 +448,7 @@ describe('H4 — watchdog force-drain to ready instances', () => {
     loadWithCommon('mixpanel');
 
     window.ppLib.mixpanel.configure({
+      shared: { debug: true },
       primary: { enabled: true, token: 'p' },
       secondary: { enabled: true, token: 's' },
     });
