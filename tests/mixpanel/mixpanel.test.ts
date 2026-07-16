@@ -1,6 +1,7 @@
 import { loadModule, loadWithCommon } from '../helpers/iife-loader.ts';
 import { setCookie } from '../helpers/mock-cookies.ts';
 import { createMockMixpanel } from '../helpers/mock-mixpanel.ts';
+import { MIXPANEL_DEFAULT_PERSISTENCE_NAME } from '@src/mixpanel/messages';
 
 // =========================================================================
 // Helper: ensure a <script> tag exists so getElementsByTagName('script')[0]
@@ -629,10 +630,11 @@ describe('loadMixpanelSDK()', () => {
 
     expect(insertBeforeSpy).not.toHaveBeenCalled();
     // loadLibrary=false: SDK uses a named 'primary' instance to avoid
-    // colliding with GTM's unnamed default instance.
+    // colliding with GTM's unnamed default instance, but shares its
+    // persistence key (mp_<token>_mixpanel) to preserve the GTM session.
     expect(mp.init).toHaveBeenCalledWith(
       'external-tok',
-      expect.objectContaining({ loaded: expect.any(Function) }),
+      expect.objectContaining({ loaded: expect.any(Function), persistence_name: MIXPANEL_DEFAULT_PERSISTENCE_NAME }),
       'primary',
     );
   });
@@ -672,10 +674,25 @@ describe('loadMixpanelSDK()', () => {
 
     expect(mp.init).toHaveBeenCalledWith(
       'delayed-tok',
-      expect.objectContaining({ loaded: expect.any(Function) }),
+      expect.objectContaining({ loaded: expect.any(Function), persistence_name: MIXPANEL_DEFAULT_PERSISTENCE_NAME }),
       'primary',
     );
     vi.useRealTimers();
+  });
+
+  it('loadLibrary: false passes persistence_name="mixpanel" so the named instance shares GTM\'s session cookie', () => {
+    const mp = createMockMixpanel();
+    window.mixpanel = mp;
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'gtm-tok', loadLibrary: false });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    // The named 'primary' instance must share mp_<token>_mixpanel — the same
+    // cookie GTM writes — so it picks up the existing distinct_id and $device_id
+    // instead of starting a fresh anonymous session.
+    const [, opts] = (mp.init as ReturnType<typeof vi.fn>).mock.calls[0] as [unknown, Record<string, unknown>, unknown];
+    expect(opts.persistence_name).toBe(MIXPANEL_DEFAULT_PERSISTENCE_NAME);
   });
 
   it('loadLibrary: false propagates to shared config via legacy shim', () => {
