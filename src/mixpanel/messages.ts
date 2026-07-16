@@ -94,6 +94,14 @@ export const M = {
 } as const;
 
 // ---- Magic-string constants outside the log domain ----
+
+/** Mixpanel's default persistence name — the suffix after `mp_<token>_` in the
+ *  cookie name for the unnamed (default) instance. Named instances use their
+ *  own name as the suffix (e.g. `mp_<token>_primary_mixpanel`). When the SDK
+ *  creates a named 'primary' instance under loadLibrary=false it passes this as
+ *  `persistence_name` so the named instance shares the GTM session cookie. */
+export const MIXPANEL_DEFAULT_PERSISTENCE_NAME = 'mixpanel';
+
 export const COOKIE_KEYS = {
   /** Per-token sessionStorage flag set after subdomain → parent migration
    *  ran for that token. Suffixed key avoids primary/secondary state sharing. */
@@ -102,7 +110,7 @@ export const COOKIE_KEYS = {
    *  mid-rollout don't re-trigger migration. */
   LEGACY_MIGRATION_FLAG: 'pp_mp_migrated',
   /** Mixpanel SDK's cookie name format. The SDK writes one per token. */
-  MP_COOKIE: (token: string): string => `mp_${token}_mixpanel`,
+  MP_COOKIE: (token: string): string => `mp_${token}_${MIXPANEL_DEFAULT_PERSISTENCE_NAME}`,
   /** Persisted VWO experiment props (read by the VWO bridge). */
   VWO_PROPS: 'pp_vwo_exp_props',
 } as const;
