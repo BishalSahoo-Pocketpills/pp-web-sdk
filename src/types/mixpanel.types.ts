@@ -181,6 +181,10 @@ export interface SharedMixpanelConfig extends SdkSecurityOptions {
    * Defaults to true (sweep is active).
    */
   pruneCookies: boolean;
+  /** When true, emits diagnostic log messages during SDK initialisation. Default: false. */
+  debug: boolean;
+  /** When true, logs a console warning if window.mixpanel is not ready within the poll window. Default: false. */
+  warnOnPollTimeout: boolean;
 }
 
 export interface DualMixpanelConfig {
@@ -213,6 +217,8 @@ export interface MixpanelConfig extends SdkSecurityOptions {
   initLibrary: boolean;
   autoPageView: boolean;
   pruneCookies: boolean;
+  debug: boolean;
+  warnOnPollTimeout: boolean;
 }
 
 export interface SessionManager {

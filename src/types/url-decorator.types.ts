@@ -33,6 +33,8 @@ export interface ParamEntry {
 export interface UrlDecoratorConfig {
   /** Master on/off switch for the whole module. Default: true. */
   enabled: boolean;
+  /** When true, all module log calls are emitted. Default: false. */
+  debug: boolean;
   /**
    * Global allowlist of domain suffixes. Used as the fallback for params that
    * do not define their own allowlist. Only URLs whose hostname equals one of

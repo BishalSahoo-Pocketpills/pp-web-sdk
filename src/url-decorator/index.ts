@@ -17,16 +17,26 @@ import { bootstrapModule } from '@src/common/bootstrap';
   'use strict';
 
   function initModule(ppLib: PPLib) {
-    // const PREFIX = '[ppUrlDecorator]';
+    const PREFIX = '[ppUrlDecorator]';
 
     const CONFIG: UrlDecoratorConfig = {
       enabled: true,
+      debug: false,
       allowlist: ['pocketpills.com', 'pocketpills.info'],
       params: [{ name: 'mp_device_id', source: 'mixpanel_device_id' }],
       decorateOnLoad: true,
       decorateOnClick: true,
       watchMutations: true,
     };
+
+    // =====================================================
+    // LOGGER — all calls are silent unless CONFIG.debug is true
+    // =====================================================
+
+    function log(msg: string): void { if (CONFIG.debug) ppLib.log('info', msg); }
+    function warn(msg: string, data?: unknown): void { if (CONFIG.debug) ppLib.log('warn', msg, data); }
+    function error(msg: string, data?: unknown): void { if (CONFIG.debug) ppLib.log('error', msg, data); }
+    function debug(msg: string): void { if (CONFIG.debug) ppLib.log('verbose', msg); }
 
     // =====================================================
     // BUILT-IN SOURCES
@@ -54,7 +64,7 @@ import { bootstrapModule } from '@src/common/bootstrap';
       if (typeof cookieVal === 'string' && cookieVal) return cookieVal;
       const liveVal = readFromMpInstance('$device_id');
       if (liveVal) return liveVal;
-      // ppLib.log('warn', PREFIX + ' mixpanel_device_id: $device_id not available; using empty value');
+      warn(PREFIX + ' mixpanel_device_id: $device_id not available; using empty value');
       return '';
     }
 
@@ -75,7 +85,7 @@ import { bootstrapModule } from '@src/common/bootstrap';
           if (typeof val === 'string' && val) return val;
         }
       }
-      // ppLib.log('warn', PREFIX + ' mixpanel_distinct_id: distinct_id not available; using empty value');
+      warn(PREFIX + ' mixpanel_distinct_id: distinct_id not available; using empty value');
       return '';
     }
 
@@ -86,13 +96,13 @@ import { bootstrapModule } from '@src/common/bootstrap';
           const val = source();
           return typeof val === 'string' ? val : '';
         } catch (e) {
-          // ppLib.log('warn', PREFIX + ' param "' + param.name + '" source threw; using empty value', ppLib.safeLogError(e));
+          warn(PREFIX + ' param "' + param.name + '" source threw; using empty value', ppLib.safeLogError(e));
           return '';
         }
       }
       if (source === 'mixpanel_device_id') return getMixpanelDeviceId();
       if (source === 'mixpanel_distinct_id') return getMixpanelDistinctId();
-      // ppLib.log('warn', PREFIX + ' unknown source "' + source + '" for param "' + param.name + '"; using empty value');
+      warn(PREFIX + ' unknown source "' + source + '" for param "' + param.name + '"; using empty value');
       return '';
     }
 
@@ -146,9 +156,9 @@ import { bootstrapModule } from '@src/common/bootstrap';
       try {
         const links = doc.querySelectorAll<HTMLAnchorElement>('a[href]');
         links.forEach(function(link) { decorateLink(link); });
-        // ppLib.log('verbose', PREFIX + ' Scan complete — ' + links.length + ' link(s) processed');
+        debug(PREFIX + ' Scan complete — ' + links.length + ' link(s) processed');
       } catch (e) {
-        // ppLib.log('error', PREFIX + ' scanAndDecorate error', ppLib.safeLogError(e));
+        error(PREFIX + ' scanAndDecorate error', ppLib.safeLogError(e));
       }
     }
 
@@ -207,7 +217,7 @@ import { bootstrapModule } from '@src/common/bootstrap';
         startMutationObserver();
       });
 
-      // ppLib.log('info', PREFIX + ' Initialized');
+      log(PREFIX + ' Initialized');
     }
 
     // =====================================================
@@ -217,6 +227,7 @@ import { bootstrapModule } from '@src/common/bootstrap';
     function cloneConfigForRead(): UrlDecoratorConfig {
       return {
         enabled: CONFIG.enabled,
+        debug: CONFIG.debug,
         allowlist: [...CONFIG.allowlist],
         decorateOnLoad: CONFIG.decorateOnLoad,
         decorateOnClick: CONFIG.decorateOnClick,
@@ -244,7 +255,7 @@ import { bootstrapModule } from '@src/common/bootstrap';
       getConfig: cloneConfigForRead,
     };
 
-    // ppLib.log('info', PREFIX + ' Module loaded');
+    log(PREFIX + ' Module loaded');
 
     /*! v8 ignore start — boot ordering duplicates handled by bootstrapModule */
     if (!ppLib._udBound) {
