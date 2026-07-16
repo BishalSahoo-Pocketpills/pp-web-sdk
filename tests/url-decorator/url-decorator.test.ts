@@ -325,7 +325,7 @@ describe('url-decorator module', () => {
       expect(document.querySelector('a')!.getAttribute('href')).toContain('custom_id=custom-val-99');
     });
 
-    it('custom source that throws uses empty value', async () => {
+    it('custom source that throws skips the param (no empty value appended)', async () => {
       document.body.innerHTML = `<a href="https://pocketpills.com/tx">Link</a>`;
       loadWithCommon('url-decorator');
       window.ppLib.urlDecorator!.configure({
@@ -333,8 +333,7 @@ describe('url-decorator module', () => {
       });
       await flushMixpanelReady();
 
-      const href = document.querySelector('a')!.getAttribute('href')!;
-      expect(href).toContain('bad_id=');
+      expect(document.querySelector('a')!.getAttribute('href')).toBe('https://pocketpills.com/tx');
     });
 
     it('empty params array results in no decoration', async () => {
@@ -395,13 +394,27 @@ describe('url-decorator module', () => {
       expect(document.querySelector('a')!.getAttribute('href')).toContain('mp_device_id=cookie-wins');
     });
 
-    it('mixpanel_device_id uses empty value when unavailable', async () => {
+    it('skips decoration when device_id is unavailable at scan time (no empty param appended)', async () => {
       document.body.innerHTML = `<a href="https://pocketpills.com/tx">Link</a>`;
       loadWithCommon('url-decorator');
       await flushMixpanelReady();
 
-      const href = document.querySelector('a')!.getAttribute('href')!;
-      expect(href).toContain('mp_device_id=');
+      expect(document.querySelector('a')!.getAttribute('href')).toBe('https://pocketpills.com/tx');
+    });
+
+    it('click handler decorates correctly when device_id becomes available after scan (Chrome timing)', async () => {
+      document.body.innerHTML = `<a href="https://pocketpills.com/tx">Click me</a>`;
+      loadWithCommon('url-decorator');
+      // No device_id at scan time — link stays undecorated
+      await flushMixpanelReady();
+      expect(document.querySelector('a')!.getAttribute('href')).toBe('https://pocketpills.com/tx');
+
+      // Mixpanel sets device_id later (e.g. after GTM finishes)
+      setupMixpanelCookie({ '$device_id': 'late-device-id' });
+
+      // User clicks — click handler fires and decorates with the now-available value
+      document.querySelector('a')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(document.querySelector('a')!.getAttribute('href')).toContain('mp_device_id=late-device-id');
     });
 
     it('mixpanel_distinct_id reads from ppLib.mixpanel cookie (distinct_id key)', async () => {
