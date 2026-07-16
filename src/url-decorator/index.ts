@@ -257,6 +257,11 @@ import { bootstrapModule } from '@src/common/bootstrap';
       getConfig: cloneConfigForRead,
     };
 
+    // Apply any config pre-seeded via window.ppLibConfig.urlDecorator before
+    // the first init() call so the on-load scan uses the caller-provided names.
+    const ppLibConfig = (win as { ppLibConfig?: { urlDecorator?: DeepPartial<UrlDecoratorConfig> } }).ppLibConfig;
+    if (ppLibConfig?.urlDecorator) ppLib.extend(CONFIG, ppLibConfig.urlDecorator);
+
     log(PREFIX + ' Module loaded');
 
     /*! v8 ignore start — boot ordering duplicates handled by bootstrapModule */
