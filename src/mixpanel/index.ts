@@ -118,8 +118,20 @@ import { pollUntil } from '@src/common/retry';
         initLibrary: true,
         autoPageView: true,
         pruneCookies: true,
+        debug: false,
+        warnOnPollTimeout: false,
       },
     };
+
+    // =====================================================
+    // LOGGER — all calls are silent unless the relevant flag is true
+    // =====================================================
+
+    function log(msg: string): void { if (CONFIG.shared.debug) ppLib.log('info', msg); }
+    function warn(msg: string): void { if (CONFIG.shared.debug) ppLib.log('warn', msg); }
+    function error(msg: string): void { if (CONFIG.shared.debug) ppLib.log('error', msg); }
+    function debug(msg: string): void { if (CONFIG.shared.debug) ppLib.log('verbose', msg); }
+    function warnTimeout(msg: string): void { if (CONFIG.shared.warnOnPollTimeout) ppLib.log('warn', msg); }
 
     // =====================================================
     // CONFIG SHIM — legacy MixpanelConfig (flat) → DualMixpanelConfig
@@ -807,7 +819,7 @@ import { pollUntil } from '@src/common/retry';
 
       if (!win.mixpanel) {
         if (needsPoll) {
-          // ppLib.log('info', `[ppMixpanel][dbg] window.mixpanel not present at init() — starting poll (loadLibrary=${CONFIG.shared.loadLibrary} initLibrary=${CONFIG.shared.initLibrary}, max 5s)`);
+          log(`[ppMixpanel] window.mixpanel not present at init() — starting poll (loadLibrary=${CONFIG.shared.loadLibrary} initLibrary=${CONFIG.shared.initLibrary}, max 5s)`);
           pollUntil({
             check: () => {
               const mp = (win as unknown as { mixpanel?: unknown }).mixpanel;
@@ -821,17 +833,17 @@ import { pollUntil } from '@src/common/retry';
                 if (typeof mpRef.get_config !== 'function') return false;
                 if (!mpRef.get_config()?.token) return false;
               }
-              // ppLib.log('info', '[ppMixpanel][dbg] poll found window.mixpanel — calling doInit()');
+              log('[ppMixpanel] poll found window.mixpanel — calling doInit()');
               doInit();
               return true;
             },
             intervalMs: DEFAULTS.LOAD_LIBRARY_POLL_INTERVAL_MS,
             maxAttempts: DEFAULTS.LOAD_LIBRARY_POLL_MAX_ATTEMPTS,
-            // onMaxAttempts: () => ppLib.log('warn',
-            //   CONFIG.shared.initLibrary === false
-            //     ? M.INIT_LIBRARY_POLL_TIMEOUT
-            //     : M.LOAD_LIBRARY_POLL_TIMEOUT,
-            // ),
+            onMaxAttempts: () => warnTimeout(
+              CONFIG.shared.initLibrary === false
+                ? M.INIT_LIBRARY_POLL_TIMEOUT
+                : M.LOAD_LIBRARY_POLL_TIMEOUT,
+            ),
             win,
           });
         }
@@ -844,26 +856,26 @@ import { pollUntil } from '@src/common/retry';
       if (CONFIG.shared.initLibrary === false) {
         const mp = win.mixpanel as { get_config?: () => ({ token?: string } | null | undefined) };
         if (typeof mp.get_config !== 'function' || !mp.get_config()?.token) {
-          // ppLib.log('info', '[ppMixpanel][dbg] window.mixpanel is stub — polling for real initialized SDK (initLibrary=false)');
+          log('[ppMixpanel] window.mixpanel is stub — polling for real initialized SDK (initLibrary=false)');
           pollUntil({
             check: () => {
               const mpRef = (win as unknown as { mixpanel?: { get_config?: () => ({ token?: string } | null | undefined) } }).mixpanel;
               if (!mpRef || typeof mpRef.get_config !== 'function') return false;
               if (!mpRef.get_config()?.token) return false;
-              // ppLib.log('info', '[ppMixpanel][dbg] poll: real initialized SDK found — calling doInit()');
+              log('[ppMixpanel] poll: real initialized SDK found — calling doInit()');
               doInit();
               return true;
             },
             intervalMs: DEFAULTS.LOAD_LIBRARY_POLL_INTERVAL_MS,
             maxAttempts: DEFAULTS.LOAD_LIBRARY_POLL_MAX_ATTEMPTS,
-            // onMaxAttempts: () => ppLib.log('warn', M.INIT_LIBRARY_POLL_TIMEOUT),
+            onMaxAttempts: () => warnTimeout(M.INIT_LIBRARY_POLL_TIMEOUT),
             win,
           });
           return;
         }
       }
 
-      // ppLib.log('info', '[ppMixpanel][dbg] window.mixpanel present at init() — calling doInit() directly');
+      log('[ppMixpanel] window.mixpanel present at init() — calling doInit() directly');
       doInit();
     }
 
