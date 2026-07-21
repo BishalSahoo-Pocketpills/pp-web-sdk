@@ -392,19 +392,34 @@ export function createEventPropertiesBuilder(
   }
 
   // Mixpanel's `$device_id` is the single source of truth for the anonymous
-  // device identifier. Mixpanel persists it in its own cross-subdomain
-  // cookie/localStorage; we read it live at event-build time. No SDK-side
-  // cookie mirror — non-Mixpanel destinations (dataLayer, Braze) read the
-  // same value Mixpanel uses by calling here.
+  // device identifier. We always read from the cookie-persisted primary
+  // instance — non-Mixpanel destinations (dataLayer, Braze) read the same
+  // value Mixpanel writes to the cross-subdomain cookie.
   //
-  // The mixpanelReady gate in common/index.ts holds non-Mixpanel auto-events
-  // until `$device_id` is readable (3s timeout fallback for deployments where
-  // Mixpanel never loads — those visitors get an empty device_id, which is
-  // industry-standard for blocked-SDK situations).
+  // Two init modes:
+  //   loadLibrary:true  — primary is the unnamed default; read mp directly.
+  //   loadLibrary:false — primary is a named 'primary' sub-instance at
+  //                       mp['primary'] with explicit cookie persistence.
+  //                       The unnamed default is GTM's instance (unknown
+  //                       persistence). Always prefer the named instance to
+  //                       guarantee we read from the cookie store.
   function getOrCreateDeviceId(): string {
     try {
       const mp = win.mixpanel;
-      if (!mp || typeof mp.get_property !== 'function') return '';
+      if (!mp) return '';
+      // Named 'primary' instance (loadLibrary:false): always cookie-persisted.
+      const named = mp['primary'];
+      if (
+        named != null &&
+        typeof named === 'object' &&
+        'get_property' in named &&
+        typeof (named as { get_property: unknown }).get_property === 'function'
+      ) {
+        const id = (named as { get_property: (k: string) => unknown }).get_property('$device_id');
+        return typeof id === 'string' ? id : '';
+      }
+      // Unnamed default (loadLibrary:true): primary IS the default instance.
+      if (typeof mp.get_property !== 'function') return '';
       const id = mp.get_property('$device_id');
       return typeof id === 'string' ? id : '';
     } catch (e) {

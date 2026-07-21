@@ -373,6 +373,29 @@ describe('createEventPropertiesBuilder', () => {
       expect(builder.build().eventProperties.device_id).toBe('');
     });
 
+    it('reads from window.mixpanel.primary (named cookie instance) when loadLibrary:false', () => {
+      // loadLibrary:false: SDK inits a named 'primary' at window.mixpanel.primary
+      // with explicit cookie persistence. The unnamed window.mixpanel is GTM's
+      // instance — its persistence is unknown (could be localStorage). Builder
+      // must prefer the named cookie instance and ignore the unnamed default.
+      (window as unknown as { mixpanel: { get_property: (k: string) => string; primary: { get_property: (k: string) => string | undefined } } }).mixpanel = {
+        get_property: (_: string) => 'gtm-unnamed-id',
+        primary: {
+          get_property: (k: string) => k === '$device_id' ? 'named-primary-cookie-id' : undefined,
+        },
+      };
+      const id = createEventPropertiesBuilder(window, makePPLib()).build().eventProperties.device_id;
+      expect(id).toBe('named-primary-cookie-id');
+    });
+
+    it('falls back to unnamed default when window.mixpanel.primary is absent (loadLibrary:true)', () => {
+      // loadLibrary:true: primary IS the unnamed default instance. No named
+      // 'primary' sub-property exists. Builder falls back to mp.get_property.
+      stubMixpanelDeviceId('default-instance-cookie-id');
+      const id = createEventPropertiesBuilder(window, makePPLib()).build().eventProperties.device_id;
+      expect(id).toBe('default-instance-cookie-id');
+    });
+
     it('keeps device_id stable across UTM-changed re-visits (audit P7+T5)', () => {
       // Audit P7/T5: same browser hitting the site with different UTMs
       // (e.g. google → facebook campaign) must report the same device_id

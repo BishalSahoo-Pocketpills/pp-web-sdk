@@ -1,13 +1,23 @@
 import { loadModule, loadWithCommon, flushMixpanelReady } from '@tests/helpers/iife-loader.ts';
 import { createMockMixpanel } from '@tests/helpers/mock-mixpanel.ts';
 
-// Minimal ppLib.mixpanel mock — only the surface the module reads
-type MinimalMixpanelMock = { getMixpanelCookieData: () => Record<string, unknown> };
+// Minimal ppLib.mixpanel mock — only the surface the module reads.
+// primary.getCookieData() + getConfig() cover the mixpanel:primary:* descriptor path.
+// getMixpanelCookieData() is kept for the deprecated getMixpanelDistinctId path.
+type MinimalInstanceMock = {
+  getCookieData: () => Record<string, unknown>;
+  getConfig: () => { token: string };
+};
+type MinimalMixpanelMock = {
+  primary: MinimalInstanceMock;
+  getMixpanelCookieData: () => Record<string, unknown>;
+};
 
-function setupMixpanelCookie(data: Record<string, unknown>) {
+function setupMixpanelCookie(data: Record<string, unknown>, token = 'test-primary-token') {
   (window.ppLib as Record<string, unknown>).mixpanel = {
+    primary: { getCookieData: () => data, getConfig: () => ({ token }) },
     getMixpanelCookieData: () => data,
-  } as MinimalMixpanelMock;
+  } satisfies MinimalMixpanelMock;
 }
 
 describe('url-decorator module', () => {
@@ -64,7 +74,7 @@ describe('url-decorator module', () => {
       expect(c.allowlist).toEqual(['pocketpills.com', 'pocketpills.info']);
       expect(c.params).toHaveLength(1);
       expect(c.params[0].name).toBe('mp_device_id');
-      expect(c.params[0].source).toBe('mixpanel_device_id');
+      expect(c.params[0].source).toBe('mixpanel:primary:$device_id');
       expect(c.decorateOnLoad).toBe(true);
       expect(c.decorateOnClick).toBe(true);
       expect(c.watchMutations).toBe(true);
@@ -381,25 +391,28 @@ describe('url-decorator module', () => {
       expect(document.querySelector('a')!.getAttribute('href')).toContain('mp_device_id=cookie-dev');
     });
 
-    it('mixpanel_device_id falls back to window.mixpanel.get_property', async () => {
+    it('mixpanel_device_id returns empty and skips decoration when primary cookie has no $device_id', async () => {
+      // Cookie-only contract: no window.mixpanel fallback. When the primary
+      // cookie exists but lacks $device_id, the param is omitted entirely.
       document.body.innerHTML = `<a href="https://pocketpills.com/tx">Link</a>`;
       loadWithCommon('url-decorator');
-      window.mixpanel = createMockMixpanel({ initialProperties: { '$device_id': 'global-dev' } });
+      setupMixpanelCookie({ distinct_id: 'user-123' }); // no $device_id
+      window.mixpanel = createMockMixpanel({ initialProperties: { '$device_id': 'should-not-appear' } });
       await flushMixpanelReady();
 
-      expect(document.querySelector('a')!.getAttribute('href')).toContain('mp_device_id=global-dev');
+      expect(document.querySelector('a')!.getAttribute('href')).toBe('https://pocketpills.com/tx');
     });
 
-    it('mixpanel_device_id falls back to window.mixpanel.primary.get_property (named instance)', async () => {
+    it('mixpanel_device_id returns empty when ppLib.mixpanel is not yet configured', async () => {
+      // No mixpanel module loaded at all — decorator skips the param rather
+      // than reading from window.mixpanel.
       document.body.innerHTML = `<a href="https://pocketpills.com/tx">Link</a>`;
       loadWithCommon('url-decorator');
-      const rootMp = createMockMixpanel({ initialProperties: {} });
-      const primaryMp = createMockMixpanel({ initialProperties: { '$device_id': 'named-dev' } });
-      (rootMp as Record<string, unknown>).primary = primaryMp;
-      window.mixpanel = rootMp;
+      // Do NOT call setupMixpanelCookie — ppLib.mixpanel remains undefined
+      window.mixpanel = createMockMixpanel({ initialProperties: { '$device_id': 'should-not-appear' } });
       await flushMixpanelReady();
 
-      expect(document.querySelector('a')!.getAttribute('href')).toContain('mp_device_id=named-dev');
+      expect(document.querySelector('a')!.getAttribute('href')).toBe('https://pocketpills.com/tx');
     });
 
     it('mixpanel_device_id cookie source takes priority over window.mixpanel', async () => {
@@ -464,7 +477,193 @@ describe('url-decorator module', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 6. Click handler
+  // 6. Descriptor sources (query_params / cookies / localstorage)
+  // -------------------------------------------------------------------------
+
+  describe('descriptor sources', () => {
+
+    it('query_params: reads the named param from the current page URL', async () => {
+      document.body.innerHTML = `<a href="https://pocketpills.com/tx">Link</a>`;
+      Object.defineProperty(window, 'location', {
+        value: { search: '?utm_source=google&utm_medium=cpc', href: 'http://localhost/lp?utm_source=google&utm_medium=cpc' },
+        writable: true, configurable: true,
+      });
+      loadWithCommon('url-decorator');
+      window.ppLib.urlDecorator!.configure({
+        params: [{ name: 'utm_source', source: 'query_params:utm_source' }],
+      });
+      await flushMixpanelReady();
+
+      expect(document.querySelector('a')!.getAttribute('href')).toContain('utm_source=google');
+    });
+
+    it('query_params: skips decoration when the param is absent from the URL', async () => {
+      document.body.innerHTML = `<a href="https://pocketpills.com/tx">Link</a>`;
+      Object.defineProperty(window, 'location', {
+        value: { search: '', href: 'http://localhost/lp' },
+        writable: true, configurable: true,
+      });
+      loadWithCommon('url-decorator');
+      window.ppLib.urlDecorator!.configure({
+        params: [{ name: 'utm_source', source: 'query_params:utm_source' }],
+      });
+      await flushMixpanelReady();
+
+      expect(document.querySelector('a')!.getAttribute('href')).toBe('https://pocketpills.com/tx');
+    });
+
+    it('cookies: reads raw string value from a cookie', async () => {
+      document.body.innerHTML = `<a href="https://pocketpills.com/tx">Link</a>`;
+      document.cookie = 'pp_segment=segment_b; path=/';
+      loadWithCommon('url-decorator');
+      window.ppLib.urlDecorator!.configure({
+        params: [{ name: 'segment', source: 'cookies:pp_segment' }],
+      });
+      await flushMixpanelReady();
+
+      expect(document.querySelector('a')!.getAttribute('href')).toContain('segment=segment_b');
+    });
+
+    it('cookies: reads a JSON field from a cookie', async () => {
+      document.body.innerHTML = `<a href="https://pocketpills.com/tx">Link</a>`;
+      document.cookie = 'mp_testtoken_mixpanel=' + encodeURIComponent(JSON.stringify({ '$device_id': 'cookie-uuid', distinct_id: 'user-42' })) + '; path=/';
+      loadWithCommon('url-decorator');
+      window.ppLib.urlDecorator!.configure({
+        params: [{ name: 'web_device_id', source: 'cookies:mp_testtoken_mixpanel:$device_id' }],
+      });
+      await flushMixpanelReady();
+
+      expect(document.querySelector('a')!.getAttribute('href')).toContain('web_device_id=cookie-uuid');
+    });
+
+    it('localstorage: reads a JSON field from localStorage', async () => {
+      document.body.innerHTML = `<a href="https://pocketpills.com/tx">Link</a>`;
+      localStorage.setItem('mp_sectoken_mixpanel', JSON.stringify({ '$device_id': 'ls-uuid' }));
+      loadWithCommon('url-decorator');
+      window.ppLib.urlDecorator!.configure({
+        params: [{ name: 'secondary_web_device_id', source: 'localstorage:mp_sectoken_mixpanel:$device_id' }],
+      });
+      await flushMixpanelReady();
+
+      expect(document.querySelector('a')!.getAttribute('href')).toContain('secondary_web_device_id=ls-uuid');
+    });
+
+    it('localstorage: reads raw string value from localStorage', async () => {
+      document.body.innerHTML = `<a href="https://pocketpills.com/tx">Link</a>`;
+      localStorage.setItem('my_flag', 'variant_a');
+      loadWithCommon('url-decorator');
+      window.ppLib.urlDecorator!.configure({
+        params: [{ name: 'flag', source: 'localstorage:my_flag' }],
+      });
+      await flushMixpanelReady();
+
+      expect(document.querySelector('a')!.getAttribute('href')).toContain('flag=variant_a');
+    });
+
+    it('skips decoration when cookie is absent', async () => {
+      document.body.innerHTML = `<a href="https://pocketpills.com/tx">Link</a>`;
+      loadWithCommon('url-decorator');
+      window.ppLib.urlDecorator!.configure({
+        params: [{ name: 'x', source: 'cookies:nonexistent_cookie' }],
+      });
+      await flushMixpanelReady();
+
+      expect(document.querySelector('a')!.getAttribute('href')).toBe('https://pocketpills.com/tx');
+    });
+
+    it('skips decoration when localStorage key is absent', async () => {
+      document.body.innerHTML = `<a href="https://pocketpills.com/tx">Link</a>`;
+      loadWithCommon('url-decorator');
+      window.ppLib.urlDecorator!.configure({
+        params: [{ name: 'x', source: 'localstorage:nonexistent_key' }],
+      });
+      await flushMixpanelReady();
+
+      expect(document.querySelector('a')!.getAttribute('href')).toBe('https://pocketpills.com/tx');
+    });
+
+    it('multiple descriptor params on the same link', async () => {
+      document.body.innerHTML = `<a href="https://pocketpills.com/tx">Link</a>`;
+      Object.defineProperty(window, 'location', {
+        value: { search: '?utm_source=email', href: 'http://localhost/lp?utm_source=email' },
+        writable: true, configurable: true,
+      });
+      document.cookie = 'mp_tok_mixpanel=' + encodeURIComponent(JSON.stringify({ '$device_id': 'dev-xyz' })) + '; path=/';
+      loadWithCommon('url-decorator');
+      window.ppLib.urlDecorator!.configure({
+        params: [
+          { name: 'utm_source', source: 'query_params:utm_source' },
+          { name: 'web_device_id', source: 'cookies:mp_tok_mixpanel:$device_id' },
+        ],
+      });
+      await flushMixpanelReady();
+
+      const href = document.querySelector('a')!.getAttribute('href')!;
+      expect(href).toContain('utm_source=email');
+      expect(href).toContain('web_device_id=dev-xyz');
+    });
+
+    it('mixpanel:primary:$device_id reads from primary getCookieData (no hardcoded token)', async () => {
+      document.body.innerHTML = `<a href="https://pocketpills.com/tx">Link</a>`;
+      loadWithCommon('url-decorator');
+      // Primary cookie data — token resolved internally, not hardcoded in source string
+      setupMixpanelCookie({ '$device_id': 'primary-cookie-uuid' });
+      window.ppLib.urlDecorator!.configure({
+        params: [{ name: 'web_device_id', source: 'mixpanel:primary:$device_id' }],
+      });
+      await flushMixpanelReady();
+
+      expect(document.querySelector('a')!.getAttribute('href')).toContain('web_device_id=primary-cookie-uuid');
+    });
+
+    it('mixpanel:primary:distinct_id reads distinct_id from primary cookie', async () => {
+      document.body.innerHTML = `<a href="https://pocketpills.com/tx">Link</a>`;
+      loadWithCommon('url-decorator');
+      setupMixpanelCookie({ distinct_id: 'user-42' });
+      window.ppLib.urlDecorator!.configure({
+        params: [{ name: 'uid', source: 'mixpanel:primary:distinct_id' }],
+      });
+      await flushMixpanelReady();
+
+      expect(document.querySelector('a')!.getAttribute('href')).toContain('uid=user-42');
+    });
+
+    it('mixpanel:secondary:$device_id falls back to localStorage when cookie is absent', async () => {
+      document.body.innerHTML = `<a href="https://pocketpills.com/tx">Link</a>`;
+      const secondaryToken = 'sec-token-xyz';
+      localStorage.setItem('mp_' + secondaryToken + '_mixpanel', JSON.stringify({ '$device_id': 'secondary-ls-uuid' }));
+      loadWithCommon('url-decorator');
+      (window.ppLib as Record<string, unknown>).mixpanel = {
+        secondary: {
+          getCookieData: () => ({}),  // empty — secondary uses localStorage, not cookies
+          getConfig: () => ({ token: secondaryToken }),
+        },
+        getMixpanelCookieData: () => ({}),
+      };
+      window.ppLib.urlDecorator!.configure({
+        params: [{ name: 'secondary_web_device_id', source: 'mixpanel:secondary:$device_id' }],
+      });
+      await flushMixpanelReady();
+
+      expect(document.querySelector('a')!.getAttribute('href')).toContain('secondary_web_device_id=secondary-ls-uuid');
+    });
+
+    it('mixpanel: returns empty and skips param when ppLib.mixpanel is not configured', async () => {
+      document.body.innerHTML = `<a href="https://pocketpills.com/tx">Link</a>`;
+      loadWithCommon('url-decorator');
+      // ppLib.mixpanel not set — module not loaded
+      window.ppLib.urlDecorator!.configure({
+        params: [{ name: 'web_device_id', source: 'mixpanel:primary:$device_id' }],
+      });
+      await flushMixpanelReady();
+
+      expect(document.querySelector('a')!.getAttribute('href')).toBe('https://pocketpills.com/tx');
+    });
+
+  });
+
+  // -------------------------------------------------------------------------
+  // 7. Click handler
   // -------------------------------------------------------------------------
 
   describe('click handler', () => {

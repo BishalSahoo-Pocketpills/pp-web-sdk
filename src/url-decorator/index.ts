@@ -23,7 +23,7 @@ import { bootstrapModule } from '@src/common/bootstrap';
       enabled: true,
       debug: false,
       allowlist: ['pocketpills.com', 'pocketpills.info'],
-      params: [{ name: 'mp_device_id', source: 'mixpanel_device_id' }],
+      params: [{ name: 'mp_device_id', source: 'mixpanel:primary:$device_id' }],
       decorateOnLoad: true,
       decorateOnClick: true,
       watchMutations: true,
@@ -42,29 +42,12 @@ import { bootstrapModule } from '@src/common/bootstrap';
     // BUILT-IN SOURCES
     // =====================================================
 
-    function readFromMpInstance(key: string): string {
-      const mpRoot = (globalThis as { mixpanel?: MixpanelGlobal }).mixpanel;
-      if (!mpRoot) return '';
-      // Named instance (loadLibrary: false + initLibrary: true → window.mixpanel.primary)
-      const namedMp = (mpRoot as unknown as Record<string, MixpanelGlobal | undefined>)['primary'];
-      if (namedMp && typeof namedMp.get_property === 'function') {
-        const val = namedMp.get_property(key);
-        if (typeof val === 'string' && val) return val;
-      }
-      // Default or adopted instance
-      if (typeof mpRoot.get_property === 'function') {
-        const val = mpRoot.get_property(key);
-        if (typeof val === 'string' && val) return val;
-      }
-      return '';
-    }
-
+    // @deprecated — resolves 'mixpanel_device_id' built-in for backward compat.
+    // New code should use source: 'mixpanel:primary:$device_id' instead.
     function getMixpanelDeviceId(): string {
-      const cookieVal = ppLib.mixpanel?.getMixpanelCookieData()?.['$device_id'];
-      if (typeof cookieVal === 'string' && cookieVal) return cookieVal;
-      const liveVal = readFromMpInstance('$device_id');
-      if (liveVal) return liveVal;
-      warn(PREFIX + ' mixpanel_device_id: $device_id not available; using empty value');
+      const val = resolveDescriptor('mixpanel:primary:$device_id');
+      if (val) return val;
+      warn(PREFIX + ' mixpanel_device_id: $device_id not found in primary storage');
       return '';
     }
 
@@ -89,6 +72,81 @@ import { bootstrapModule } from '@src/common/bootstrap';
       return '';
     }
 
+    // =====================================================
+    // DESCRIPTOR SOURCE RESOLVER
+    // =====================================================
+
+    // Extracts a string field from a JSON-parsed object. Returns '' if the
+    // field is absent or non-string — consistent with other empty-value paths.
+    function extractJsonField(raw: string, field: string): string {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          const val = (parsed as Record<string, unknown>)[field];
+          return typeof val === 'string' ? val : '';
+        }
+      } catch (_e) { /* malformed JSON — fall through */ }
+      return '';
+    }
+
+    // Resolves a descriptor source string. Format: storage_type:key[:json_field]
+    // Supported types: query_params | cookies | localstorage | mixpanel
+    // Returns '' when the value is absent or the descriptor is malformed.
+    function resolveDescriptor(source: string): string {
+      const firstColon = source.indexOf(':');
+      if (firstColon === -1) return '';
+      const storageType = source.slice(0, firstColon);
+      const rest = source.slice(firstColon + 1);
+
+      if (storageType === 'query_params') {
+        try {
+          return new URLSearchParams(win.location.search || '').get(rest) ?? '';
+        } catch (_e) { return ''; }
+      }
+
+      if (storageType === 'mixpanel') {
+        // Format: mixpanel:{primary|secondary}:{field}
+        const secondColon = rest.indexOf(':');
+        if (secondColon === -1) return '';
+        const instanceName = rest.slice(0, secondColon);
+        const field = rest.slice(secondColon + 1);
+        if (!field || (instanceName !== 'primary' && instanceName !== 'secondary')) return '';
+        const instance = ppLib.mixpanel?.[instanceName];
+        if (!instance) return '';
+        // Primary uses cookie persistence — getCookieData() reads mp_<token>_mixpanel.
+        // Secondary uses localStorage — cookie read returns {}; fall back to localStorage.
+        const cookieVal = instance.getCookieData()?.[field];
+        if (typeof cookieVal === 'string' && cookieVal) return cookieVal;
+        const token = instance.getConfig().token;
+        if (!token) return '';
+        try {
+          const raw = win.localStorage.getItem('mp_' + token + '_mixpanel');
+          if (!raw) return '';
+          return extractJsonField(raw, field);
+        } catch (_e) { return ''; }
+      }
+
+      const secondColon = rest.indexOf(':');
+      const keyName = secondColon === -1 ? rest : rest.slice(0, secondColon);
+      const jsonField = secondColon === -1 ? null : rest.slice(secondColon + 1);
+
+      if (storageType === 'cookies') {
+        const raw = ppLib.getCookie(keyName);  // already decodeURIComponent-decoded
+        if (!raw) return '';
+        return jsonField ? extractJsonField(raw, jsonField) : raw;
+      }
+
+      if (storageType === 'localstorage') {
+        try {
+          const raw = win.localStorage.getItem(keyName);
+          if (!raw) return '';
+          return jsonField ? extractJsonField(raw, jsonField) : raw;
+        } catch (_e) { return ''; }
+      }
+
+      return '';
+    }
+
     function resolveSource(param: ParamEntry): string {
       const { source } = param;
       if (typeof source === 'function') {
@@ -100,8 +158,15 @@ import { bootstrapModule } from '@src/common/bootstrap';
           return '';
         }
       }
+      // Deprecated built-ins — kept for backward compatibility
       if (source === 'mixpanel_device_id') return getMixpanelDeviceId();
       if (source === 'mixpanel_distinct_id') return getMixpanelDistinctId();
+      if (
+        source.startsWith('query_params:') ||
+        source.startsWith('cookies:') ||
+        source.startsWith('localstorage:') ||
+        source.startsWith('mixpanel:')
+      ) return resolveDescriptor(source);
       warn(PREFIX + ' unknown source "' + source + '" for param "' + param.name + '"; using empty value');
       return '';
     }
