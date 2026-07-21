@@ -201,6 +201,8 @@ import { bootstrapModule } from '@src/common/bootstrap';
       if (!href || isSkippableScheme(href)) return;
       try {
         const url = new URL(href);
+        // Only decorate secure web links — skip tel:, sms:, http:, mailto:, etc.
+        if (url.protocol !== 'https:') return;
         const hostname = url.hostname;
         let changed = false;
         CONFIG.params.forEach(function(param) {
@@ -215,7 +217,7 @@ import { bootstrapModule } from '@src/common/bootstrap';
         });
         if (changed) el.setAttribute('href', url.toString());
       } catch {
-        // relative URL — no hostname to check, skip
+        // relative URL or unparseable href — skip
       }
     }
 
