@@ -216,6 +216,7 @@ describe('dual-instance native coverage', () => {
       const api = await freshLoadDual();
       const { root } = createDualMockMixpanel();
       (window as any).mixpanel = root;
+      api.configure({ shared: { debug: true } });
       const logSpy = vi.spyOn((window as any).ppLib, 'log');
 
       expect(api.track('')).toBe(false);
@@ -309,6 +310,7 @@ describe('dual-instance native coverage', () => {
 
     it('overflow path triggers a single warn log', async () => {
       const api = await freshLoadDual();
+      api.configure({ shared: { debug: true } });
       const logSpy = vi.spyOn((window as any).ppLib, 'log');
 
       // Cap is 200; push 250 to trigger overflow.

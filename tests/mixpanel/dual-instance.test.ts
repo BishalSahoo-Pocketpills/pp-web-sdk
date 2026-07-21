@@ -204,6 +204,9 @@ describe('dual-instance Mixpanel', () => {
       const { root } = createDualMockMixpanel();
       (window as any).mixpanel = root;
 
+      // Enable debug before disabling primary — configure() re-syncs state
+      // from CONFIG, so the order matters: debug must be set first.
+      api.configure({ shared: { debug: true } });
       // Disable primary at runtime — simulates the post-cutover state
       // where the only default alias target is gone.
       api.setEnabled('primary', false);
