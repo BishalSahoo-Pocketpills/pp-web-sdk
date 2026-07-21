@@ -139,16 +139,32 @@ export interface SharedMixpanelConfig extends SdkSecurityOptions {
   /**
    * When false, the SDK skips injecting the Mixpanel `<script>` tag entirely.
    * Use when the Mixpanel library is already loaded externally (e.g. via GTM)
-   * to prevent double-loading. The SDK still calls `mp.init()` and manages
-   * identity, super-properties, and session tracking against the existing
-   * `window.mixpanel` instance. Defaults to true.
+   * to prevent double-loading. The SDK still calls `mp.init()` by default
+   * unless `initLibrary` is also false. Defaults to true.
    *
-   * **Timing requirement**: `window.mixpanel` must be present when
-   * `ppLib.mixpanel.init()` is called. If the external library has not yet
-   * executed, initialization is skipped and a warning is logged. Ensure GTM
-   * (or whatever loads Mixpanel) fires before the SDK's `init()`.
+   * **Named-instance behavior**: when false, the SDK initializes primary as a
+   * named `'primary'` sub-instance (`window.mixpanel.primary`) instead of the
+   * unnamed default (`window.mixpanel`). This prevents a double-init collision
+   * when an external system (e.g. a GTM Mixpanel Config tag) also calls
+   * `mp.init()` on the unnamed default — both inits target separate slots and
+   * succeed independently.
    */
   loadLibrary: boolean;
+  /**
+   * When false, the SDK skips calling `mp.init()` and instead adopts the
+   * already-initialized `window.mixpanel` instance directly. Use alongside
+   * `loadLibrary: false` when GTM (or another external system) both loads
+   * AND initializes Mixpanel — so the SDK does not reinitialize with its own
+   * token or overwrite GTM's persistence settings. The SDK still registers
+   * super-properties, manages sessions, and handles identity sync against the
+   * adopted instance. Secondary instance (if enabled) is still initialized by
+   * the SDK since external systems don't know about it. Defaults to true.
+   *
+   * **Timing requirement**: `window.mixpanel` must already be fully initialized
+   * (GTM's `loaded` callback must have fired) before the SDK calls `init()`.
+   * The SDK polls up to 5s for this condition.
+   */
+  initLibrary: boolean;
   /**
    * When false, the SDK does not fire an automatic `page_view` event to
    * Mixpanel on init. Use when GTM or another system handles page view
@@ -165,6 +181,10 @@ export interface SharedMixpanelConfig extends SdkSecurityOptions {
    * Defaults to true (sweep is active).
    */
   pruneCookies: boolean;
+  /** When true, emits diagnostic log messages during SDK initialisation. Default: false. */
+  debug: boolean;
+  /** When true, logs a console warning if window.mixpanel is not ready within the poll window. Default: false. */
+  warnOnPollTimeout: boolean;
 }
 
 export interface DualMixpanelConfig {
@@ -194,8 +214,11 @@ export interface MixpanelConfig extends SdkSecurityOptions {
   emitMode: 'flat' | 'dual' | 'nested';
   cookieSizeWarnBytes?: { primary: number; total: number };
   loadLibrary: boolean;
+  initLibrary: boolean;
   autoPageView: boolean;
   pruneCookies: boolean;
+  debug: boolean;
+  warnOnPollTimeout: boolean;
 }
 
 export interface SessionManager {

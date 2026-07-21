@@ -72,7 +72,7 @@ import {
   syncIdentityFromPrimary,
 } from '@src/mixpanel/identity-sync';
 import { resetQueue } from '@src/mixpanel/pre-init-queue';
-import { DEFAULTS, M } from '@src/mixpanel/messages';
+import { DEFAULTS, M, MIXPANEL_DEFAULT_PERSISTENCE_NAME } from '@src/mixpanel/messages';
 import { pollUntil } from '@src/common/retry';
 
 (function (win: Window & typeof globalThis, doc: Document) {
@@ -115,10 +115,35 @@ import { pollUntil } from '@src/common/retry';
           total: DEFAULTS.COOKIE_WARN_TOTAL_BYTES,
         },
         loadLibrary: true,
+        initLibrary: true,
         autoPageView: true,
         pruneCookies: true,
+        debug: false,
+        warnOnPollTimeout: false,
       },
     };
+
+    // =====================================================
+    // LOGGER — all calls are silent unless the relevant flag is true
+    // =====================================================
+
+    function log(msg: string, data?: unknown): void {
+      if (!CONFIG.shared.debug) return;
+      if (data !== undefined) ppLib.log('info', msg, data); else ppLib.log('info', msg);
+    }
+    function warn(msg: string, data?: unknown): void {
+      if (!CONFIG.shared.debug) return;
+      if (data !== undefined) ppLib.log('warn', msg, data); else ppLib.log('warn', msg);
+    }
+    function error(msg: string, data?: unknown): void {
+      if (!CONFIG.shared.debug) return;
+      if (data !== undefined) ppLib.log('error', msg, data); else ppLib.log('error', msg);
+    }
+    function debug(msg: string, data?: unknown): void {
+      if (!CONFIG.shared.debug) return;
+      if (data !== undefined) ppLib.log('verbose', msg, data); else ppLib.log('verbose', msg);
+    }
+    function warnTimeout(msg: string): void { if (CONFIG.shared.warnOnPollTimeout) ppLib.log('warn', msg); }
 
     // =====================================================
     // CONFIG SHIM — legacy MixpanelConfig (flat) → DualMixpanelConfig
@@ -169,8 +194,12 @@ import { pollUntil } from '@src/common/retry';
       if ('crossOrigin' in legacy)
         shared.crossOrigin = legacy.crossOrigin as SharedMixpanelConfig['crossOrigin'];
       if ('loadLibrary' in legacy) shared.loadLibrary = legacy.loadLibrary as boolean;
+      if ('initLibrary' in legacy) shared.initLibrary = legacy.initLibrary as boolean;
       if ('autoPageView' in legacy) shared.autoPageView = legacy.autoPageView as boolean;
       if ('pruneCookies' in legacy) shared.pruneCookies = legacy.pruneCookies as boolean;
+      if ('debug' in legacy) shared.debug = legacy.debug as boolean;
+      if ('warnOnPollTimeout' in legacy)
+        shared.warnOnPollTimeout = legacy.warnOnPollTimeout as boolean;
 
       if (Object.keys(primary).length > 0) slice.primary = primary;
       if (Object.keys(shared).length > 0) slice.shared = shared;
@@ -237,6 +266,7 @@ import { pollUntil } from '@src/common/retry';
     function onAllLoaded(): void {
       if (allLoadedFired) return;
       allLoadedFired = true;
+      log('[ppMixpanel] onAllLoaded fired — registering shared context, draining pre-init queue');
       // Update session timeout from config (may have been overridden post-init).
       SessionManager.timeout = CONFIG.shared.sessionTimeout;
       // Mint initial session — fans to all enabled-and-ready instances.
@@ -295,7 +325,7 @@ import { pollUntil } from '@src/common/retry';
         }
       });
 
-      ppLib.log('info', M.INITIALIZED_SUCCESSFULLY);
+      log(M.INITIALIZED_SUCCESSFULLY);
     }
 
     /**
@@ -345,10 +375,10 @@ import { pollUntil } from '@src/common/retry';
           // differ are stale and eligible for deletion.
           if (m[1] === primaryToken) continue;
           expireMixpanelCookieAllScopes(name);
-          ppLib.log('info', M.MP_COOKIE_PRUNED(name));
+          log(M.MP_COOKIE_PRUNED(name));
         }
       } catch (e) {
-        ppLib.log('warn', M.MP_COOKIE_PRUNE_FAILED, ppLib.safeLogError(e));
+        warn(M.MP_COOKIE_PRUNE_FAILED, ppLib.safeLogError(e));
       }
     }
 
@@ -392,13 +422,10 @@ import { pollUntil } from '@src/common/retry';
           total: DEFAULTS.COOKIE_WARN_TOTAL_BYTES,
         };
         if (primaryBytes > limits.primary || totalBytes > limits.total) {
-          ppLib.log(
-            'warn',
-            M.COOKIE_SIZE_WARN(primaryBytes, totalBytes, limits.primary, limits.total),
-          );
+          warn(M.COOKIE_SIZE_WARN(primaryBytes, totalBytes, limits.primary, limits.total));
         }
       } catch (e) {
-        ppLib.log('warn', M.COOKIE_SIZE_REPORT_FAILED, ppLib.safeLogError(e));
+        warn(M.COOKIE_SIZE_REPORT_FAILED, ppLib.safeLogError(e));
       }
     }
 
@@ -423,7 +450,7 @@ import { pollUntil } from '@src/common/retry';
         }
         document.cookie = `${name}=; expires=${expired}; path=/`;
       } catch (e) {
-        ppLib.log('warn', 'deleteLegacyPpDeviceIdCookie failed', ppLib.safeLogError(e));
+        warn('deleteLegacyPpDeviceIdCookie failed', ppLib.safeLogError(e));
       }
     }
 
@@ -487,6 +514,15 @@ import { pollUntil } from '@src/common/retry';
         persistence: profile.persistence,
         loaded,
       };
+      // When loadLibrary=false, primary is forced to a named instance to avoid
+      // double-init collision with GTM's unnamed default. Share its persistence
+      // key (mp_<token>_mixpanel) so the named instance inherits GTM's existing
+      // distinct_id and $device_id rather than starting a fresh session.
+      // User-provided initOptions.persistence_name overrides this default.
+      if (name === 'primary' && CONFIG.shared.loadLibrary === false) {
+        opts.persistence_name = MIXPANEL_DEFAULT_PERSISTENCE_NAME;
+      }
+
       // Per-instance passthrough — empty by default since Simplified ID
       // Merge is a server-side project setting (no client flag needed).
       // Reserved keys (especially `loaded`) are skipped with a loud warn:
@@ -497,7 +533,7 @@ import { pollUntil } from '@src/common/retry';
         for (let i = 0; i < keys.length; i++) {
           const k = keys[i];
           if (RESERVED_INIT_OPTS.indexOf(k) >= 0) {
-            ppLib.log('warn', M.INIT_OPT_RESERVED(k));
+            warn(M.INIT_OPT_RESERVED(k));
             continue;
           }
           opts[k] = instanceCfg.initOptions[k];
@@ -517,18 +553,27 @@ import { pollUntil } from '@src/common/retry';
         onInstanceLoaded(name, mp);
       });
 
-      // For primary, mp.init(token, opts) writes to window.mixpanel itself.
-      // For secondary, mp.init(token, opts, 'secondary') queues onto the
-      // shared stub's `_i[]` and the real SDK creates window.mixpanel.secondary
-      // on replay.
+      // When loadLibrary=true (default) the SDK injects its own stub and
+      // primary IS the unnamed default instance (window.mixpanel).
+      // When loadLibrary=false an external loader (GTM) owns the unnamed
+      // default and may have already called mp.init() on it. Calling
+      // mp.init() again with no name would re-initialize the same instance
+      // slot and throw ("forEach" on internal arrays the real SDK closes
+      // after first init). Using a named 'primary' instance creates a
+      // separate slot with no shared internal state — both inits succeed.
+      const useNamedInstance = name !== 'primary' || CONFIG.shared.loadLibrary === false;
+
+      log(`[ppMixpanel] initInstance(${name}): calling mp.init() token=${state.config.token.slice(0, 8)}… instanceName=${useNamedInstance ? name : '(default)'} persistence=${INSTANCE_BOOT_PROFILE[name].persistence} crossSubdomain=${CONFIG.shared.crossSubdomainCookie}`);
+
       try {
-        if (name === 'primary') {
-          (win.mixpanel as MixpanelGlobal).init(state.config.token, opts);
-        } else {
+        if (useNamedInstance) {
           (win.mixpanel as MixpanelGlobal).init(state.config.token, opts, name);
+        } else {
+          (win.mixpanel as MixpanelGlobal).init(state.config.token, opts);
         }
+        log(`[ppMixpanel] initInstance(${name}): mp.init() returned (no throw)`);
       } catch (e) {
-        ppLib.log('error', M.INIT_FAILED(name), ppLib.safeLogError(e));
+        error(M.INIT_FAILED(name), ppLib.safeLogError(e));
       }
     }
 
@@ -547,7 +592,7 @@ import { pollUntil } from '@src/common/retry';
           mp.opt_in_tracking();
         } else if (!granted) {
           mp.opt_out_tracking();
-          ppLib.log('info', '[ppMixpanel] consent denied — ' + name + ' opted out of native tracking');
+          log('[ppMixpanel] consent denied — ' + name + ' opted out of native tracking');
         }
       } catch (_e) {
         /* legacy mock may not implement opt_in/opt_out — non-fatal */
@@ -561,6 +606,7 @@ import { pollUntil } from '@src/common/retry';
      * for secondary).
      */
     function onInstanceLoaded(name: InstanceName, mp: MixpanelGlobal): void {
+      log(`[ppMixpanel] onInstanceLoaded fired: name=${name} distinct_id=${mp.get_distinct_id ? mp.get_distinct_id() : 'n/a'}`);
       const state = getState(name);
       state.mpRef = mp;
 
@@ -606,13 +652,15 @@ import { pollUntil } from '@src/common/retry';
       }
 
       state.initialized = true;
-      ppLib.log('info', M.INSTANCE_LOADED(name));
+      log(M.INSTANCE_LOADED(name));
 
       // Both inits were queued against the stub upfront (initAll), so the
       // real Mixpanel SDK replays them in order — this loaded callback
       // fires for each instance independently. When the last enabled
       // instance reports ready, fire the shared all-loaded handler.
-      if (allEnabledLoaded()) {
+      const allLoaded = allEnabledLoaded();
+      log(`[ppMixpanel] onInstanceLoaded(${name}): allEnabledLoaded=${allLoaded}`);
+      if (allLoaded) {
         clearWatchdog();
         onAllLoaded();
       }
@@ -646,7 +694,7 @@ import { pollUntil } from '@src/common/retry';
       /*! v8 ignore start */
       if (!primaryState.enabled) {
       /*! v8 ignore stop */
-        ppLib.log('info', M.MODULE_DISABLED);
+        log(M.MODULE_DISABLED);
         return;
       }
 
@@ -665,7 +713,7 @@ import { pollUntil } from '@src/common/retry';
       /*! v8 ignore start */
       if (!primaryState.config.token) {
       /*! v8 ignore stop */
-        ppLib.log('warn', M.NO_TOKEN);
+        warn(M.NO_TOKEN);
         return;
       }
 
@@ -682,7 +730,7 @@ import { pollUntil } from '@src/common/retry';
         secondaryState.config.token &&
         secondaryState.config.token === primaryState.config.token
       ) {
-        ppLib.log('error', M.TOKEN_EQUAL_REJECT);
+        error(M.TOKEN_EQUAL_REJECT);
         secondaryState.enabled = false;
         CONFIG.secondary.enabled = false;
       }
@@ -702,8 +750,54 @@ import { pollUntil } from '@src/common/retry';
       const loaded = loadMixpanelSDK(win, doc);
       if (!loaded) return;
 
+      /**
+       * Adopt an already-initialized external instance (e.g. GTM's). Skips
+       * calling `mp.init()` — the instance is live and already has a token,
+       * distinct_id, and persistence configured by the external owner.
+       * Triggers the same post-init work as `onInstanceLoaded` (migration,
+       * session patching, identity sync, super-props registration).
+       *
+       * For secondary: `window.mixpanel[name]` typically doesn't exist since
+       * external systems don't know about it. If absent, the caller should
+       * fall through to `initInstance` for secondary.
+       */
+      function adoptExternalInstance(name: InstanceName): boolean {
+        const state = getState(name);
+        if (!state.enabled || state.initCalled) return false;
+        state.initCalled = true;
+
+        let mp: MixpanelGlobal | undefined;
+        if (name === 'primary') {
+          mp = win.mixpanel as MixpanelGlobal;
+        } else {
+          const children = win.mixpanel as unknown as Record<string, MixpanelGlobal | undefined>;
+          mp = children[name];
+        }
+
+        if (!mp || typeof mp.track !== 'function') {
+          warn(M.INIT_LIBRARY_ADOPT_MISSING(name));
+          return false;
+        }
+
+        log(`[ppMixpanel] adoptExternalInstance(${name}): adopting existing window.mixpanel${name !== 'primary' ? '.' + name : ''}`);
+        onInstanceLoaded(name, mp);
+        return true;
+      }
+
       // Extracted continuation: runs once window.mixpanel is confirmed present.
       function doInit(): void {
+        const secondaryState = getState('secondary');
+        log('[ppMixpanel] doInit entered', {
+          primary: { enabled: primaryState.enabled, token: primaryState.config.token.slice(0, 8) + '…' },
+          secondary: { enabled: secondaryState.enabled, token: secondaryState.config.token?.slice(0, 8) + '…' },
+          loadLibrary: CONFIG.shared.loadLibrary,
+          initLibrary: CONFIG.shared.initLibrary,
+          crossSubdomainCookie: CONFIG.shared.crossSubdomainCookie,
+          pruneCookies: CONFIG.shared.pruneCookies,
+          winMixpanelType: typeof (win as unknown as { mixpanel?: unknown }).mixpanel,
+          winMixpanelIsStub: !!(win.mixpanel as { _ppStub?: boolean })?._ppStub,
+        });
+
         // Pre-init: read legacy distinct_id BEFORE Mixpanel overwrites the
         // cookie. Primary only — secondary is a fresh project.
         primaryMigrationCtx = readPreInitDistinctId(
@@ -712,15 +806,26 @@ import { pollUntil } from '@src/common/retry';
           CONFIG.shared.crossSubdomainCookie,
         );
 
-        // Queue BOTH instance inits against the stub upfront — canonical
-        // Mixpanel multi-instance pattern. The real SDK replays `_i[]` in
-        // order, firing each `loaded` callback independently. Doing this
-        // upfront (vs chaining secondary from primary's loaded callback)
-        // avoids depending on the real SDK's late-init-of-named-instance
-        // semantics, which caused secondary.loaded to never fire — leaving
-        // the pre-init queue buffered indefinitely.
-        initInstance('primary');
-        if (getState('secondary').enabled) initInstance('secondary');
+        if (CONFIG.shared.initLibrary !== false) {
+          // Normal path — SDK owns init for all instances.
+          // Queue BOTH instance inits against the stub upfront — canonical
+          // Mixpanel multi-instance pattern. The real SDK replays `_i[]` in
+          // order, firing each `loaded` callback independently. Doing this
+          // upfront (vs chaining secondary from primary's loaded callback)
+          // avoids depending on the real SDK's late-init-of-named-instance
+          // semantics, which caused secondary.loaded to never fire — leaving
+          // the pre-init queue buffered indefinitely.
+          initInstance('primary');
+          if (getState('secondary').enabled) initInstance('secondary');
+        } else {
+          // External-init path — GTM (or another system) already called init()
+          // on the default Mixpanel instance. Adopt it directly instead of
+          // reinitializing (which would overwrite GTM's token + persistence).
+          // Secondary is SDK-specific; external systems don't create it, so we
+          // always init secondary ourselves.
+          adoptExternalInstance('primary');
+          if (getState('secondary').enabled) initInstance('secondary');
+        }
 
         // Watchdog — if the SDK doesn't load (network failure, ad-blocker,
         // SRI mismatch) the loaded callbacks never fire and the pre-init
@@ -729,28 +834,69 @@ import { pollUntil } from '@src/common/retry';
         armWatchdog();
       }
 
+      // When the external owner (GTM) manages loading or initialization, poll
+      // until window.mixpanel is ready instead of bailing out immediately.
+      const needsPoll = CONFIG.shared.loadLibrary === false || CONFIG.shared.initLibrary === false;
+
       if (!win.mixpanel) {
-        if (CONFIG.shared.loadLibrary === false) {
-          // GTM (or another external loader) owns the Mixpanel script. It sets
-          // up window.mixpanel synchronously as a stub queue when its tag fires,
-          // but that tag may not have run yet when the SDK's init() executes.
-          // Poll until the stub appears (max 5s) so GTM load-ordering doesn't
-          // silently drop the entire Mixpanel init.
+        if (needsPoll) {
+          log(`[ppMixpanel] window.mixpanel not present at init() — starting poll (loadLibrary=${CONFIG.shared.loadLibrary} initLibrary=${CONFIG.shared.initLibrary}, max 5s)`);
           pollUntil({
             check: () => {
-              if (!(win as unknown as { mixpanel?: unknown }).mixpanel) return false;
+              const mp = (win as unknown as { mixpanel?: unknown }).mixpanel;
+              if (!mp) return false;
+              // initLibrary=false: we need the REAL initialized SDK, not just a
+              // stub. GTM's stub has `_i[]` queued calls; the real SDK returns a
+              // config object from get_config() with a token. Until GTM's loaded
+              // callback fires, get_config() on the stub returns undefined.
+              if (CONFIG.shared.initLibrary === false) {
+                const mpRef = mp as { get_config?: () => ({ token?: string } | null | undefined) };
+                if (typeof mpRef.get_config !== 'function') return false;
+                if (!mpRef.get_config()?.token) return false;
+              }
+              log('[ppMixpanel] poll found window.mixpanel — calling doInit()');
               doInit();
               return true;
             },
             intervalMs: DEFAULTS.LOAD_LIBRARY_POLL_INTERVAL_MS,
             maxAttempts: DEFAULTS.LOAD_LIBRARY_POLL_MAX_ATTEMPTS,
-            onMaxAttempts: () => ppLib.log('warn', M.LOAD_LIBRARY_POLL_TIMEOUT),
+            onMaxAttempts: () => warnTimeout(
+              CONFIG.shared.initLibrary === false
+                ? M.INIT_LIBRARY_POLL_TIMEOUT
+                : M.LOAD_LIBRARY_POLL_TIMEOUT,
+            ),
             win,
           });
         }
         return;
       }
 
+      // initLibrary=false: window.mixpanel exists but may be a stub (GTM's tag
+      // has fired but the real script hasn't finished loading yet). Poll until
+      // get_config() returns a token — same "real SDK" check as above.
+      if (CONFIG.shared.initLibrary === false) {
+        const mp = win.mixpanel as { get_config?: () => ({ token?: string } | null | undefined) };
+        if (typeof mp.get_config !== 'function' || !mp.get_config()?.token) {
+          log('[ppMixpanel] window.mixpanel is stub — polling for real initialized SDK (initLibrary=false)');
+          pollUntil({
+            check: () => {
+              const mpRef = (win as unknown as { mixpanel?: { get_config?: () => ({ token?: string } | null | undefined) } }).mixpanel;
+              if (!mpRef || typeof mpRef.get_config !== 'function') return false;
+              if (!mpRef.get_config()?.token) return false;
+              log('[ppMixpanel] poll: real initialized SDK found — calling doInit()');
+              doInit();
+              return true;
+            },
+            intervalMs: DEFAULTS.LOAD_LIBRARY_POLL_INTERVAL_MS,
+            maxAttempts: DEFAULTS.LOAD_LIBRARY_POLL_MAX_ATTEMPTS,
+            onMaxAttempts: () => warnTimeout(M.INIT_LIBRARY_POLL_TIMEOUT),
+            win,
+          });
+          return;
+        }
+      }
+
+      log('[ppMixpanel] window.mixpanel present at init() — calling doInit() directly');
       doInit();
     }
 
@@ -784,16 +930,16 @@ import { pollUntil } from '@src/common/retry';
 
         if (stuck.length > 0) {
           if (dispatched > 0) {
-            ppLib.log('warn', M.WATCHDOG_FORCE_DRAIN(stuckNames, dispatched));
+            warn(M.WATCHDOG_FORCE_DRAIN(stuckNames, dispatched));
           } else if (remaining > 0) {
             // Nothing was ready; entries got re-buffered. Be explicit so
             // the operator doesn't read "watchdog fired" and assume drain
             // happened.
-            ppLib.log('warn', M.WATCHDOG_NO_READY(stuckNames));
+            warn(M.WATCHDOG_NO_READY(stuckNames));
           } else {
             // No buffered entries at all — stuck but idle. Still surface
             // the load failure so observability picks it up.
-            ppLib.log('warn', M.WATCHDOG_FORCE_DRAIN(stuckNames, 0));
+            warn(M.WATCHDOG_FORCE_DRAIN(stuckNames, 0));
           }
         }
 
@@ -936,7 +1082,7 @@ import { pollUntil } from '@src/common/retry';
           }
         });
       } catch (e) {
-        ppLib.log('error', 'getMixpanelCookieData error', ppLib.safeLogError(e));
+        error('getMixpanelCookieData error', ppLib.safeLogError(e));
       }
       return mixpanelData;
     }

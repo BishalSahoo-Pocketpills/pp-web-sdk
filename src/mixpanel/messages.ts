@@ -33,6 +33,9 @@ export const M = {
 
   // ---- Loader / SDK ----
   LOAD_LIBRARY_POLL_TIMEOUT: `${PREFIX} loadLibrary=false: window.mixpanel did not appear within 5000ms — ensure the Mixpanel library (e.g. GTM's Mixpanel Config tag) fires before or shortly after the SDK. Initialization skipped.`,
+  INIT_LIBRARY_POLL_TIMEOUT: `${PREFIX} initLibrary=false: window.mixpanel was not fully initialized within 5000ms — ensure GTM's Mixpanel Config tag fires before or shortly after the SDK. Initialization skipped.`,
+  INIT_LIBRARY_ADOPT_MISSING: (name: string): string =>
+    `${PREFIX} initLibrary=false: window.mixpanel${name !== 'primary' ? '.' + name : ''} not found or not initialized — ${name} instance will not track`,
   /** @deprecated Kept for test back-compat — message emitted at poll timeout now, not immediately */
   LOAD_LIBRARY_NO_WINDOW_MIXPANEL: `${PREFIX} loadLibrary=false but window.mixpanel is not present — ensure the Mixpanel library is loaded before calling init(). Initialization skipped.`,
   SDK_LOAD_FAILED: (src: string): string =>
@@ -91,6 +94,14 @@ export const M = {
 } as const;
 
 // ---- Magic-string constants outside the log domain ----
+
+/** Mixpanel's default persistence name — the suffix after `mp_<token>_` in the
+ *  cookie name for the unnamed (default) instance. Named instances use their
+ *  own name as the suffix (e.g. `mp_<token>_primary_mixpanel`). When the SDK
+ *  creates a named 'primary' instance under loadLibrary=false it passes this as
+ *  `persistence_name` so the named instance shares the GTM session cookie. */
+export const MIXPANEL_DEFAULT_PERSISTENCE_NAME = 'mixpanel';
+
 export const COOKIE_KEYS = {
   /** Per-token sessionStorage flag set after subdomain → parent migration
    *  ran for that token. Suffixed key avoids primary/secondary state sharing. */
@@ -99,7 +110,7 @@ export const COOKIE_KEYS = {
    *  mid-rollout don't re-trigger migration. */
   LEGACY_MIGRATION_FLAG: 'pp_mp_migrated',
   /** Mixpanel SDK's cookie name format. The SDK writes one per token. */
-  MP_COOKIE: (token: string): string => `mp_${token}_mixpanel`,
+  MP_COOKIE: (token: string): string => `mp_${token}_${MIXPANEL_DEFAULT_PERSISTENCE_NAME}`,
   /** Persisted VWO experiment props (read by the VWO bridge). */
   VWO_PROPS: 'pp_vwo_exp_props',
 } as const;

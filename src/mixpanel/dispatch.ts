@@ -62,7 +62,7 @@ export function configureDispatcher(ppLib: PPLib, sharedConfig: SharedMixpanelCo
   // Reset degraded latch so a fresh boot starts with strict-parity buffering.
   degraded = false;
   setOverflowHandler((dropped) => {
-    if (pp) pp.log('warn', M.PRE_INIT_QUEUE_FULL, { op: dropped.op });
+    if (pp && shared?.debug) pp.log('warn', M.PRE_INIT_QUEUE_FULL, { op: dropped.op });
   });
 }
 
@@ -260,9 +260,23 @@ function getOrAdoptMpRef(name: InstanceName): MixpanelGlobal | undefined {
   // drains when the real SDK finally loads. See loader.ts `_ppStub`.
   if ((g.mixpanel as { _ppStub?: boolean })._ppStub) return undefined;
   if (name === 'primary') {
+    // When loadLibrary=false primary was initialized as a named 'primary'
+    // sub-instance to avoid re-initializing GTM's unnamed default. Look up
+    // window.mixpanel.primary instead of window.mixpanel itself.
+    if (shared?.loadLibrary === false) {
+      const namedMp = (g.mixpanel as unknown as Record<string, MixpanelGlobal | undefined>)['primary'];
+      if (namedMp && typeof namedMp.track === 'function') {
+        state.mpRef = namedMp;
+        state.initialized = true;
+        if (pp && shared?.debug) pp.log('info', '[ppMixpanel][dbg] getOrAdoptMpRef: adopted window.mixpanel.primary (loadLibrary=false fallback)');
+        return namedMp;
+      }
+      return undefined;
+    }
     if (typeof g.mixpanel.track === 'function') {
       state.mpRef = g.mixpanel;
       state.initialized = true;
+      if (pp && shared?.debug) pp.log('info', '[ppMixpanel][dbg] getOrAdoptMpRef: adopted window.mixpanel for primary (fallback path — loaded cb not yet fired?)');
       return g.mixpanel;
     }
     return undefined;
@@ -273,6 +287,7 @@ function getOrAdoptMpRef(name: InstanceName): MixpanelGlobal | undefined {
   if (sub && typeof sub.track === 'function') {
     state.mpRef = sub;
     state.initialized = true;
+    if (pp && shared?.debug) pp.log('info', `[ppMixpanel][dbg] getOrAdoptMpRef: adopted window.mixpanel.${name} (fallback path)`);
     return sub;
   }
   return undefined;
@@ -310,13 +325,14 @@ export function dispatch(op: MixpanelOp, args: unknown[], options?: DispatchOpti
   if (!pp) return false;
   const handler = OP_TABLE[op];
   if (!handler) {
-    pp.log('warn', M.UNKNOWN_DISPATCH_OP, { op });
+    if (shared?.debug) pp.log('warn', M.UNKNOWN_DISPATCH_OP, { op });
     return false;
   }
 
   // Consent gate — drop silently. No log noise (would fire on every event
   // during a denied session) and no queue growth.
   if (handler.consentGated && pp.consent && !pp.consent.isGranted()) {
+    if (shared?.debug) pp.log('info', `[ppMixpanel][dbg] dispatch(${op}): CONSENT-BLOCKED — pp.consent.isGranted()=false`);
     return false;
   }
 
@@ -324,18 +340,21 @@ export function dispatch(op: MixpanelOp, args: unknown[], options?: DispatchOpti
   if (op === 'track') {
     const eventName = args[0];
     if (typeof eventName !== 'string' || !eventName) {
-      pp.log('warn', M.TRACK_EMPTY_EVENT_NAME);
+      if (shared?.debug) pp.log('warn', M.TRACK_EMPTY_EVENT_NAME);
       return false;
     }
   }
 
   const targets = resolveTargets(op, options);
   if (targets.length === 0) {
-    // alias's defaultInstances is ['primary'] (Simplified ID Merge
-    // projects don't use alias). After the cutover that flips
-    // `primary.enabled: false`, alias becomes a silent no-op. Warn so
-    // legacy code paths surface instead of failing invisibly.
-    if (op === 'alias') pp.log('warn', M.ALIAS_NO_TARGET);
+    if (shared?.debug) {
+      // alias's defaultInstances is ['primary'] (Simplified ID Merge
+      // projects don't use alias). After the cutover that flips
+      // `primary.enabled: false`, alias becomes a silent no-op. Warn so
+      // legacy code paths surface instead of failing invisibly.
+      if (op === 'alias') pp.log('warn', M.ALIAS_NO_TARGET);
+      pp.log('info', `[ppMixpanel][dbg] dispatch(${op}): targets=[] — no enabled instances`);
+    }
     return false;
   }
 
@@ -350,11 +369,23 @@ export function dispatch(op: MixpanelOp, args: unknown[], options?: DispatchOpti
   //     dual-target event until the queue overflows and drops them silently.
   const readyTargets = targets.filter((n) => isReady(n));
   if (readyTargets.length === 0) {
+    if (shared?.debug) {
+      const label = op === 'track' ? `${op}(${String(args[0])})` : op;
+      pp.log('info', `[ppMixpanel][dbg] dispatch(${label}): BUFFERED — 0/${targets.length} targets ready [${targets.join(',')}]`);
+    }
     return enqueue({ op, args, options: options ? { ...options } : undefined });
   }
   const allowPartial = degraded || (options && options.force);
   if (!allowPartial && readyTargets.length < targets.length) {
+    if (shared?.debug) {
+      const label = op === 'track' ? `${op}(${String(args[0])})` : op;
+      pp.log('info', `[ppMixpanel][dbg] dispatch(${label}): BUFFERED — only ${readyTargets.length}/${targets.length} ready, waiting for full parity [${targets.join(',')}]`);
+    }
     return enqueue({ op, args, options: options ? { ...options } : undefined });
+  }
+  if (shared?.debug) {
+    const label = op === 'track' ? `${op}(${String(args[0])})` : op;
+    pp.log('info', `[ppMixpanel][dbg] dispatch(${label}): LIVE → [${readyTargets.join(',')}]`);
   }
 
   // Enrich once, fan out with per-instance try/catch.
@@ -374,7 +405,7 @@ export function dispatch(op: MixpanelOp, args: unknown[], options?: DispatchOpti
       handler.invoke(mp, resolvedArgs);
       anyOk = true;
     } catch (e) {
-      pp.log('error', M.DISPATCH_ERROR, {
+      if (shared?.debug) pp.log('error', M.DISPATCH_ERROR, {
         op,
         instance: name,
         err: pp.safeLogError(e),
@@ -393,14 +424,16 @@ export function dispatch(op: MixpanelOp, args: unknown[], options?: DispatchOpti
 
 export function drainIfReady(): void {
   if (!pp) return;
-  if (!allEnabledInstancesReady()) return;
+  const ready = allEnabledInstancesReady();
+  if (shared?.debug) pp.log('info', `[ppMixpanel][dbg] drainIfReady: allReady=${ready}`);
+  if (!ready) return;
   const entries = drain();
   if (entries.length === 0) return;
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
     dispatch(entry.op, entry.args, entry.options);
   }
-  pp.log('info', M.PRE_INIT_DRAINED(entries.length));
+  if (shared?.debug) pp.log('info', M.PRE_INIT_DRAINED(entries.length));
 }
 
 /**

@@ -330,6 +330,7 @@ describe('ppLib.mixpanel.track facade', () => {
 
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     (window as any).ppLib.config.debug = true;
+    (window as any).ppLib.mixpanel.configure({ shared: { debug: true } });
 
     const result = (window as any).ppLib.mixpanel.track('view_item', {});
 

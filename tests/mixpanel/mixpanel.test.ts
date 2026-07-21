@@ -1,6 +1,7 @@
 import { loadModule, loadWithCommon } from '../helpers/iife-loader.ts';
 import { setCookie } from '../helpers/mock-cookies.ts';
 import { createMockMixpanel } from '../helpers/mock-mixpanel.ts';
+import { MIXPANEL_DEFAULT_PERSISTENCE_NAME } from '@src/mixpanel/messages';
 
 // =========================================================================
 // Helper: ensure a <script> tag exists so getElementsByTagName('script')[0]
@@ -157,9 +158,9 @@ describe('enabled flag', () => {
 
   it('skips initialization when enabled is false', () => {
     loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ enabled: false, token: 'test-token', debug: true });
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
-    window.ppLib.mixpanel.configure({ enabled: false, token: 'test-token' });
     setupScriptEnv();
     window.ppLib.mixpanel.init();
 
@@ -628,27 +629,26 @@ describe('loadMixpanelSDK()', () => {
     window.ppLib.mixpanel.init();
 
     expect(insertBeforeSpy).not.toHaveBeenCalled();
+    // loadLibrary=false: SDK uses a named 'primary' instance to avoid
+    // colliding with GTM's unnamed default instance, but shares its
+    // persistence key (mp_<token>_mixpanel) to preserve the GTM session.
     expect(mp.init).toHaveBeenCalledWith(
       'external-tok',
-      expect.objectContaining({ loaded: expect.any(Function) }),
+      expect.objectContaining({ loaded: expect.any(Function), persistence_name: MIXPANEL_DEFAULT_PERSISTENCE_NAME }),
+      'primary',
     );
   });
 
-  it('logs a warning after poll timeout when loadLibrary is false and window.mixpanel never appears', () => {
+  it('stops polling silently after timeout when loadLibrary is false and window.mixpanel never appears', () => {
     vi.useFakeTimers();
     loadWithCommon('mixpanel');
-    const logSpy = vi.spyOn(window.ppLib, 'log');
     window.ppLib.mixpanel.configure({ token: 'tok', loadLibrary: false });
     setupScriptEnv();
     window.ppLib.mixpanel.init();
 
-    // No warning yet — polling is in progress
-    expect(logSpy).not.toHaveBeenCalledWith('warn', expect.stringContaining('did not appear'));
-
     // Advance past 100 poll ticks × 50ms = 5000ms
     vi.advanceTimersByTime(5100);
 
-    expect(logSpy).toHaveBeenCalledWith('warn', expect.stringContaining('did not appear within 5000ms'));
     expect(window.mixpanel).toBeUndefined();
     vi.useRealTimers();
   });
@@ -674,9 +674,25 @@ describe('loadMixpanelSDK()', () => {
 
     expect(mp.init).toHaveBeenCalledWith(
       'delayed-tok',
-      expect.objectContaining({ loaded: expect.any(Function) }),
+      expect.objectContaining({ loaded: expect.any(Function), persistence_name: MIXPANEL_DEFAULT_PERSISTENCE_NAME }),
+      'primary',
     );
     vi.useRealTimers();
+  });
+
+  it('loadLibrary: false passes persistence_name="mixpanel" so the named instance shares GTM\'s session cookie', () => {
+    const mp = createMockMixpanel();
+    window.mixpanel = mp;
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'gtm-tok', loadLibrary: false });
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    // The named 'primary' instance must share mp_<token>_mixpanel — the same
+    // cookie GTM writes — so it picks up the existing distinct_id and $device_id
+    // instead of starting a fresh anonymous session.
+    const [, opts] = (mp.init as ReturnType<typeof vi.fn>).mock.calls[0] as [unknown, Record<string, unknown>, unknown];
+    expect(opts.persistence_name).toBe(MIXPANEL_DEFAULT_PERSISTENCE_NAME);
   });
 
   it('loadLibrary: false propagates to shared config via legacy shim', () => {
@@ -1175,7 +1191,7 @@ describe('getMixpanelCookieData()', () => {
 
   it('logs error and returns empty object on exception', () => {
     loadWithCommon('mixpanel');
-    window.ppLib.config.debug = true;
+    window.ppLib.mixpanel.configure({ debug: true });
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
     const originalCookieDescriptor =
@@ -1183,22 +1199,22 @@ describe('getMixpanelCookieData()', () => {
       Object.getOwnPropertyDescriptor(document, 'cookie');
 
     Object.defineProperty(document, 'cookie', {
-      get() {
-        throw new Error('cookie access denied');
-      },
+      get() { throw new Error('cookie access denied'); },
       configurable: true,
     });
 
-    const result = window.ppLib.mixpanel.getMixpanelCookieData();
-    expect(result).toEqual({});
-    expect(logSpy).toHaveBeenCalledWith(
-      'error',
-      'getMixpanelCookieData error',
-      expect.objectContaining({ errorClass: expect.any(String) })
-    );
-
-    if (originalCookieDescriptor) {
-      Object.defineProperty(document, 'cookie', originalCookieDescriptor);
+    try {
+      const result = window.ppLib.mixpanel.getMixpanelCookieData();
+      expect(result).toEqual({});
+      expect(logSpy).toHaveBeenCalledWith(
+        'error',
+        'getMixpanelCookieData error',
+        expect.objectContaining({ errorClass: expect.any(String) })
+      );
+    } finally {
+      if (originalCookieDescriptor) {
+        Object.defineProperty(document, 'cookie', originalCookieDescriptor);
+      }
     }
   });
 });
@@ -1213,7 +1229,7 @@ describe('initMixpanel()', () => {
 
   it('warns and returns early if no token is configured', () => {
     loadWithCommon('mixpanel');
-    window.ppLib.config.debug = true;
+    window.ppLib.mixpanel.configure({ debug: true });
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
     window.ppLib.mixpanel.init();
@@ -1659,8 +1675,7 @@ describe('loaded callback', () => {
 
   it('logs success message', () => {
     loadWithCommon('mixpanel');
-    window.ppLib.config.debug = true;
-    window.ppLib.mixpanel.configure({ token: 'tok' });
+    window.ppLib.mixpanel.configure({ token: 'tok', debug: true });
     const logSpy = vi.spyOn(window.ppLib, 'log');
 
     setupScriptEnv();
@@ -1980,14 +1995,26 @@ describe('Integration / Edge Cases', () => {
     expect(secondCallCount).toBe(firstCallCount);
   });
 
-  it('module logs info message on load', () => {
+  it('module installs ppLib.mixpanel API on load', () => {
     loadModule('common');
-    window.ppLib.config.debug = true;
-    const logSpy = vi.spyOn(window.ppLib, 'log');
-
     loadModule('mixpanel');
 
-    expect(logSpy).toHaveBeenCalledWith('info', '[ppMixpanel] Module loaded');
+    expect(typeof window.ppLib.mixpanel.configure).toBe('function');
+    expect(typeof window.ppLib.mixpanel.init).toBe('function');
+  });
+
+  it('logs INITIALIZED_SUCCESSFULLY when debug is enabled', () => {
+    loadWithCommon('mixpanel');
+    window.ppLib.mixpanel.configure({ token: 'tok', debug: true });
+    const logSpy = vi.spyOn(window.ppLib, 'log');
+
+    setupScriptEnv();
+    window.ppLib.mixpanel.init();
+
+    const loadedCb = (window.mixpanel as { _i: [string, { loaded: (mp: unknown) => void }, string][] })._i[0][1].loaded;
+    invokeLoadedCallback(loadedCb, createMockMixpanel());
+
+    expect(logSpy).toHaveBeenCalledWith('info', '[ppMixpanel] Initialized successfully');
   });
 
   // =========================================================================
