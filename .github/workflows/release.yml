@@ -189,6 +189,10 @@ jobs:
             git tag -a "v${{ steps.version.outputs.VERSION }}" -m "v${{ steps.version.outputs.VERSION }}"
           fi
 
+          # Rebase on top of any commits that landed while the test job ran
+          # (e.g. a PR merged concurrently). Without this, a non-fast-forward
+          # rejection breaks the release even though the version bump is valid.
+          git pull --rebase origin main
           git push && git push --tags
 
       - name: Create GitHub Release
