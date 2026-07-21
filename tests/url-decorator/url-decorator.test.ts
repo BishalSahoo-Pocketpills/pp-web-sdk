@@ -181,10 +181,11 @@ describe('url-decorator module', () => {
       expect(document.querySelector('a')!.getAttribute('href')).toBe('/treatments');
     });
 
-    it('skips mailto: / tel: / javascript: / data: / # links', async () => {
+    it('skips mailto: / tel: / sms: / javascript: / data: / # links', async () => {
       document.body.innerHTML = `
         <a href="mailto:a@b.com">M</a>
         <a href="tel:+1234">T</a>
+        <a href="sms:+15550001234">S</a>
         <a href="javascript:void(0)">J</a>
         <a href="data:text/plain,hi">D</a>
         <a href="#section">H</a>
@@ -195,6 +196,15 @@ describe('url-decorator module', () => {
 
       const hrefs = Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'));
       hrefs.forEach(h => expect(h).not.toContain('mp_device_id'));
+    });
+
+    it('does not decorate http:// links even when the domain is allowlisted', async () => {
+      document.body.innerHTML = `<a href="http://pocketpills.com/tx">Link</a>`;
+      loadWithCommon('url-decorator');
+      setupMixpanelCookie({ '$device_id': 'dev-abc' });
+      await flushMixpanelReady();
+
+      expect(document.querySelector('a')!.getAttribute('href')).toBe('http://pocketpills.com/tx');
     });
 
     it('is idempotent — does not re-decorate already decorated links', async () => {
