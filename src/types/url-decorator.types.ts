@@ -1,7 +1,45 @@
 import type { DeepPartial } from '@src/types/utility.types';
 
-/** Built-in value sources the module knows how to resolve. */
+/**
+ * @deprecated Use descriptor sources instead:
+ *   'mixpanel_device_id'  → 'mixpanel:primary:$device_id'
+ *   'mixpanel_distinct_id' → 'mixpanel:primary:distinct_id'
+ * These opaque strings remain supported for backward compatibility.
+ */
 export type BuiltinSource = 'mixpanel_device_id' | 'mixpanel_distinct_id';
+
+/**
+ * Descriptor-style source strings. Format: `storage_type:key` or `storage_type:key:json_field`
+ *
+ *   query_params:utm_source
+ *     — read utm_source from the current page URL; omits param if absent
+ *
+ *   cookies:pp_segment
+ *     — raw cookie string value
+ *
+ *   cookies:mp_<token>_mixpanel:$device_id
+ *     — parse mp_<token>_mixpanel cookie as JSON, return the $device_id field
+ *     — caller supplies the actual token value; no runtime substitution
+ *
+ *   localstorage:mp_<token>_mixpanel:$device_id
+ *     — same but from localStorage
+ *
+ *   mixpanel:primary:$device_id
+ *     — reads $device_id from the primary Mixpanel instance's storage
+ *     — resolves the token from ppLib.mixpanel.primary.getConfig() at runtime;
+ *       no hardcoded token needed
+ *
+ *   mixpanel:secondary:$device_id
+ *     — same for the secondary instance (localStorage-persisted)
+ *
+ *   mixpanel:primary:distinct_id | mixpanel:secondary:distinct_id
+ *     — reads distinct_id from the respective instance's storage
+ */
+export type DescriptorSource =
+  | `query_params:${string}`
+  | `cookies:${string}`
+  | `localstorage:${string}`
+  | `mixpanel:${'primary' | 'secondary'}:${string}`;
 
 /**
  * Single query parameter definition.
@@ -12,11 +50,13 @@ export interface ParamEntry {
   name: string;
   /**
    * Where to read the value from.
-   * Built-in: 'mixpanel_device_id' | 'mixpanel_distinct_id'
-   * Custom: any () => string function.
+   * Built-in strings: 'mixpanel_device_id' | 'mixpanel_distinct_id'
+   * Descriptor strings: 'query_params:key', 'cookies:key[:json_field]',
+   *   'localstorage:key[:json_field]'
+   * Custom function: any () => string.
    * Required.
    */
-  source: BuiltinSource | (() => string);
+  source: BuiltinSource | DescriptorSource | (() => string);
   /**
    * Per-param domain allowlist. When set, only URLs whose hostname matches one
    * of these entries are decorated with this param, ignoring the top-level
